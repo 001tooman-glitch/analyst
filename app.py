@@ -1,24 +1,19 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-from google import genai
+import requests
 import json
 
-st.set_page_config(page_title="ИИ Агент-Аналитик", layout="wide")
+st.set_page_config(page_title="ИИ Агент-Аналитик (DeepSeek)", layout="wide")
 st.title("🤖 Полноценный ИИ Агент по аналитике данных")
 
-# Поле для ввода вашего API-ключа Gemini в боковой панели
-api_key = st.sidebar.text_input("Введите ваш Gemini API Key", type="password")
-st.sidebar.markdown("---")
-st.sidebar.info("Этот агент использует ИИ для чтения структуры вашей таблицы и автоматического построения интерактивных графиков.")
+st.sidebar.success("🚀 Агент переключен на безлимитную модель DeepSeek-R1!")
+st.sidebar.info("Этот агент автоматически читает структуру вашей таблицы и строит интерактивные графики без ограничений и лимитов.")
 
 # Компонент для загрузки файлов Excel или CSV
 uploaded_file = st.file_uploader("Загрузите файл Excel или CSV для анализа", type=["csv", "xlsx"])
 
-if uploaded_file is not None and api_key:
-    # Инициализация ИИ-клиента Google Gemini
-    client = genai.Client(api_key=api_key)
-    
+if uploaded_file is not None:
     # Чтение загруженных данных
     if uploaded_file.name.endswith('.csv'):
         df = pd.read_csv(uploaded_file)
@@ -32,10 +27,10 @@ if uploaded_file is not None and api_key:
         st.dataframe(df.head())
     
     # Поле текстового запроса для пользователя
-    user_query = st.text_input("Задайте вопрос аналитику (например: 'Построй график прибыли по странам' или 'Какой товар самый продаваемый?'):")
+    user_query = st.text_input("Задайте вопрос аналитику (например: 'Построй график прибыли по странам' или 'Построй кольцевую диаграмму по фондам'):")
     
     if user_query:
-        with st.spinner("ИИ анализирует структуру таблицы и подбирает параметры..."):
+        with st.spinner("DeepSeek анализирует структуру таблицы и подбирает параметры..."):
             # Формируем схему таблицы для ИИ, чтобы он понимал названия колонок
             data_schema = f"Колонки в таблице: {list(df.columns)}. Типы данных: {df.dtypes.to_dict()}"
             
@@ -55,14 +50,29 @@ if uploaded_file is not None and api_key:
             """
             
             try:
-                # Запрос к стабильной открытой модели Gemini 2.0 Flash
-                response = client.models.generate_content(
-                    model='gemini-2.0-flash',
-                    contents=prompt
-                )
+                # Используем бесплатный публичный API Hugging Face для модели DeepSeek-R1
+                API_URL = "https://huggingface.co"
+                headers = {"Content-Type": "application/json"}
+                payload = {
+                    "inputs": prompt,
+                    "parameters": {"max_new_tokens": 1000, "return_full_text": False}
+                }
                 
-                # Очищаем ответ от возможных markdown-оберток, если ИИ их добавил
-                clean_text = response.text.strip()
+                response = requests.post(API_URL, headers=headers, json=payload)
+                response_json = response.json()
+                
+                # Достаем текст ответа
+                if isinstance(response_json, list) and "generated_text" in response_json[0]:
+                    raw_text = response_json[0]["generated_text"]
+                else:
+                    raw_text = response_json.get("generated_text", str(response_json))
+                
+                # Очищаем ответ от цепочки рассуждений (thinking process), если она есть
+                if "</think>" in raw_text:
+                    raw_text = raw_text.split("</think>")[-1]
+                
+                # Очищаем от markdown-оберток
+                clean_text = raw_text.strip()
                 if clean_text.startswith("```json"):
                     clean_text = clean_text[7:]
                 if clean_text.endswith("```"):
@@ -100,7 +110,7 @@ if uploaded_file is not None and api_key:
                     elif result["chart_type"] == 'line':
                         fig = px.line(df_grouped, x=x_col, y=y_col, title=f"Тренд {y_col} по {x_col}")
                     elif result["chart_type"] == 'pie':
-                        fig = px.pie(df_grouped, names=x_col, values=y_col, title=f"Доля {y_col} по {x_col}")
+                        fig = px.pie(df_grouped, names=x_col, values=y_col, title=f"Доля {y_col} по {x_col}", hole=0.4) # hole=0.4 делает диаграмму кольцевой
                     else:
                         fig = px.scatter(df, x=x_col, y=y_col, title=f"Взаимосвязь {y_col} и {x_col}")
                         
@@ -110,9 +120,6 @@ if uploaded_file is not None and api_key:
             except Exception as e:
                 st.error(f"Произошла ошибка при обработке ИИ: {e}")
                 st.text("Ответ от модели:")
-                st.text(response.text if 'response' in locals() else "Нет ответа")
-                
-elif not api_key:
-    st.warning("Пожалуйста, введите ваш Gemini API Key в боковой панели слева для активации ИИ-агента.")
+                st.text(raw_text if 'raw_text' in locals() else str(response_json))
 else:
     st.info("Ожидание загрузки файла таблицы...")
