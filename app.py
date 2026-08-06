@@ -55,14 +55,22 @@ if uploaded_file is not None and api_key:
             """
             
             try:
-                # Запрос к бесплатной модели Gemini 2.5 Flash
+                # Запрос к стабильной бесплатной модели Gemini 1.5 Flash
                 response = client.models.generate_content(
-                    model='gemini-2.5-flash',
+                    model='gemini-1.5-flash',
                     contents=prompt
                 )
                 
+                # Очищаем ответ от возможных markdown-оберток, если ИИ их добавил
+                clean_text = response.text.strip()
+                if clean_text.startswith("```json"):
+                    clean_text = clean_text[7:]
+                if clean_text.endswith("```"):
+                    clean_text = clean_text[:-3]
+                clean_text = clean_text.strip()
+                
                 # Парсим JSON-ответ от ИИ
-                result = json.loads(response.text.strip())
+                result = json.loads(clean_text)
                 
                 # 1. Выводим развернутый текстовый анализ ИИ
                 st.subheader("💡 Аналитический вывод ИИ:")
@@ -80,8 +88,11 @@ if uploaded_file is not None and api_key:
                     x_col = x_col.strip()
                     y_col = y_col.strip()
                     
-                    # Группируем данные для более красивого отображения
-                    df_grouped = df.groupby(x_col)[y_col].sum().reset_index()
+                    # Группируем данные для более красивого отображения (если это возможно)
+                    try:
+                        df_grouped = df.groupby(x_col)[y_col].sum().reset_index()
+                    except:
+                        df_grouped = df
                     
                     # Выбираем тип графика на основе решения ИИ
                     if result["chart_type"] == 'bar':
