@@ -4,160 +4,167 @@ import plotly.express as px
 import requests
 import json
 
-st.set_page_config(page_title="Мульти-ИИ Аналитик Динамики", layout="wide")
-st.title("🤖 Сводный ИИ Агент: Анализ сквозной динамики")
+st.set_page_config(page_title="Универсальный ИИ-Аналитик", layout="wide")
+st.title("🚀 Универсальный ИИ Агент: Адаптивный анализ любых данных")
 
 # Боковая панель
-st.sidebar.success("🚀 Сводный анализ и динамика активны!")
+st.sidebar.success("🟢 Адаптивный ИИ-движок активен!")
 api_key = st.sidebar.text_input("Введите ваш SambaNova API Key", type="password")
 st.sidebar.markdown("""
-**Как получить бесплатный ключ без лимитов за 30 секунд:**
+**Бесплатный ключ без лимитов за 30 секунд:**
 1. Зайдите на [cloud.sambanova.ai](https://sambanova.ai)
 2. Нажмите **Create API Key** и скопируйте его.
 """)
 
-# Компонент для загрузки НЕСКОЛЬКИХ файлов одновременно
+# Компонент для загрузки ЛЮБЫХ файлов
 uploaded_files = st.file_uploader(
-    "Загрузите файлы для анализа динамики (например: июнь 24, июнь 25, июнь 26)", 
+    "Загрузите один или несколько любых файлов Excel/CSV (с любыми типами данных)", 
     type=["csv", "xlsx"], 
     accept_multiple_files=True
 )
 
-if uploaded_files and len(uploaded_files) >= 1:
-    st.subheader("📋 Загруженные и распознанные таблицы:")
-    
+if uploaded_files:
     combined_frames = []
     
-    # Цикл по всем загруженным файлам для автоматического сшивания
+    # Сшиваем файлы (если их несколько), добавляя метку источника
     for file in uploaded_files:
         if file.name.endswith('.csv'):
             current_df = pd.read_csv(file)
         else:
             current_df = pd.read_excel(file)
-            
-        # Очищаем заголовки колонок от скрытых пробелов
         current_df.columns = current_df.columns.str.strip()
-        
-        # Добавляем специальную служебную колонку с именем файла, чтобы ИИ понимал временную точку
-        period_name = file.name.replace(".xlsx", "").replace(".xls", "").replace(".csv", "")
-        current_df['Отчетный период (Файл)'] = period_name
-        
+        period_name = file.name.split('.')[0]
+        current_df['Источник (Файл)'] = period_name
         combined_frames.append(current_df)
         
     try:
-        # Сшиваем все файлы в одну большую единую сводную таблицу
         main_df = pd.concat(combined_frames, ignore_index=True)
-        st.success(f"🔥 Успешно создана сводная база данных! Объединено файлов: {len(uploaded_files)}. Всего строк для анализа: {main_df.shape}")
+        st.success(f"📊 Данные успешно импортированы! Загружено файлов: {len(uploaded_files)}. Строк: {main_df.shape[0]}, Колонок: {main_df.shape[1]}")
         
-        with st.expander("📊 Посмотреть превью объединенной сводной таблицы"):
-            st.dataframe(main_df.head(10))
+        with st.expander("📋 Посмотреть сырые данные загруженной таблицы"):
+            st.dataframe(main_df.head(5))
+            
+        # Автоматическое разделение колонок по типам для защиты от ошибок
+        all_cols = list(main_df.columns)
+        numeric_cols = list(main_df.select_dtypes(include=['number']).columns)
+        text_cols = [col for col in all_cols if col not in numeric_cols and col != 'Источник (Файл)']
+        
+        if not numeric_cols:
+            # Если чисел нет, принудительно даем выбрать любую колонку для подсчета строк
+            numeric_cols = all_cols
             
         st.markdown("---")
-        st.subheader("📈 Автономный анализ сквозной динамики по всем периодам")
+        st.subheader("⚙️ Управление визуализацией и постановка бизнес-задачи")
         
-        all_columns = [col for col in main_df.columns if col != 'Отчетный период (Файл)']
-        
+        # Интерактивный конструктор
         c1, c2, c3 = st.columns(3)
         with c1:
-            group_by_col = st.selectbox("Выберите аналитическую категорию (например: Фонд, Статья, ОЗМ):", all_columns)
+            x_axis = st.selectbox("🗂️ Выберите категорию/аналитический разрез (Ось X):", text_cols if text_cols else all_cols)
         with c2:
-            value_col = st.selectbox("Выберите числовой показатель (например: Сумма, Стоимость, Объем):", all_columns)
+            y_axis = st.selectbox("🔢 Выберите числовой показатель/метрику (Ось Y):", numeric_cols)
         with c3:
-            chart_style = st.selectbox("Выберите визуализацию:", ["Линейный график тренда (Line)", "Групповая столбчатая диаграмма (Bar)"])
+            chart_style = st.selectbox("📈 Выберите тип визуализации под вашу задачу:", [
+                "Столбчатая диаграмма (Bar Chart)",
+                "Линейный график тренда (Line Chart)", 
+                "Кольцевая диаграмма долей (Donut Chart)",
+                "Круговая диаграмма (Pie Chart)",
+                "Точечный график связей (Scatter Plot)"
+            ])
             
-        # Подготовка данных: переводим в числа и очищаем
-        main_df[value_col] = pd.to_numeric(main_df[value_col], errors='coerce').fillna(0)
-        
-        # Строим сводную таблицу группировки: Категория + Период времени
-        df_trend = main_df.groupby([group_by_col, 'Отчетный период (Файл)'], as_index=False)[value_col].sum()
-        
-        # Сортируем периоды, чтобы графики шли хронологически
-        df_trend = df_trend.sort_values(by='Отчетный период (Файл)')
-        
-        if "Линейный" in chart_style:
-            fig = px.line(
-                df_trend, 
-                x='Отчетный период (Файл)', 
-                y=value_col, 
-                color=group_by_col,
-                markers=True,
-                title=f"Сквозной тренд изменения показателя '{value_col}' по категориям '{group_by_col}'"
-            )
-        else:
-            fig = px.bar(
-                df_trend, 
-                x='Отчетный период (Файл)', 
-                y=value_col, 
-                color=group_by_col, 
-                barmode="group",
-                title=f"Сравнительный анализ показателя '{value_col}' по периодам"
-            )
+        # Запуск локальной визуализации
+        try:
+            main_df[y_axis] = pd.to_numeric(main_df[y_axis], errors='coerce').fillna(0)
             
-        st.plotly_chart(fig, use_container_width=True)
-        
-    except Exception as merge_err:
-        st.error(f"Не удалось автоматически объединить файлы. Убедитесь, что структура колонок в файлах совпадает. Ошибка: {merge_err}")
-
-    # ИИ АНАЛИЗ СВОДНОЙ ДИНАМИКИ
-    st.markdown("---")
-    st.subheader("🧠 Стратегический ИИ-анализ объединенной сводной таблицы")
-    
-    if st.button("🚀 Провести аудит динамики изменений и получить рекомендации ИИ"):
-        if not api_key:
-            st.warning("Пожалуйста, введите ваш Sambanova API Key в боковой панели слева для запуска ИИ.")
-        else:
-            with st.spinner("Флагманский ИИ проводит аудит сводных данных и ищет аномалии..."):
-                
-                # Агрегируем краткую сводную матрицу для передачи в ИИ, чтобы он видел реальные цифры трендов
-                try:
-                    summary_pivot = main_df.groupby([group_by_col, 'Отчетный период (Файл)'])[value_col].sum().unstack().fillna(0)
-                    pivot_dict = summary_pivot.to_dict(orient='index')
-                    raw_summary_data = json.dumps(pivot_dict, ensure_ascii=False, indent=2)
-                except:
-                    raw_summary_data = "Не удалось скомпилировать матрицу, передаются общие метаданные."
-                
-                prompt = f"""
-                Ты — Директор по аналитике и стратегическому планированию. Перед тобой сводный массив данных, полученный путем объединения нескольких файлов за разные отчетные периоды.
-                
-                Выбранная аналитическая категория: '{group_by_col}'
-                Выбранный финансовый/количественный показатель: '{value_col}'
-                
-                Реальные агрегированные показатели динамики изменений по периодам (в формате Категория -> Период -> Значение):
-                {raw_summary_data}
-                
-                Твоя задача:
-                1. Провести детальный аудит сквозной динамики. Четко укажи, в каких категориях произошел наибольший рост показателя от периода к периоду, а в каких — критическое падение.
-                2. Выявить скрытые тренды, аномалии или резкие скачки в данных, которые требуют немедленного внимания менеджмента.
-                3. Предложить конкретные дальнейшие действия и управленческие рекомендации на основе этой многопериодной динамики.
-                4. Напиши профессиональное краткое резюме (Executive Summary) для руководства.
-                
-                Ответь на русском языке. Оформи ответ структурированно, бизнес-языком, с использованием жирного шрифта, таблиц или списков.
-                """
-                
-                try:
-                    url = "https://sambanova.ai"
-                    headers = {
-                        "Authorization": f"Bearer {api_key}",
-                        "Content-Type": "application/json"
-                    }
-                    data = {
-                        "model": "Meta-Llama-3.1-70B-Instructor",
-                        "messages": [{"role": "user", "content": prompt}],
-                        "temperature": 0.1
-                    }
-                    
-                    response = requests.post(url, headers=headers, json=data)
-                    result_json = response.json()
-                    
-                    if 'choices' in result_json and len(result_json['choices']) > 0:
-                        ai_analysis = result_json['choices']['message']['content']
-                        st.markdown("### 💡 Стратегический разбор от ИИ:")
-                        st.markdown(ai_analysis)
+            if "Кольцевая" in chart_style or "Круговая" in chart_style:
+                df_grouped = main_df.groupby(x_axis)[y_axis].sum().reset_index()
+                fig = px.pie(df_grouped, names=x_axis, values=y_axis, title=f"Структура '{y_axis}' по '{x_axis}'", hole=0.4 if "Кольцевая" in chart_style else 0)
+            elif "Точечный" in chart_style:
+                fig = px.scatter(main_df, x=x_axis, y=y_axis, color='Источник (Файл)', title=f"Связь показателей '{y_axis}' и '{x_axis}'")
+            else:
+                # Если файлов несколько, группируем с учетом источника, чтобы видеть динамику
+                if len(uploaded_files) > 1:
+                    df_grouped = main_df.groupby([x_axis, 'Источник (Файл)'], as_index=False)[y_axis].sum()
+                    if "Линейный" in chart_style:
+                        fig = px.line(df_grouped, x='Источник (Файл)', y=y_axis, color=x_axis, markers=True, title=f"Динамика изменений '{y_axis}'")
                     else:
-                        st.error("Ошибка API при получении данных. Попробуйте еще раз.")
-                        st.json(result_json)
+                        fig = px.bar(df_grouped, x='Источник (Файл)', y=y_axis, color=x_axis, barmode="group", title=f"Сравнение '{y_axis}' по файлам")
+                else:
+                    df_grouped = main_df.groupby(x_axis)[y_axis].sum().reset_index()
+                    if "Линейный" in chart_style:
+                        fig = px.line(df_grouped, x=x_axis, y=y_axis, markers=True, title=f"Тренд '{y_axis}'")
+                    else:
+                        fig = px.bar(df_grouped, x=x_axis, y=y_axis, color=x_axis, title=f"Распределение '{y_axis}'")
+                        
+            st.plotly_chart(fig, use_container_width=True)
+        except Exception as e:
+            st.error(f"Ошибка построения графика: {e}")
+
+        # ГИБКАЯ ПОСТАНОВКА ЗАДАЧИ ДЛЯ ИИ
+        st.markdown("---")
+        st.subheader("🧠 Постановка персональной задачи для ИИ-Аналитика")
+        
+        # Главное текстовое поле, куда можно написать ЛЮБУЮ задачу под новые файлы
+        custom_task = st.text_area(
+            "Опишите, какую задачу должен решить ИИ по этим файлам:",
+            value="Проведи комплексный аудит этих данных, найди скрытые закономерности, аномалии и сформируй 5 конкретных рекомендаций для бизнеса."
+        )
+        
+        if st.button("🚀 Запустить ИИ-Анализ задачи"):
+            if not api_key:
+                st.warning("Пожалуйста, укажите ваш Sambanova API Key в боковом меню.")
+            else:
+                with st.spinner("ИИ исследует структуру и решает вашу бизнес-задачу..."):
                     
-                except Exception as e:
-                    st.error(f"Ошибка при вызове ИИ: {e}")
+                    # Собираем метаданные для ИИ
+                    meta_summary = f"Загружено файлов: {len(uploaded_files)}. Имена источников: {all_files if 'all_files' in locals() else [f.name for f in uploaded_files]}\n"
+                    meta_summary += f"Доступные текстовые колонки: {text_cols}\nДоступные числовые колонки: {numeric_cols}\n"
+                    
+                    try:
+                        # Передаем небольшой срез данных для контекста
+                        sample_data = main_df.head(5).to_dict(orient='records')
+                        meta_summary += f"Пример реальных строк из таблицы:\n{json.dumps(sample_data, ensure_ascii=False)}"
+                    except:
+                        pass
+                    
+                    prompt = f"""
+                    Ты — ведущий мировой ИИ-эксперт по обработке данных и бизнес-аналитике. 
+                    Перед тобой массив данных со следующей структурой:
+                    {meta_summary}
+                    
+                    Текущие выбранные пользователем настройки в интерфейсе:
+                    Аналитический разрез: '{x_axis}'
+                    Главный показатель: '{y_axis}'
+                    
+                    Конкретная задача от пользователя:
+                    "{custom_task}"
+                    
+                    Выполни эту задачу качественно, опираясь на структуру предоставленных данных. 
+                    Если файлов несколько, обязательно проанализируй их взаимосвязь. 
+                    Ответь на русском языке. Оформи ответ с четкой структурой (заголовки, списки, жирный шрифт), чтобы его можно было сразу вставить в отчет руководству.
+                    """
+                    
+                    try:
+                        url = "https://sambanova.ai"
+                        headers = {
+                            "Authorization": f"Bearer {api_key}",
+                            "Content-Type": "application/json"
+                        }
+                        data = {
+                            "model": "Meta-Llama-3.1-70B-Instructor",
+                            "messages": [{"role": "user", "content": prompt}],
+                            "temperature": 0.2
+                        }
+                        
+                        response = requests.post(url, headers=headers, json=data)
+                        result_json = response.json()
+                        
+                        if 'choices' in result_json and len(result_json['choices']) > 0:
+                            st.markdown("### 💡 Глубокий аналитический отчет ИИ по вашей задаче:")
+                            st.markdown(result_json['choices']['message']['content'])
+                        else:
+                            st.error("Ошибка обработки запроса сервером API. Попробуйте нажать кнопку еще раз.")
+                            st.json(result_json)
+                    except Exception as ai_err:
+                        st.error(f"Не удалось выполнить ИИ-анализ: {ai_err}")
 else:
-    st.info("Пожалуйста, загрузите сразу несколько файлов (например: июнь 24, июнь 25, июнь 26) для построения сквозной динамики.")
+    st.info("Ожидание загрузки любых файлов Excel/CSV для начала работы...")
