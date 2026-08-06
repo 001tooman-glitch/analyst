@@ -9,7 +9,7 @@ st.title("🤖 Мульти-файловый ИИ Агент: Поиск зав�
 
 # Боковая панель
 st.sidebar.success("🚀 Мультизагрузка и Анализ связей активны!")
-api_key = st.sidebar.text_input("Введите ваш Sambaanova API Key (Опционально для ИИ)", type="password")
+api_key = st.sidebar.text_input("Введите ваш SambaNova API Key", type="password")
 st.sidebar.markdown("""
 **Как получить бесплатный ключ без лимитов за 30 секунд:**
 1. Зайдите на [cloud.sambanova.ai](https://sambanova.ai)
@@ -87,7 +87,7 @@ if uploaded_files:
     
     if st.button("🚀 Найти скрытые зависимости и составить план анализа"):
         if not api_key:
-            st.warning("Пожалуйста, убедитесь, что ваш Sambanova API Key вставлен в боковой панели.")
+            st.warning("Пожалуйста, убедитесь, что ваш SambaNova API Key вставлен в боковой панели.")
         else:
             with st.spinner("ИИ сопоставляет структуры таблиц и ищет пересечения..."):
                 
@@ -110,14 +110,14 @@ if uploaded_files:
                 """
                 
                 try:
-                    # Вызов ультра-быстрого и безлимитного API Llama 3 через Sambanova
+                    # Вызов обновленной флагманской модели Llama 3.1 405B через API SambaNova
                     url = "https://sambanova.ai"
                     headers = {
                         "Authorization": f"Bearer {api_key}",
                         "Content-Type": "application/json"
                     }
                     data = {
-                        "model": "Llama-3.1-8B-Instructor",
+                        "model": "Llama-3.1-405B-Instructor",
                         "messages": [{"role": "user", "content": prompt}],
                         "temperature": 0.1
                     }
@@ -125,14 +125,18 @@ if uploaded_files:
                     response = requests.post(url, headers=headers, json=data)
                     result_json = response.json()
                     
-                    ai_analysis = result_json['choices'][0]['message']['content']
-                    
-                    st.markdown("### 💡 Результаты исследования ИИ:")
-                    st.markdown(ai_analysis)
+                    # Проверяем структуру ответа
+                    if 'choices' in result_json and len(result_json['choices']) > 0:
+                        ai_analysis = result_json['choices'][0]['message']['content']
+                        st.markdown("### 💡 Результаты исследования ИИ:")
+                        st.markdown(ai_analysis)
+                    else:
+                        st.error("Получен некорректный ответ от API. Структура ответа:")
+                        st.json(result_json)
                     
                 except Exception as e:
                     st.error(f"Ошибка при вызове ИИ: {e}")
                     if 'result_json' in locals():
                         st.json(result_json)
 else:
-    st.info("Пожалуйста, загрузите несколько файлов для начала поиска зависимостей.")
+    st.info("Пожалуйста, загрузите один или несколько файлов для начала поиска зависимостей.")
