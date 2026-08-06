@@ -9,7 +9,7 @@ st.title("🤖 Мульти-файловый ИИ Агент: Поиск зав�
 
 # Боковая панель
 st.sidebar.success("🚀 Мультизагрузка и Анализ связей активны!")
-api_key = st.sidebar.text_input("Введите ваш Sambanova API Key (Опционально для ИИ)", type="password")
+api_key = st.sidebar.text_input("Введите ваш Sambaanova API Key (Опционально для ИИ)", type="password")
 st.sidebar.markdown("""
 **Как получить бесплатный ключ без лимитов за 30 секунд:**
 1. Зайдите на [cloud.sambanova.ai](https://sambanova.ai)
@@ -36,7 +36,7 @@ if uploaded_files:
         else:
             current_df = pd.read_excel(file)
             
-        # Очищаем колонки
+        # Очищаем колонки от скрытых пробелов
         current_df.columns = current_df.columns.str.strip()
         dataframes[file.name] = current_df
         
@@ -64,13 +64,22 @@ if uploaded_files:
     with c3:
         y_axis = st.selectbox("Выберите показатель (Ось Y):", current_columns, key="y_ax")
         
-    # Строим график по выбранному файлу
-    df_to_plot = dataframes[selected_file].copy()
-    df_to_plot[y_axis] = pd.to_numeric(df_to_plot[y_axis], errors='coerce').fillna(0)
-    df_grouped = df_to_plot.groupby(x_axis)[y_axis].sum().reset_index()
-    
-    fig = px.bar(df_grouped, x=x_axis, y=y_axis, color=x_axis, title=f"Анализ файла {selected_file}")
-    st.plotly_chart(fig, use_container_width=True)
+    # Строим график по выбранному файлу с безопасной очисткой дубликатов
+    try:
+        df_to_plot = dataframes[selected_file].copy()
+        df_to_plot[y_axis] = pd.to_numeric(df_to_plot[y_axis], errors='coerce').fillna(0)
+        
+        # Безопасная группировка без дублирования колонок
+        if x_axis == y_axis:
+            df_grouped = df_to_plot[[x_axis]].value_counts().reset_index(name="Количество")
+            fig = px.bar(df_grouped, x=x_axis, y="Количество", color=x_axis, title=f"Распределение по {x_axis}")
+        else:
+            df_grouped = df_to_plot.groupby(x_axis, as_index=False)[y_axis].sum()
+            fig = px.bar(df_grouped, x=x_axis, y=y_axis, color=x_axis, title=f"Анализ показателя {y_axis} по {x_axis} ({selected_file})")
+            
+        st.plotly_chart(fig, use_container_width=True)
+    except Exception as chart_err:
+        st.error(f"Не удалось построить экспресс-график: {chart_err}")
 
     # ИИ АНАЛИЗ ВЗАИМОСВЯЗЕЙ
     st.markdown("---")
@@ -78,7 +87,7 @@ if uploaded_files:
     
     if st.button("🚀 Найти скрытые зависимости и составить план анализа"):
         if not api_key:
-            st.warning("Пожалуйста, введите бесплатный Sambanova API Key в боковой панели, чтобы активировать аналитический мозг ИИ.")
+            st.warning("Пожалуйста, убедитесь, что ваш Sambanova API Key вставлен в боковой панели.")
         else:
             with st.spinner("ИИ сопоставляет структуры таблиц и ищет пересечения..."):
                 
