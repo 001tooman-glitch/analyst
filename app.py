@@ -1,88 +1,129 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+import requests
+import json
 
-st.set_page_config(page_title="Автономный ИИ-Аналитик", layout="wide")
-st.title("📊 Автономный Интерактивный Дашборд Аналитики")
+st.set_page_config(page_title="Мульти-ИИ Аналитик", layout="wide")
+st.title("🤖 Мульти-файловый ИИ Агент: Поиск зависимостей")
 
-st.sidebar.success("🟢 Локальный движок визуализации активен!")
-st.sidebar.info("Этот режим работает полностью автономно на вашем сервере, не зависит от сторонних ИИ и никогда не выдает ошибок лимита.")
+# Боковая панель
+st.sidebar.success("🚀 Мультизагрузка и Анализ связей активны!")
+api_key = st.sidebar.text_input("Введите ваш Sambanova API Key (Опционально для ИИ)", type="password")
+st.sidebar.markdown("""
+**Как получить бесплатный ключ без лимитов за 30 секунд:**
+1. Зайдите на [cloud.sambanova.ai](https://sambanova.ai)
+2. Нажмите **Create API Key** и скопируйте его.
+""")
 
-# Компонент для загрузки файлов Excel или CSV
-uploaded_file = st.file_uploader("Загрузите файл Excel или CSV для анализа", type=["csv", "xlsx"])
+# Компонент для загрузки НЕСКОЛЬКИХ файлов одновременно
+uploaded_files = st.file_uploader(
+    "Загрузите один или несколько файлов Excel/CSV для поиска зависимостей", 
+    type=["csv", "xlsx"], 
+    accept_multiple_files=True
+)
 
-if uploaded_file is not None:
-    # Чтение загруженных данных
-    if uploaded_file.name.endswith('.csv'):
-        df = pd.read_csv(uploaded_file)
-    else:
-        df = pd.read_excel(uploaded_file)
+dataframes = {}
+
+if uploaded_files:
+    st.subheader("📋 Загруженные таблицы:")
+    cols = st.columns(len(uploaded_files))
+    
+    for idx, file in enumerate(uploaded_files):
+        # Читаем каждый файл
+        if file.name.endswith('.csv'):
+            current_df = pd.read_csv(file)
+        else:
+            current_df = pd.read_excel(file)
+            
+        # Очищаем колонки
+        current_df.columns = current_df.columns.str.strip()
+        dataframes[file.name] = current_df
         
-    st.success("Файл успешно загружен и прочитан!")
-    
-    # Очищаем заголовки колонок от скрытых пробелов
-    df.columns = df.columns.str.strip()
-    columns_list = list(df.columns)
-    
-    # Разворачивающееся превью таблицы
-    with st.expander("📋 Посмотреть структуру данных (первые 5 строк)"):
-        st.dataframe(df.head())
-    
+        # Показываем превью каждого файла в колонках
+        with cols[idx]:
+            st.markdown(f"📄 **{file.name}**")
+            st.caption(f"Строк: {current_df.shape[0]}, Колонок: {current_df.shape[1]}")
+            with st.expander("Посмотреть структуру"):
+                st.dataframe(current_df.head(3))
+
     st.markdown("---")
-    st.subheader("⚙️ Настройка интерактивной визуализации")
+    st.subheader("⚙️ Автономный экспресс-анализ (Без ИИ)")
     
-    # Создаем удобные селекторы для пользователя в один клик
-    col1, col2, col3 = st.columns(3)
+    # Собираем все колонки из всех файлов для ручного построения графиков
+    all_files = list(dataframes.keys())
     
-    with col1:
-        x_axis = st.selectbox("🗂️ Выберите категорию (Ось X / Сегмент):", columns_list)
-    with col2:
-        y_axis = st.selectbox("🔢 Выберите показатель (Ось Y / Метрика):", columns_list)
-    with col3:
-        chart_type = st.selectbox("📈 Выберите тип графика:", ["Кольцевая диаграмма (Pie/Donut)", "Столбчатая диаграмма (Bar)", "Линейный график (Line)", "Точечный график (Scatter)"])
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        selected_file = st.selectbox("Выберите файл для графика:", all_files)
+    
+    current_columns = list(dataframes[selected_file].columns)
+    
+    with c2:
+        x_axis = st.selectbox("Выберите категорию (Ось X):", current_columns, key="x_ax")
+    with c3:
+        y_axis = st.selectbox("Выберите показатель (Ось Y):", current_columns, key="y_ax")
         
-    if x_axis and y_axis:
-        st.markdown("---")
-        st.subheader("📈 Результат анализа и визуализации:")
-        
-        with st.spinner("Локальный интерпретатор обрабатывает таблицу..."):
-            try:
-                # Создаем копию для безопасной обработки типов данных
-                df_clean = df.copy()
-                # Принудительно превращаем колонку показателей в числа, а текст заменяем на 0
-                df_clean[y_axis] = pd.to_numeric(df_clean[y_axis], errors='coerce').fillna(0)
+    # Строим график по выбранному файлу
+    df_to_plot = dataframes[selected_file].copy()
+    df_to_plot[y_axis] = pd.to_numeric(df_to_plot[y_axis], errors='coerce').fillna(0)
+    df_grouped = df_to_plot.groupby(x_axis)[y_axis].sum().reset_index()
+    
+    fig = px.bar(df_grouped, x=x_axis, y=y_axis, color=x_axis, title=f"Анализ файла {selected_file}")
+    st.plotly_chart(fig, use_container_width=True)
+
+    # ИИ АНАЛИЗ ВЗАИМОСВЯЗЕЙ
+    st.markdown("---")
+    st.subheader("🧠 Стратегический ИИ-анализ взаимосвязей между файлами")
+    
+    if st.button("🚀 Найти скрытые зависимости и составить план анализа"):
+        if not api_key:
+            st.warning("Пожалуйста, введите бесплатный Sambanova API Key в боковой панели, чтобы активировать аналитический мозг ИИ.")
+        else:
+            with st.spinner("ИИ сопоставляет структуры таблиц и ищет пересечения..."):
                 
-                # Группируем и агрегируем данные
-                df_grouped = df_clean.groupby(x_axis)[y_axis].sum().reset_index()
+                # Формируем детальное описание всех файлов для ИИ
+                meta_summary = ""
+                for name, df_item in dataframes.items():
+                    meta_summary += f"\nФайл: '{name}'\nКолонки: {list(df_item.columns)}\nТипы данных: {df_item.dtypes.to_dict()}\nПревью (первые 2 строки):\n{df_item.head(2).to_dict(orient='records')}\n"
                 
-                # Строим выбранный тип интерактивного графика Plotly
-                if "Кольцевая" in chart_type:
-                    fig = px.pie(df_grouped, names=x_axis, values=y_axis, title=f"Доля {y_axis} по категориям {x_axis}", hole=0.4)
-                elif "Столбчатая" in chart_type:
-                    fig = px.bar(df_grouped, x=x_axis, y=y_axis, color=x_axis, title=f"Распределение {y_axis} по {x_axis}")
-                elif "Линейный" in chart_type:
-                    fig = px.line(df_grouped, x=x_axis, y=y_axis, title=f"Динамика {y_axis} по {x_axis}")
-                else:
-                    fig = px.scatter(df_clean, x=x_axis, y=y_axis, title=f"Взаимосвязь {y_axis} и {x_axis}", color=x_axis)
+                prompt = f"""
+                Ты — главный дата-аналитик корпорации. Перед тобой структура нескольких загруженных бизнес-файлов:
+                {meta_summary}
                 
-                # Отображаем полностью кликабельный график на экране
-                st.plotly_chart(fig, use_container_width=True)
+                Твоя задача:
+                1. Тщательно изучить названия колонок и превью данных во ВСЕХ файлах. Найти общие ключи (например, ID, названия городов, фондов, даты, имена сотрудников), по которым эти таблицы можно объединить (JOIN).
+                2. Описать, какие критические ЗАВИСИМОСТИ и корреляции могут скрываться между данными этих файлов (например: 'В файле 1 мы видим фонды, а в файле 2 — расходы по месяцам, связав их, мы увидим...').
+                3. Предложить четкий пошаговый план дальнейших действий по анализу этих данных.
+                4. Порекомендовать, какие типы продвинутых дашбордов или графиков нужно построить на основе объединенного датасета.
                 
-                # Автоматический генератор экспресс-вывода на основе очищенных данных
-                st.subheader("💡 Краткий аналитический вывод:")
-                total_sum = df_grouped[y_axis].sum()
+                Ответь на русском языке. Оформи ответ профессионально, с красивыми заголовками, списками и жирным шрифтом.
+                """
                 
-                if total_sum > 0:
-                    max_val = df_grouped[y_axis].max()
-                    leader_row = df_grouped[df_grouped[y_axis] == max_val]
-                    leader = leader_row[x_axis].values[0] if not leader_row.empty else "Не определен"
-                    share = (max_val / total_sum) * 100
+                try:
+                    # Вызов ультра-быстрого и безлимитного API Llama 3 через Sambanova
+                    url = "https://sambanova.ai"
+                    headers = {
+                        "Authorization": f"Bearer {api_key}",
+                        "Content-Type": "application/json"
+                    }
+                    data = {
+                        "model": "Llama-3.1-8B-Instructor",
+                        "messages": [{"role": "user", "content": prompt}],
+                        "temperature": 0.1
+                    }
                     
-                    st.info(f"Анализ завершен успешно. Максимальное значение показателя **{y_axis}** зафиксировано в категории **{leader}** и составляет **{max_val:,.2f}**. На долю лидера приходится **{share:.1f}%** от общего объема по всей таблице (общая сумма: **{total_sum:,.2f}**).")
-                else:
-                    st.warning("Выбранная колонка показателей содержит только текст или нули. Пожалуйста, выберите другую числовую колонку во втором выпадающем списке.")
-                
-            except Exception as e:
-                st.error(f"Не удалось построить вывод для выбранных колонок. Ошибка: {e}")
+                    response = requests.post(url, headers=headers, json=data)
+                    result_json = response.json()
+                    
+                    ai_analysis = result_json['choices'][0]['message']['content']
+                    
+                    st.markdown("### 💡 Результаты исследования ИИ:")
+                    st.markdown(ai_analysis)
+                    
+                except Exception as e:
+                    st.error(f"Ошибка при вызове ИИ: {e}")
+                    if 'result_json' in locals():
+                        st.json(result_json)
 else:
-    st.info("Ожидание загрузки файла таблицы...")
+    st.info("Пожалуйста, загрузите несколько файлов для начала поиска зависимостей.")
