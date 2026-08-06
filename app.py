@@ -55,9 +55,9 @@ if uploaded_file is not None and api_key:
             """
             
             try:
-                # Запрос к стабильной бесплатной модели Gemini 1.5 Flash
+                # Запрос к актуальной бесплатной модели Gemini 2.5 Flash
                 response = client.models.generate_content(
-                    model='gemini-1.5-flash',
+                    model='gemini-2.5-flash',
                     contents=prompt
                 )
                 
