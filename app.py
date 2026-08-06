@@ -47,8 +47,13 @@ if uploaded_file is not None:
         
         with st.spinner("Локальный интерпретатор обрабатывает таблицу..."):
             try:
-                # Группируем и агрегируем данные, как это делал бы ИИ через код
-                df_grouped = df.groupby(x_axis)[y_axis].sum().reset_index()
+                # Создаем копию для безопасной обработки типов данных
+                df_clean = df.copy()
+                # Принудительно превращаем колонку показателей в числа, а текст заменяем на 0
+                df_clean[y_axis] = pd.to_numeric(df_clean[y_axis], errors='coerce').fillna(0)
+                
+                # Группируем и агрегируем данные
+                df_grouped = df_clean.groupby(x_axis)[y_axis].sum().reset_index()
                 
                 # Строим выбранный тип интерактивного графика Plotly
                 if "Кольцевая" in chart_type:
@@ -56,23 +61,28 @@ if uploaded_file is not None:
                 elif "Столбчатая" in chart_type:
                     fig = px.bar(df_grouped, x=x_axis, y=y_axis, color=x_axis, title=f"Распределение {y_axis} по {x_axis}")
                 elif "Линейный" in chart_type:
-                    fig = px.line(df_grouped, x=x_axis, y=y_axis, title=f"Динамика {y_col} по {x_col}")
+                    fig = px.line(df_grouped, x=x_axis, y=y_axis, title=f"Динамика {y_axis} по {x_axis}")
                 else:
-                    fig = px.scatter(df, x=x_axis, y=y_axis, title=f"Взаимосвязь {y_axis} и {x_axis}", color=x_axis)
+                    fig = px.scatter(df_clean, x=x_axis, y=y_axis, title=f"Взаимосвязь {y_axis} и {x_axis}", color=x_axis)
                 
                 # Отображаем полностью кликабельный график на экране
                 st.plotly_chart(fig, use_container_width=True)
                 
-                # Автоматический генератор экспресс-вывода на основе данных
+                # Автоматический генератор экспресс-вывода на основе очищенных данных
                 st.subheader("💡 Краткий аналитический вывод:")
-                max_val = df_grouped[y_axis].max()
-                leader = df_grouped[df_grouped[y_axis] == max_val][x_axis].values[0]
                 total_sum = df_grouped[y_axis].sum()
-                share = (max_val / total_sum) * 100
                 
-                st.info(f"Анализ завершен. Максимальное значение показателя **{y_axis}** зафиксировано в категории **{leader}** и составляет **{max_val:,.2f}**. На долю лидера приходится **{share:.1f}%** от общего объема по всей таблице.")
+                if total_sum > 0:
+                    max_val = df_grouped[y_axis].max()
+                    leader_row = df_grouped[df_grouped[y_axis] == max_val]
+                    leader = leader_row[x_axis].values[0] if not leader_row.empty else "Не определен"
+                    share = (max_val / total_sum) * 100
+                    
+                    st.info(f"Анализ завершен успешно. Максимальное значение показателя **{y_axis}** зафиксировано в категории **{leader}** и составляет **{max_val:,.2f}**. На долю лидера приходится **{share:.1f}%** от общего объема по всей таблице (общая сумма: **{total_sum:,.2f}**).")
+                else:
+                    st.warning("Выбранная колонка показателей содержит только текст или нули. Пожалуйста, выберите другую числовую колонку во втором выпадающем списке.")
                 
             except Exception as e:
-                st.error(f"Не удалось построить график для выбранных колонок. Убедитесь, что показатель содержит числа. Ошибка: {e}")
+                st.error(f"Не удалось построить вывод для выбранных колонок. Ошибка: {e}")
 else:
     st.info("Ожидание загрузки файла таблицы...")
