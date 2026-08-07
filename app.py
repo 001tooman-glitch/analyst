@@ -8,7 +8,7 @@ import re
 st.set_page_config(page_title="Универсальный ИИ-Аналитик", layout="wide")
 st.title("🚀 Полноценный ИИ Агент: Бизнес-Аналитика без ограничений")
 
-st.sidebar.success("🧠 Флагманский ИИ-движок Gemini Pro активен!")
+st.sidebar.success("🧠 Флагманский ИИ-движок Llama Pro активен!")
 st.sidebar.info("Этот агент использует полноценный искусственный интеллект для глубокого анализа данных и точного построения графиков по вашим запросам.")
 
 # Достаем ключ ИИ из безопасных настроек Streamlit Cloud
@@ -41,7 +41,7 @@ if uploaded_files:
     if combined_frames:
         try:
             main_df = pd.concat(combined_frames, ignore_index=True)
-            st.success(f"📊 База данных успешно сформирована! Объединено файлов: {len(uploaded_files)}. Всего строк: {main_df.shape}")
+            st.success(f"📊 База данных успешно сформирована! Загружено файлов: {len(uploaded_files)}. Всего строк: {main_df.shape}")
             
             with st.expander("📋 Посмотреть структуру данных (первые 5 строк)"):
                 st.dataframe(main_df.head(5))
@@ -67,10 +67,9 @@ if uploaded_files:
                 if not api_key:
                     st.error("⚠️ Ключ ИИ не найден в Secrets! Пожалуйста, добавьте его в настройках Streamlit Cloud (ключ: openrouter_key).")
                 else:
-                    with st.spinner("ИИ Gemini Pro исследует структуру таблиц и строит визуализацию..."):
+                    with st.spinner("ИИ исследует структуру таблиц и строит визуализацию..."):
                         
                         try:
-                            # Передаем ИИ структуру данных
                             sample_data = main_df.head(5).to_dict(orient='records')
                             data_context = f"Доступные колонки в таблице: {all_cols}\nЧисловые колонки: {numeric_cols}\nПример строк:\n{json.dumps(sample_data, ensure_ascii=False)}"
                         except:
@@ -85,7 +84,7 @@ if uploaded_files:
                         
                         Тщательно изучи названия колонок. Выбери из списка доступных колонок ОДНУ точную колонку для оси X и ОДНУ для оси Y, которые идеально соответствуют запросу пользователя. Прими во внимание указания осей 'ось X' и 'ось Y', если пользователь их дал.
                         
-                        Верни ответ СТРОГО в формате JSON со следующими ключами (пиши только чистый JSON без разметки markdown ```json):
+                        Верни ответ СТРОГО в формате JSON со следующими ключами (пиши только чистый JSON без разметки markdown ```json, не пиши ничего кроме этого JSON):
                         {{
                             "explanation": "Твой подробный аналитический комментарий на русском языке по результатам выполнения этой задачи.",
                             "x_axis": "Точное имя колонки из списка для оси X графика (категория/дата)",
@@ -95,14 +94,16 @@ if uploaded_files:
                         """
                         
                         try:
-                            url = "https://openrouter.ai"
+                            # Переключаемся на супер-стабильный шлюз SambaNova
+                            url = "https://sambanova.ai"
                             headers = {
                                 "Authorization": f"Bearer {api_key}",
                                 "Content-Type": "application/json"
                             }
                             data = {
-                                "model": "google/gemini-pro-1.5",
-                                "messages": [{"role": "user", "content": prompt}]
+                                "model": "Meta-Llama-3.1-70B-Instruct",
+                                "messages": [{"role": "user", "content": prompt}],
+                                "temperature": 0.1
                             }
                             
                             response = requests.post(url, headers=headers, json=data, timeout=20)
@@ -156,6 +157,9 @@ if uploaded_files:
                                 
                         except Exception as ai_err:
                             st.error(f"Ошибка парсинга ответа ИИ: {ai_err}")
+                            if 'raw_text' in locals():
+                                st.text("Сырой ответ сервера:")
+                                st.text(raw_text)
                             
         except Exception as merge_err:
             st.error(f"Не удалось объединить файлы: {merge_err}")
