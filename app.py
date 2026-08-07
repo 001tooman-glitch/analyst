@@ -6,7 +6,7 @@ import requests
 import json
 
 st.set_page_config(page_title="Enterprise ИИ-Аналитик", layout="wide")
-st.title("🚀 Enterprise ИИ-Аналитик & BI Конструктор")
+st.title("🚀 Предприятие ИИ-Аналитик и BI Конструктор")
 
 # Проверяем ключ ИИ в Secrets
 api_key = st.secrets.get("openrouter_key", "")
@@ -35,9 +35,11 @@ if uploaded_files:
             st.error(f"Ошибка чтения {file.name}: {e}")
 
     if dataframes_dict:
-        # Проверяем совместимость для создания сводного файла
-        first_file = list(dataframes_dict.keys())
-        base_cols = set(dataframes_dict[first_file].columns) - {'Источник (Файл)'}
+        # ИСПРАВЛЕНИЕ: Берем строго текстовое имя первого файла из списка
+        files_keys = list(dataframes_dict.keys())
+        first_file_name = files_keys[0]
+        
+        base_cols = set(dataframes_dict[first_file_name].columns) - {'Источник (Файл)'}
         can_merge = True
         
         for name, df_check in dataframes_dict.items():
@@ -50,7 +52,7 @@ if uploaded_files:
             main_df = pd.concat(dataframes_dict.values(), ignore_index=True)
             st.success(f"📊 Создана единая сводная база данных! Файлов: {len(uploaded_files)}. Строк: {main_df.shape}")
         else:
-            main_df = dataframes_dict[first_file]
+            main_df = dataframes_dict[first_file_name]
             st.warning("⚠️ Файлы имеют разную структуру. Сводная таблица не создана. Анализ переключен на автоматическое установление внутренних связей.")
             
         with st.expander("📋 Просмотр структуры текущих данных (первые 5 строк)"):
