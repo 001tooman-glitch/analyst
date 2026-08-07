@@ -8,16 +8,26 @@ st.set_page_config(page_title="Универсальный ИИ-Аналитик"
 st.title("🚀 Полноценный ИИ Агент: Бизнес-Аналитика без ограничений")
 
 st.sidebar.success("🧠 Гибридный аналитический движок активен!")
-st.sidebar.info("Система автоматически переключается на ручной No-Code конструктор, если внешний ИИ-сервер занят.")
+st.sidebar.info("В выпадающих списках теперь доступны абсолютно все заголовки таблицы для любых осей.")
 
+# Инициализируем количество графиков для ручного конструктора в памяти сессии
 if "manual_charts" not in st.session_state:
     st.session_state.manual_charts = 1
 
+# Достаем ключ ИИ из безопасных настроек Streamlit Cloud
 api_key = st.secrets.get("openrouter_key", "")
-uploaded_files = st.file_uploader("Загрузите файлы Excel/CSV", type=["csv", "xlsx"], accept_multiple_files=True)
+
+# Компонент для загрузки ЛЮБЫХ файлов одновременно
+uploaded_files = st.file_uploader(
+    "Загрузите один или несколько любых файлов Excel/CSV для ИИ-анализа", 
+    type=["csv", "xlsx"], 
+    accept_multiple_files=True
+)
 
 if uploaded_files:
     combined_frames = []
+    
+    # Сшиваем файлы
     for file in uploaded_files:
         try:
             current_df = pd.read_csv(file) if file.name.endswith('.csv') else pd.read_excel(file)
@@ -30,17 +40,13 @@ if uploaded_files:
     if combined_frames:
         try:
             main_df = pd.concat(combined_frames, ignore_index=True)
-            st.success(f"📊 База данных сформирована! Всего строк: {main_df.shape[0]}")
+            st.success(f"📊 База данных сформирована! Всего строк: {main_df.shape}")
             
             with st.expander("📋 Посмотреть структуру данных (первые 5 строк)"):
                 st.dataframe(main_df.head(5))
                 
+            # Важнейшее исправление: теперь список содержит абсолютно все доступные колонки
             all_cols = list(main_df.columns)
-            numeric_cols = list(main_df.select_dtypes(include=['number']).columns)
-            text_cols = [col for col in all_cols if col not in numeric_cols and col != 'Отчетный период']
-            
-            if not numeric_cols: numeric_cols = all_cols
-            if not text_cols: text_cols = all_cols
 
             st.markdown("---")
             st.subheader("🧠 Постановка персональной бизнес-задачи для ИИ")
@@ -52,14 +58,14 @@ if uploaded_files:
             if run_ai and api_key and "ВАШ_" not in api_key:
                 with st.spinner("ИИ исследует структуру таблиц..."):
                     try:
-                        prompt = f"Колонки: {all_cols}\nЧисла: {numeric_cols}\nЗапрос: {user_task}\nВыбери X и Y. Верни строго JSON без markdown: {{\"explanation\": \"текст\", \"x_axis\": \"X\", \"y_axis\": \"Y\", \"chart_type\": \"bar\"}}"
+                        prompt = f"Колонки: {all_cols}\nЗапрос: {user_task}\nВыбери X и Y из списка. Верни строго JSON без markdown: {{\"explanation\": \"текст\", \"x_axis\": \"X\", \"y_axis\": \"Y\", \"chart_type\": \"bar\"}}"
                         url = "https://sambanova.ai"
                         headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
                         data = {"model": "Meta-Llama-3.1-70B-Instructor", "messages": [{"role": "user", "content": prompt}], "temperature": 0.1}
                         
                         response = requests.post(url, headers=headers, json=data, timeout=10)
                         if response.status_code == 200:
-                            result = json.loads(response.json()['choices'][0]['message']['content'].strip().replace("```json", "").replace("```", ""))
+                            result = json.loads(response.json()['choices']['message']['content'].strip().replace("```json", "").replace("```", ""))
                             st.subheader("💡 Стратегический ИИ-анализ:")
                             st.markdown(result["explanation"])
                             
@@ -87,25 +93,28 @@ if uploaded_files:
                     with c1:
                         chart_style = st.selectbox(f"Тип диаграммы:", ["Столбчатая диаграмма (Bar Chart)", "Линейный график тренда (Line Chart)", "Кольцевая диаграмма долей (Donut Chart)", "Круговая диаграмма (Pie Chart)"], key=f"m_style_{i}")
                     with c2:
-                        x_axis = st.selectbox(f"Ось X (Заголовки):", text_cols, key=f"m_x_{i}")
+                        # Теперь здесь доступны абсолютно ВСЕ заголовки, включая ГОД
+                        x_axis = st.selectbox(f"Выберите данные для оси X (Все заголовки):", all_cols, key=f"m_x_{i}")
                     with c3:
-                        y_axis = st.selectbox(f"Ось Y (Числовые показатели):", numeric_cols, key=f"m_y_{i}")
+                        # И здесь тоже доступны абсолютно ВСЕ заголовки таблицы
+                        y_axis = st.selectbox(f"Выберите данные для оси Y (Все заголовки):", all_cols, key=f"m_y_{i}")
                     
                     try:
                         df_m = main_df.copy()
+                        # Принудительная на лету очистка числовых метрик для защиты от текстовых ошибок
                         df_m[y_axis] = pd.to_numeric(df_m[y_axis], errors='coerce').fillna(0)
                         df_g_m = df_m.groupby(x_axis, as_index=False)[y_axis].sum()
                         try: df_g_m = df_g_m.sort_values(by=x_axis)
                         except: pass
                         
-                        if "Кольцевая" in chart_style: fig_m = px.pie(df_g_m, names=x_axis, values=y_axis, hole=0.4)
-                        elif "Круговая" in chart_style: fig_m = px.pie(df_g_m, names=x_axis, values=y_axis)
-                        elif "Линейный" in chart_style: fig_m = px.line(df_g_m, x=x_axis, y=y_axis, markers=True)
-                        else: fig_m = px.bar(df_g_m, x=x_axis, y=y_axis, color=x_axis)
+                        if "Кольцевая" in chart_style: fig_m = px.pie(df_g_m, names=x_axis, values=y_axis, hole=0.4, title=f"Доли '{y_axis}' по '{x_axis}'")
+                        elif "Круговая" in chart_style: fig_m = px.pie(df_g_m, names=x_axis, values=y_axis, title=f"Структура '{y_axis}' по '{x_axis}'")
+                        elif "Линейный" in chart_style: fig_m = px.line(df_g_m, x=x_axis, y=y_axis, markers=True, title=f"Тренд изменения '{y_axis}' по '{x_axis}'")
+                        else: fig_m = px.bar(df_g_m, x=x_axis, y=y_axis, color=x_axis, title=f"Распределение '{y_axis}' по '{x_axis}'")
                         
                         st.plotly_chart(fig_m, use_container_width=True, key=f"p_manual_{i}")
                     except Exception as e:
-                        st.error(f"Ошибка графика №{i+1}: {e}")
+                        st.error(f"Ошибка построения графика №{i+1}. Убедитесь, что для оси Y выбран числовой столбец. Ошибка: {e}")
                     st.markdown("<hr style='border:1px dashed #ddd'>", unsafe_allow_html=True)
                 
                 btn_col1, btn_col2 = st.columns(2)
