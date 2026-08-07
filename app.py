@@ -2,23 +2,19 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-import json
 
 st.set_page_config(page_title="Enterprise BI Конструктор", layout="wide")
 st.title("🚀 Enterprise BI Конструктор & Аналитическая Панель")
 
-# Инициализируем переменные памяти сессии
 if "manual_charts" not in st.session_state:
     st.session_state.manual_charts = 1
 if "manual_cards" not in st.session_state:
     st.session_state.manual_cards = 1
-# ПАМЯТЬ СКВОЗНОГО ФИЛЬТРА: запоминаем кликнутую категорию и по какой колонке кликнули
 if "active_filter_val" not in st.session_state:
     st.session_state.active_filter_val = None
 if "active_filter_col" not in st.session_state:
     st.session_state.active_filter_col = None
 
-# Кэшируем чтение файлов для мгновенного отклика интерфейса
 @st.cache_data
 def load_and_merge_files(uploaded_files_list):
     frames_dict = {}
@@ -51,7 +47,6 @@ def load_and_merge_files(uploaded_files_list):
     else:
         return frames_dict[f_name], frames_dict, False
 
-# БЛОК УПРАВЛЕНИЯ ДАННЫМИ (МУЛЬТИЗАГРУЗКА И СШИВАНИЕ)
 uploaded_files = st.file_uploader(
     "Загрузите один или несколько любых файлов Excel/CSV:", 
     type=["csv", "xlsx"], 
@@ -69,22 +64,23 @@ if uploaded_files:
         if is_merged:
             st.success(f"📊 Создана единая сводная база данных! Файлов: {len(uploaded_files)}. Строк: {main_df.shape}")
         else:
-            st.warning("⚠️ Файлы имеют разную структуру. Сводная таблица не создана. Анализ переключен на первый файл.")
+            st.warning("⚠️ Файлы имеют разную структуру. Анализ переключен на первый файл.")
             
         all_cols = ["-- Выберите заголовок --"] + list(main_df.columns)
 
-        # ПРИМЕНЕНИЕ СКВОЗНОГО ФИЛЬТРА: Если пользователь кликнул на график, режем всю базу данных!
+        # ФИЛЬТРАЦИЯ БАЗЫ ДАННЫХ
         df_filtered = main_df.copy()
         if st.session_state.active_filter_val is not None and st.session_state.active_filter_col in df_filtered.columns:
+            # Принудительно приводим к строковому типу для точного сравнения
             df_filtered = df_filtered[df_filtered[st.session_state.active_filter_col].astype(str) == str(st.session_state.active_filter_val)]
             
-            # Показываем красивую интерактивную кнопку сброса фильтра сверху
-            if st.button(f"🧹 Сбросить активный фильтр: {st.session_state.active_filter_col} = {st.session_state.active_filter_val}"):
+            # ВЫВОДИМ КНОПКУ СБРОСА НА САМЫЙ ВВЕРХ ЭКРАНА
+            st.markdown("### 🧹 Управление активными фильтрами")
+            if st.button(f"❌ Сбросить фильтр: {st.session_state.active_filter_col} = {st.session_state.active_filter_val}", type="primary"):
                 st.session_state.active_filter_val = None
                 st.session_state.active_filter_col = None
                 st.rerun()
 
-        # БЛОК ENTERPRISE KPI КАРТОЧЕК (Они теперь динамически пересчитываются от кликов!)
         st.markdown("---")
         st.subheader("🎴 Панель Ключевых Показателей (KPI Карточки)")
         
@@ -106,7 +102,6 @@ if uploaded_files:
                 
                 if card_title_col != "-- Выберите заголовок --":
                     try:
-                        # Расчет идет по ИЗМЕНЕННОЙ ФИЛЬТРОМ таблице df_filtered!
                         df_card_clean = df_filtered.copy()
                         df_card_clean[card_title_col] = pd.to_numeric(df_card_clean[card_title_col], errors='coerce').fillna(0)
                         
@@ -179,7 +174,6 @@ if uploaded_files:
             
             if x_axis != "-- Выберите заголовок --" and y_axis != "-- Выберите заголовок --":
                 try:
-                    # Графики строятся по отфильтрованной базе df_filtered!
                     df_m = df_filtered.copy()
                     df_m[y_axis] = pd.to_numeric(df_m[y_axis], errors='coerce').fillna(0)
                     df_g = df_m.groupby(x_axis, as_index=False)[y_axis].sum()
@@ -256,23 +250,23 @@ if uploaded_files:
                         yaxis=dict(tickfont=dict(color=text_color, size=text_size, family=chart_font)),
                         uniformtext=dict(mode="hide", minsize=8),
                         font=dict(color=text_color, size=text_size, family=chart_font),
-                        clickmode="event+select" # Включаем режим перехвата кликов мыши в браузере
+                        clickmode="event+select"
                     )
                     
-                    # ОТОБРАЖЕНИЕ С ФУНКЦИЕЙ ОПРОСА КЛИКОВ (on_select="rerun")
                     event_data = st.plotly_chart(fig, use_container_width=True, key=f"plotly_manual_{i}", on_select="rerun")
                     
-                    # Логика перехвата: если пользователь нажал на столбец или сектор
+                    # ИСПРАВЛЕННАЯ СМАРТ-ЛОГИКА: Теперь перехватывает клики с ЛЮБЫХ типов графиков (включая Водопад и Воронку)
                     if event_data and "selection" in event_data and "points" in event_data["selection"] and len(event_data["selection"]["points"]) > 0:
-                        clicked_point = event_data["selection"]["points"][0]
+                        pt = event_data["selection"]["points"][0]
                         
-                        # Записываем кликнутое значение в глобальную память сессии
-                        if "x" in clicked_point:
-                            st.session_state.active_filter_val = clicked_point["x"]
-                            st.session_state.active_filter_col = x_axis
-                            st.rerun()
-                        elif "label" in clicked_point:
-                            st.session_state.active_filter_val = clicked_point["label"]
+                        val = None
+                        if "x" in pt: val = pt["x"]
+                        elif "label" in pt: val = pt["label"]
+                        elif "y" in pt and "Funnel" in chart_style: val = pt["y"]
+                        
+                        # Если кликнули на реальный сектор, а не на служебный столбец "ИТОГО"
+                        if val is not None and str(val) != "ИТОГО":
+                            st.session_state.active_filter_val = val
                             st.session_state.active_filter_col = x_axis
                             st.rerun()
                             
