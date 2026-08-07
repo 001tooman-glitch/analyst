@@ -14,13 +14,12 @@ api_key = st.secrets.get("openrouter_key", "")
 if "manual_charts" not in st.session_state:
     st.session_state.manual_charts = 1
 
-# ОПТИМИЗАЦИЯ: Кэшируем чтение файлов для мгновенного отклика интерфейса
+# Кэшируем чтение файлов для мгновенного отклика интерфейса
 @st.cache_data
 def load_and_merge_files(uploaded_files_list):
     frames_dict = {}
     for f in uploaded_files_list:
         try:
-            # Читаем файл в зависимости от формата
             df_i = pd.read_csv(f) if f.name.endswith('.csv') else pd.read_excel(f)
             df_i.columns = df_i.columns.str.strip()
             df_i['Источник (Файл)'] = f.name
@@ -60,19 +59,17 @@ dataframes_dict = {}
 is_merged = False
 
 if uploaded_files:
-    # Вызываем кэшированную функцию загрузки
     main_df, dataframes_dict, is_merged = load_and_merge_files(uploaded_files)
 
     if not main_df.empty:
         if is_merged:
-            st.success(f"📊 Создана единая сводная база данных! Файлов: {len(uploaded_files)}. Строк: {main_df.shape[0]}")
+            st.success(f"📊 Создана единая сводная база данных! Файлов: {len(uploaded_files)}. Строк: {main_df.shape}")
         else:
             st.warning("⚠️ Файлы имеют разную структуру. Анализ переключен на автоматическое установление внутренних связей.")
             
         with st.expander("📋 Просмотр структуры текущих данных (первые 5 строк)"):
             st.dataframe(main_df.head(5))
             
-        # Добавляем пустую строку в список заголовков для дефолтного пустого состояния
         all_cols = ["-- Выберите заголовок --"] + list(main_df.columns)
 
         # 2. ВЗАИМОДЕЙСТВИЕ С ИИ КАК С АНАЛИТИКОМ ДАННЫХ
@@ -88,7 +85,7 @@ if uploaded_files:
                 with st.spinner("ИИ исследует ваши датасеты..."):
                     meta_summary = ""
                     for name, df_i in dataframes_dict.items():
-                        meta_summary += f"Файл: {name}, Колонки: {list(df_i.columns)}, Строк: {df_i.shape[0]}\nПревью:\n{json.dumps(df_i.head(2).to_dict(orient='records'), ensure_ascii=False)}\n"
+                        meta_summary += f"Файл: {name}, Колонки: {list(df_i.columns)}, Строк: {df_i.shape}\nПревью:\n{json.dumps(df_i.head(2).to_dict(orient='records'), ensure_ascii=False)}\n"
                     
                     prompt = f"Ты — Главный дата-аналитик. Изучи данные:\n{meta_summary}\nЗадача от пользователя:\n{user_task}\nВыдай подробный профессиональный разбор со списками и жирным шрифтом на русском языке."
                     
@@ -124,33 +121,40 @@ if uploaded_files:
             with c4:
                 chart_color = st.color_picker(f"Цвет элементов:", "#1f77b4", key=f"color_{i}")
                 
-            with st.expander("🎨 Настройки отображения значений, подписей и ориентации текстов"):
+            # Продвинутые настройки отображения значений, шрифтов, вращения и ориентации
+            with st.expander("🎨 Настройки подписей, цветов, углов поворота и ориентации осей"):
                 cc1, cc2, cc3, cc4 = st.columns(4)
                 with cc1:
                     show_labels = st.checkbox("Отображать значения на графике", value=True, key=f"show_lbl_{i}")
+                    # Динамическая кнопка горизонтального режима для столбчатого графика
+                    bar_orientation = "h" if "Bar" in chart_style and st.checkbox("Горизонтальные столбцы", value=False, key=f"bar_or_{i}") else "v"
                 with cc2:
                     label_pos = st.selectbox("Расположение надписи:", ["auto", "inside", "outside"], key=f"pos_{i}")
                 with cc3:
-                    label_orient = st.selectbox("Ориентация надписи:", ["Горизонтально (0°)", "Вертикально (90°)", "Наклонно (45°)"], key=f"orient_{i}")
+                    label_orient = st.selectbox("Ориентация надписи на осях:", ["Горизонтально (0°)", "Вертикально (90°)", "Наклонно (45°)"], key=f"orient_{i}")
                 with cc4:
                     text_color = st.color_picker(f"Цвет подписей и значений:", "#333333", key=f"t_color_{i}")
+                
+                # Добавляем ползунок вращения только для кольцевой диаграммы
+                pie_rotation = 0
+                if "Donut" in chart_style:
+                    pie_rotation = st.slider("🔄 Поворот кольцевой диаграммы (в градусах):", 0, 360, 0, step=15, key=f"rot_{i}")
             
-            # Проверяем, выбрал ли пользователь реальные заголовки осей
             if x_axis != "-- Выберите заголовок --" and y_axis != "-- Выберите заголовок --":
                 try:
                     df_m = main_df.copy()
                     df_m[y_axis] = pd.to_numeric(df_m[y_axis], errors='coerce').fillna(0)
                     df_g = df_m.groupby(x_axis, as_index=False)[y_axis].sum()
-                    try: df_g = df_g.sort_values(by=y_axis, ascending=False)
+                    try: df_g = df_g.sort_values(by=y_axis, ascending=True if bar_orientation == "h" else False)
                     except: pass
                     
                     angle = 0 if "Горизонтально" in label_orient else (90 if "Вертикально" in label_orient else 45)
                     fig = go.Figure()
                     
-                    # СТРОИМ ВОДОПАД (С ИТОГОВЫМ СТОЛБЦОМ СУММЫ)
+                    # СТРОИМ ВОДОПАД
                     if "Waterfall" in chart_style:
                         x_data = list(df_g[x_axis].astype(str)) + ["ИТОГО"]
-                        y_data = list(df_g[y_axis]) + [0] # Для итогового столбца Plotly сам посчитает высоту на основе меры
+                        y_data = list(df_g[y_axis]) + [0]
                         measure_data = ["relative"] * len(df_g[y_axis]) + ["total"]
                         text_data = [f"{v:,.0f}" for v in df_g[y_axis]] + [f"{df_g[y_axis].sum():,.0f}"]
                         
@@ -174,11 +178,11 @@ if uploaded_files:
                         ))
                         fig.update_layout(title=f"Воронка распределения '{y_axis}' по '{x_axis}'")
                     
-                    # КОЛЬЦЕВАЯ
+                    # КРУГОВАЯ / КОЛЬЦЕВАЯ С ФУНКЦИЕЙ ВРАЩЕНИЯ
                     elif "Donut" in chart_style:
                         fig.add_trace(go.Pie(
                             labels=df_g[x_axis], values=df_g[y_axis], 
-                            hole=0.4, textinfo="label+value" if show_labels else "none"
+                            hole=0.4, rotation=pie_rotation, textinfo="label+value" if show_labels else "none"
                         ))
                         fig.update_layout(title=f"Доли распределения '{y_axis}'")
                     
@@ -191,17 +195,25 @@ if uploaded_files:
                         ))
                         fig.update_layout(title=f"Тренд показателя '{y_axis}' по '{x_axis}'")
                     
-                    # СТОЛБЧАТАЯ
+                    # СТОЛБЧАТАЯ С УПРАВЛЕНИЕМ ВЕРТИКАЛЬНОЙ/ГОРИЗОНТАЛЬНОЙ ОРИЕНТАЦИЕЙ
                     else:
-                        fig.add_trace(go.Bar(
-                            x=df_g[x_axis].astype(str), y=df_g[y_axis],
-                            text=df_g[y_axis].map(lambda x: f"{x:,.0f}") if show_labels else None,
-                            textposition=label_pos, marker_color=chart_color
-                        ))
+                        if bar_orientation == "h":
+                            # Переворачиваем x и y для горизонтального отображения
+                            fig.add_trace(go.Bar(
+                                y=df_g[x_axis].astype(str), x=df_g[y_axis],
+                                text=df_g[y_axis].map(lambda x: f"{x:,.0f}") if show_labels else None,
+                                textposition=label_pos, orientation="h", marker_color=chart_color
+                            ))
+                        else:
+                            fig.add_trace(go.Bar(
+                                x=df_g[x_axis].astype(str), y=df_g[y_axis],
+                                text=df_g[y_axis].map(lambda x: f"{x:,.0f}") if show_labels else None,
+                                textposition=label_pos, orientation="v", marker_color=chart_color
+                            ))
                         fig.update_layout(title=f"Распределение показателя '{y_axis}' по '{x_axis}'")
                     
                     fig.update_layout(
-                        xaxis=dict(tickangle=angle, tickfont=dict(color=text_color)),
+                        xaxis=dict(tickangle=angle if bar_orientation == "v" else 0, tickfont=dict(color=text_color)),
                         yaxis=dict(tickfont=dict(color=text_color)),
                         uniformtext=dict(mode="hide", minsize=8),
                         font=dict(color=text_color)
@@ -211,7 +223,6 @@ if uploaded_files:
                 except Exception as e:
                     st.error(f"Ошибка визуализации №{i+1}: {e}")
             else:
-                # Если оси не выбраны — показываем аккуратное информационное окно вместо пустого дефолтного графика
                 st.info(f"ℹ️ Пожалуйста, выберите категорию (Ось X) и числовой показатель (Ось Y) выше для построения Диаграммы № {i+1}")
                 
             st.markdown("<hr style='border:1px dashed #ddd'>", unsafe_allow_html=True)
