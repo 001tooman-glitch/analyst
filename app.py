@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-import requests
 import json
 import re
 
@@ -58,14 +57,13 @@ if uploaded_files:
             
             # Поле для ЛЮБОЙ кастомной задачи
             user_task = st.text_area(
-                "Опишите вашу задачу ИИ (например: 'построй столбчатый график по годам по затратам (Итого)'):",
-                value="построй столбчатый график по годам по затратам (Итого)"
+                "Опишите вашу задачу ИИ (например: 'построй столбчатую диаграмму по Итого по годам'):",
+                value="построй столбчатую диаграмму по Итого по годам"
             )
             
             if st.button("🚀 Запустить ИИ-Анализ и построить графики"):
                 with st.spinner("ИИ глубоко исследует структуру таблиц и строит визуализацию..."):
                     
-                    # Запуск продвинутого локального интерпретатора задач
                     try:
                         res_df = main_df.copy()
                         task_lower = user_task.lower()
@@ -73,24 +71,22 @@ if uploaded_files:
                         # 1. Смарт-поиск колонки для Оси X (Категория / Время)
                         x_col = text_cols[0] if text_cols else all_cols[0]
                         
-                        # Ищем упоминания конкретных колонок в запросе пользователя
+                        # Ищем явные упоминания названий колонок в запросе пользователя
                         for col in all_cols:
                             if col.lower() in task_lower:
-                                # Если пользователь упомянул колонку (например 'по годам' и есть колонка 'ГОД')
-                                if any(w in col.lower() for w in ['год', 'year', 'дата', 'date', 'период', 'цм', 'пфм', 'цех']):
+                                if any(w in col.lower() for w in ['год', 'year', 'дата', 'date', 'период', 'цм', 'пфм', 'цех', 'наименование']):
                                     x_col = col
                                     break
                         
-                        # Если не нашли по специфике, ищем любое точное совпадение имени колонки на оси X
+                        # Если не нашли по ключевым словам времени, берем первую подошедшую по тексту
                         for col in all_cols:
                             if col.lower() in task_lower and col != x_col:
                                 if col not in numeric_cols or any(w in col.lower() for w in ['год', 'year']):
                                     x_col = col
                         
-                        # 2. Смарт-поиск числовой метрики для Оси Y (Затраты, Суммы)
+                        # 2. Смарт-поиск числовой метрики для Оси Y (Затраты, Итого, Суммы)
                         y_col = numeric_cols[0] if numeric_cols else all_cols[0]
                         
-                        # Ищем совпадения синонимов денег/затрат в запросе
                         found_y = False
                         for col in numeric_cols:
                             if col.lower() in task_lower:
@@ -99,15 +95,22 @@ if uploaded_files:
                                 break
                                 
                         if not found_y:
-                            # Если точного совпадения имени нет, ищем по смысловым маркерам в запросе
-                            for col in numeric_cols:
+                            # Ищем по смысловым синонимам денег
+                            for col in all_cols:
                                 if any(w in col.lower() for w in ['затрат', 'стоимост', 'сумм', 'цена', 'объем', 'итого', 'total']):
                                     if any(w in task_lower for w in ['затрат', 'стоимост', 'сумм', 'цена', 'объем', 'итого']):
                                         y_col = col
                                         break
 
-                        # Принудительно очищаем выбранную числовую метрику от текстовых артефактов
+                        # Принудительно очищаем выбранную числовую метрику от текста
                         res_df[y_col] = pd.to_numeric(res_df[y_col], errors='coerce').fillna(0)
+                        
+                        # Защита от совпадения колонок (если x и y совпали, меняем x на категорию)
+                        if x_col == y_col:
+                            for col in all_cols:
+                                if col != y_col and any(w in col.lower() for w in ['год', 'year', 'дата', 'период', 'цех', 'пфм']):
+                                    x_col = col
+                                    break
                         
                         # Определяем тип графика по ключевым словам запроса
                         chart_type = 'bar'
@@ -116,13 +119,16 @@ if uploaded_files:
                         elif any(w in task_lower for w in ['кругов', 'кольцев', 'доля', 'pie', 'donut']):
                             chart_type = 'pie'
 
-                        # Производим агрегацию данных
-                        df_grouped = res_df.groupby(x_col)[y_col].sum().reset_index()
+                        # Безопасная агрегация без дублирования индексов
+                        df_grouped = res_df.groupby(x_col, as_index=False)[y_col].sum()
                         
-                        # Сортируем по оси X (особенно актуально для годов, чтобы они шли по порядку 2018 -> 2025)
-                        df_grouped = df_grouped.sort_values(by=x_col)
+                        # Сортируем по оси X хронологически
+                        try:
+                            df_grouped = df_grouped.sort_values(by=x_col)
+                        except:
+                            pass
                         
-                        st.success(f"💡 Автономный модуль успешно распознал параметры: Категория = **{x_col}**, Показатель = **{y_col}**")
+                        st.success(f"💡 Адаптивный модуль успешно распознал параметры: Категория (Ось X) = **{x_col}**, Показатель (Ось Y) = **{y_col}**")
                         
                         # Строим интерактивный график Plotly под задачу
                         st.markdown("---")
@@ -137,11 +143,11 @@ if uploaded_files:
                             
                         st.plotly_chart(fig, use_container_width=True)
                         
-                        # Добавляем краткий аналитический блок с расчетами под графиком
+                        # Аналитический блок под графиком
                         st.subheader("📋 Экспресс-вывод по результатам фильтрации:")
                         total_sum = df_grouped[y_col].sum()
                         max_val = df_grouped[y_col].max()
-                        leader = df_grouped[df_grouped[y_col] == max_val][x_col].values[0]
+                        leader = df_grouped[df_grouped[y_col] == max_val][x_col].values[0] if not df_grouped.empty else "Не определен"
                         
                         st.info(f"Общий объем по показателю **{y_col}** составил **{total_sum:,.2f}**. Абсолютным лидером является период/категория **{leader}** с объемом **{max_val:,.2f}**, что составляет **{(max_val/total_sum)*100:.1f}%** от всей сводной таблицы.")
                         
