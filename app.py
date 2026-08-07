@@ -14,6 +14,40 @@ api_key = st.secrets.get("openrouter_key", "")
 if "manual_charts" not in st.session_state:
     st.session_state.manual_charts = 1
 
+# ОПТИМИЗАЦИЯ: Кэшируем чтение файлов для мгновенного отклика интерфейса
+@st.cache_data
+def load_and_merge_files(uploaded_files_list):
+    frames_dict = {}
+    for f in uploaded_files_list:
+        try:
+            # Читаем файл в зависимости от формата
+            df_i = pd.read_csv(f) if f.name.endswith('.csv') else pd.read_excel(f)
+            df_i.columns = df_i.columns.str.strip()
+            df_i['Источник (Файл)'] = f.name
+            frames_dict[f.name] = df_i
+        except:
+            pass
+            
+    if not frames_dict:
+        return pd.DataFrame(), {}, False
+        
+    f_keys = list(frames_dict.keys())
+    f_name = f_keys[0]
+    b_cols = set(frames_dict[f_name].columns) - {'Источник (Файл)'}
+    merge_possible = True
+    
+    for n, df_c in frames_dict.items():
+        c_cols = set(df_c.columns) - {'Источник (Файл)'}
+        if not b_cols.intersection(c_cols):
+            merge_possible = False
+            break
+            
+    if merge_possible:
+        merged_df = pd.concat(frames_dict.values(), ignore_index=True)
+        return merged_df, frames_dict, True
+    else:
+        return frames_dict[f_name], frames_dict, False
+
 # 1. БЛОК УПРАВЛЕНИЯ ДАННЫМИ (МУЛЬТИЗАГРУЗКА И СШИВАНИЕ)
 uploaded_files = st.file_uploader(
     "Загрузите один или несколько любых файлов Excel/CSV:", 
@@ -23,42 +57,23 @@ uploaded_files = st.file_uploader(
 
 main_df = pd.DataFrame()
 dataframes_dict = {}
+is_merged = False
 
 if uploaded_files:
-    for file in uploaded_files:
-        try:
-            df_item = pd.read_csv(file) if file.name.endswith('.csv') else pd.read_excel(file)
-            df_item.columns = df_item.columns.str.strip()
-            df_item['Источник (Файл)'] = file.name
-            dataframes_dict[file.name] = df_item
-        except Exception as e:
-            st.error(f"Ошибка чтения {file.name}: {e}")
+    # Вызываем кэшированную функцию загрузки
+    main_df, dataframes_dict, is_merged = load_and_merge_files(uploaded_files)
 
-    if dataframes_dict:
-        # ИСПРАВЛЕНИЕ: Берем строго текстовое имя первого файла из списка
-        files_keys = list(dataframes_dict.keys())
-        first_file_name = files_keys[0]
-        
-        base_cols = set(dataframes_dict[first_file_name].columns) - {'Источник (Файл)'}
-        can_merge = True
-        
-        for name, df_check in dataframes_dict.items():
-            check_cols = set(df_check.columns) - {'Источник (Файл)'}
-            if not base_cols.intersection(check_cols):
-                can_merge = False
-                break
-        
-        if can_merge:
-            main_df = pd.concat(dataframes_dict.values(), ignore_index=True)
-            st.success(f"📊 Создана единая сводная база данных! Файлов: {len(uploaded_files)}. Строк: {main_df.shape}")
+    if not main_df.empty:
+        if is_merged:
+            st.success(f"📊 Создана единая сводная база данных! Файлов: {len(uploaded_files)}. Строк: {main_df.shape[0]}")
         else:
-            main_df = dataframes_dict[first_file_name]
-            st.warning("⚠️ Файлы имеют разную структуру. Сводная таблица не создана. Анализ переключен на автоматическое установление внутренних связей.")
+            st.warning("⚠️ Файлы имеют разную структуру. Анализ переключен на автоматическое установление внутренних связей.")
             
         with st.expander("📋 Просмотр структуры текущих данных (первые 5 строк)"):
             st.dataframe(main_df.head(5))
             
-        all_cols = list(main_df.columns)
+        # Добавляем пустую строку в список заголовков для дефолтного пустого состояния
+        all_cols = ["-- Выберите заголовок --"] + list(main_df.columns)
 
         # 2. ВЗАИМОДЕЙСТВИЕ С ИИ КАК С АНАЛИТИКОМ ДАННЫХ
         st.markdown("---")
@@ -73,7 +88,7 @@ if uploaded_files:
                 with st.spinner("ИИ исследует ваши датасеты..."):
                     meta_summary = ""
                     for name, df_i in dataframes_dict.items():
-                        meta_summary += f"Файл: {name}, Колонки: {list(df_i.columns)}, Строк: {df_i.shape}\nПревью:\n{json.dumps(df_i.head(2).to_dict(orient='records'), ensure_ascii=False)}\n"
+                        meta_summary += f"Файл: {name}, Колонки: {list(df_i.columns)}, Строк: {df_i.shape[0]}\nПревью:\n{json.dumps(df_i.head(2).to_dict(orient='records'), ensure_ascii=False)}\n"
                     
                     prompt = f"Ты — Главный дата-аналитик. Изучи данные:\n{meta_summary}\nЗадача от пользователя:\n{user_task}\nВыдай подробный профессиональный разбор со списками и жирным шрифтом на русском языке."
                     
@@ -96,7 +111,6 @@ if uploaded_files:
         for i in range(st.session_state.manual_charts):
             st.markdown(f"##### 📊 Настройка диаграммы № {i+1}")
             
-            # Настройка структуры осей и типов
             c1, c2, c3, c4 = st.columns(4)
             with c1:
                 chart_style = st.selectbox(f"Тип диаграммы:", [
@@ -110,7 +124,6 @@ if uploaded_files:
             with c4:
                 chart_color = st.color_picker(f"Цвет элементов:", "#1f77b4", key=f"color_{i}")
                 
-            # Продвинутые настройки отображения значений и шрифтов
             with st.expander("🎨 Настройки отображения значений, подписей и ориентации текстов"):
                 cc1, cc2, cc3, cc4 = st.columns(4)
                 with cc1:
@@ -122,82 +135,87 @@ if uploaded_files:
                 with cc4:
                     text_color = st.color_picker(f"Цвет подписей и значений:", "#333333", key=f"t_color_{i}")
             
-            # Математическая обработка данных
-            try:
-                df_m = main_df.copy()
-                df_m[y_axis] = pd.to_numeric(df_m[y_axis], errors='coerce').fillna(0)
-                df_g = df_m.groupby(x_axis, as_index=False)[y_axis].sum()
-                try: df_g = df_g.sort_values(by=y_axis, ascending=False)
-                except: pass
+            # Проверяем, выбрал ли пользователь реальные заголовки осей
+            if x_axis != "-- Выберите заголовок --" and y_axis != "-- Выберите заголовок --":
+                try:
+                    df_m = main_df.copy()
+                    df_m[y_axis] = pd.to_numeric(df_m[y_axis], errors='coerce').fillna(0)
+                    df_g = df_m.groupby(x_axis, as_index=False)[y_axis].sum()
+                    try: df_g = df_g.sort_values(by=y_axis, ascending=False)
+                    except: pass
+                    
+                    angle = 0 if "Горизонтально" in label_orient else (90 if "Вертикально" in label_orient else 45)
+                    fig = go.Figure()
+                    
+                    # СТРОИМ ВОДОПАД (С ИТОГОВЫМ СТОЛБЦОМ СУММЫ)
+                    if "Waterfall" in chart_style:
+                        x_data = list(df_g[x_axis].astype(str)) + ["ИТОГО"]
+                        y_data = list(df_g[y_axis]) + [0] # Для итогового столбца Plotly сам посчитает высоту на основе меры
+                        measure_data = ["relative"] * len(df_g[y_axis]) + ["total"]
+                        text_data = [f"{v:,.0f}" for v in df_g[y_axis]] + [f"{df_g[y_axis].sum():,.0f}"]
+                        
+                        fig.add_trace(go.Waterfall(
+                            x=x_data, y=y_data, measure=measure_data,
+                            textposition=label_pos if show_labels else "none",
+                            text=text_data if show_labels else None,
+                            increasing={"marker": {"color": chart_color}},
+                            decreasing={"marker": {"color": "red"}},
+                            totals={"marker": {"color": "green"}}
+                        ))
+                        fig.update_layout(title=f"Водопад изменений '{y_axis}' по '{x_axis}'")
+                    
+                    # СТРОИМ ВОРОНКУ
+                    elif "Funnel" in chart_style:
+                        fig.add_trace(go.Funnel(
+                            y=df_g[x_axis].astype(str), x=df_g[y_axis],
+                            textposition=label_pos if show_labels else "none",
+                            textinfo="value+percent initial" if show_labels else "none",
+                            marker={"color": chart_color}
+                        ))
+                        fig.update_layout(title=f"Воронка распределения '{y_axis}' по '{x_axis}'")
+                    
+                    # КОЛЬЦЕВАЯ
+                    elif "Donut" in chart_style:
+                        fig.add_trace(go.Pie(
+                            labels=df_g[x_axis], values=df_g[y_axis], 
+                            hole=0.4, textinfo="label+value" if show_labels else "none"
+                        ))
+                        fig.update_layout(title=f"Доли распределения '{y_axis}'")
+                    
+                    # ЛИНЕЙНЫЙ
+                    elif "Line" in chart_style:
+                        fig.add_trace(go.Scatter(
+                            x=df_g[x_axis], y=df_g[y_axis], mode="lines+markers+text" if show_labels else "lines+markers",
+                            text=df_g[y_axis].map(lambda x: f"{x:,.0f}") if show_labels else None,
+                            textposition=f"{label_pos} top", line=dict(color=chart_color)
+                        ))
+                        fig.update_layout(title=f"Тренд показателя '{y_axis}' по '{x_axis}'")
+                    
+                    # СТОЛБЧАТАЯ
+                    else:
+                        fig.add_trace(go.Bar(
+                            x=df_g[x_axis].astype(str), y=df_g[y_axis],
+                            text=df_g[y_axis].map(lambda x: f"{x:,.0f}") if show_labels else None,
+                            textposition=label_pos, marker_color=chart_color
+                        ))
+                        fig.update_layout(title=f"Распределение показателя '{y_axis}' по '{x_axis}'")
+                    
+                    fig.update_layout(
+                        xaxis=dict(tickangle=angle, tickfont=dict(color=text_color)),
+                        yaxis=dict(tickfont=dict(color=text_color)),
+                        uniformtext=dict(mode="hide", minsize=8),
+                        font=dict(color=text_color)
+                    )
+                    st.plotly_chart(fig, use_container_width=True, key=f"plotly_manual_{i}")
+                    
+                except Exception as e:
+                    st.error(f"Ошибка визуализации №{i+1}: {e}")
+            else:
+                # Если оси не выбраны — показываем аккуратное информационное окно вместо пустого дефолтного графика
+                st.info(f"ℹ️ Пожалуйста, выберите категорию (Ось X) и числовой показатель (Ось Y) выше для построения Диаграммы № {i+1}")
                 
-                # Задаем параметры углов наклона подписей
-                angle = 0 if "Горизонтально" in label_orient else (90 if "Вертикально" in label_orient else 45)
-                
-                fig = go.Figure()
-                
-                # СТРОИМ ВОДОПАД (WATERFALL)
-                if "Waterfall" in chart_style:
-                    fig.add_trace(go.Waterfall(
-                        x=df_g[x_axis].astype(str), y=df_g[y_axis],
-                        textposition=label_pos if show_labels else "none",
-                        text=df_g[y_axis].map(lambda x: f"{x:,.0f}"),
-                        increasing={"marker": {"color": chart_color}},
-                        decreasing={"marker": {"color": "red"}},
-                        totals={"marker": {"color": "green"}}
-                    ))
-                    fig.update_layout(title=f"Водопад изменений '{y_axis}' по '{x_axis}'")
-                
-                # СТРОИМ ВОРОНКУ (FUNNEL)
-                elif "Funnel" in chart_style:
-                    fig.add_trace(go.Funnel(
-                        y=df_g[x_axis].astype(str), x=df_g[y_axis],
-                        textposition=label_pos if show_labels else "none",
-                        textinfo="value+percent initial" if show_labels else "none",
-                        marker={"color": chart_color}
-                    ))
-                    fig.update_layout(title=f"Воронка распределения '{y_axis}' по '{x_axis}'")
-                
-                # КРУГОВАЯ / КОЛЬЦЕВАЯ
-                elif "Donut" in chart_style:
-                    fig.add_trace(go.Pie(
-                        labels=df_g[x_axis], values=df_g[y_axis], 
-                        hole=0.4, textinfo="label+value" if show_labels else "none"
-                    ))
-                    fig.update_layout(title=f"Доли распределения '{y_axis}'")
-                
-                # ЛИНЕЙНЫЙ ГРАФИК
-                elif "Line" in chart_style:
-                    fig.add_trace(go.Scatter(
-                        x=df_g[x_axis], y=df_g[y_axis], mode="lines+markers+text" if show_labels else "lines+markers",
-                        text=df_g[y_axis].map(lambda x: f"{x:,.0f}") if show_labels else None,
-                        textposition=f"{label_pos} top", line=dict(color=chart_color)
-                    ))
-                    fig.update_layout(title=f"Тренд показателя '{y_axis}' по '{x_axis}'")
-                
-                # СТОЛБЧАТАЯ ДИАГРАММА
-                else:
-                    fig.add_trace(go.Bar(
-                        x=df_g[x_axis].astype(str), y=df_g[y_axis],
-                        text=df_g[y_axis].map(lambda x: f"{x:,.0f}") if show_labels else None,
-                        textposition=label_pos, marker_color=chart_color
-                    ))
-                    fig.update_layout(title=f"Распределение показателя '{y_axis}' по '{x_axis}'")
-                
-                # Применяем кастомные настройки стилей
-                fig.update_layout(
-                    xaxis=dict(tickangle=angle, tickfont=dict(color=text_color)),
-                    yaxis=dict(tickfont=dict(color=text_color)),
-                    uniformtext=dict(mode="hide", minsize=8),
-                    font=dict(color=text_color)
-                )
-                
-                st.plotly_chart(fig, use_container_width=True, key=f"plotly_manual_{i}")
-                
-            except Exception as e:
-                st.error(f"Ошибка визуализации №{i+1}: {e}")
             st.markdown("<hr style='border:1px dashed #ddd'>", unsafe_allow_html=True)
             
-        # Управление блоками графиков
         btn_col1, btn_col2 = st.columns(2)
         with btn_col1:
             if st.button("➕ Добавить график/диаграмму"):
