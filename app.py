@@ -2,17 +2,21 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-import requests
 import json
 
 st.set_page_config(page_title="Enterprise BI Конструктор", layout="wide")
 st.title("🚀 Enterprise BI Конструктор & Аналитическая Панель")
 
-# Инициализируем списки количества графиков и карточек в памяти сессии
+# Инициализируем переменные памяти сессии
 if "manual_charts" not in st.session_state:
     st.session_state.manual_charts = 1
 if "manual_cards" not in st.session_state:
     st.session_state.manual_cards = 1
+# ПАМЯТЬ СКВОЗНОГО ФИЛЬТРА: запоминаем кликнутую категорию и по какой колонке кликнули
+if "active_filter_val" not in st.session_state:
+    st.session_state.active_filter_val = None
+if "active_filter_col" not in st.session_state:
+    st.session_state.active_filter_col = None
 
 # Кэшируем чтение файлов для мгновенного отклика интерфейса
 @st.cache_data
@@ -47,7 +51,7 @@ def load_and_merge_files(uploaded_files_list):
     else:
         return frames_dict[f_name], frames_dict, False
 
-# 1. БЛОК УПРАВЛЕНИЯ ДАННЫМИ (МУЛЬТИЗАГРУЗКА И СШИВАНИЕ)
+# БЛОК УПРАВЛЕНИЯ ДАННЫМИ (МУЛЬТИЗАГРУЗКА И СШИВАНИЕ)
 uploaded_files = st.file_uploader(
     "Загрузите один или несколько любых файлов Excel/CSV:", 
     type=["csv", "xlsx"], 
@@ -69,35 +73,41 @@ if uploaded_files:
             
         all_cols = ["-- Выберите заголовок --"] + list(main_df.columns)
 
-        # 2. БЛОК ENTERPRISE KPI КАРТОЧЕК
+        # ПРИМЕНЕНИЕ СКВОЗНОГО ФИЛЬТРА: Если пользователь кликнул на график, режем всю базу данных!
+        df_filtered = main_df.copy()
+        if st.session_state.active_filter_val is not None and st.session_state.active_filter_col in df_filtered.columns:
+            df_filtered = df_filtered[df_filtered[st.session_state.active_filter_col].astype(str) == str(st.session_state.active_filter_val)]
+            
+            # Показываем красивую интерактивную кнопку сброса фильтра сверху
+            if st.button(f"🧹 Сбросить активный фильтр: {st.session_state.active_filter_col} = {st.session_state.active_filter_val}"):
+                st.session_state.active_filter_val = None
+                st.session_state.active_filter_col = None
+                st.rerun()
+
+        # БЛОК ENTERPRISE KPI КАРТОЧЕК (Они теперь динамически пересчитываются от кликов!)
         st.markdown("---")
         st.subheader("🎴 Панель Ключевых Показателей (KPI Карточки)")
         
-        # Отображаем карточки в гибкой сетке
         card_cols = st.columns(st.session_state.manual_cards)
         
         for j in range(st.session_state.manual_cards):
             with card_cols[j % len(card_cols)]:
                 st.markdown(f"**📌 Настройка карточки № {j+1}**")
-                
-                # Выбор столбца и математической функции
                 card_title_col = st.selectbox(f"Заголовок для карточки:", all_cols, key=f"card_t_col_{j}")
                 calc_mode = st.selectbox(f"Функция расчета:", ["Сумма (SUM)", "Среднее значение (AVERAGE)"], key=f"card_calc_{j}")
                 
-                # Дизайнерские No-Code настройки стилей карточки
                 with st.expander(f"🎨 Стили карточки № {j+1}"):
                     bg_color = st.color_picker(f"Цвет фона карточки:", "#f8f9fa", key=f"card_bg_{j}")
                     lbl_color = st.color_picker(f"Цвет текста названия:", "#6c757d", key=f"card_lbl_c_{j}")
                     val_color = st.color_picker(f"Цвет значения:", "#1f77b4", key=f"card_val_c_{j}")
-                    
                     font_style = st.selectbox(f"Шрифт карточки:", ["Arial", "Helvetica", "Times New Roman", "Courier New", "Verdana"], key=f"card_font_{j}")
                     lbl_size = st.slider(f"Размер названия (px):", 12, 30, 16, key=f"card_lbl_sz_{j}")
                     val_size = st.slider(f"Размер значения (px):", 20, 60, 36, key=f"card_val_sz_{j}")
                 
-                # Расчет и отрисовка HTML/CSS карточки на экране
                 if card_title_col != "-- Выберите заголовок --":
                     try:
-                        df_card_clean = main_df.copy()
+                        # Расчет идет по ИЗМЕНЕННОЙ ФИЛЬТРОМ таблице df_filtered!
+                        df_card_clean = df_filtered.copy()
                         df_card_clean[card_title_col] = pd.to_numeric(df_card_clean[card_title_col], errors='coerce').fillna(0)
                         
                         if "Сумма" in calc_mode:
@@ -107,19 +117,17 @@ if uploaded_files:
                             card_value = df_card_clean[card_title_col].mean()
                             mode_text = "(Среднее)"
                             
-                        # Генерируем красивую кастомную карточку через HTML-стили
                         st.markdown(f"""
                         <div style="background-color:{bg_color}; border:1px solid #dee2e6; border-radius:10px; padding:20px; text-align:center; margin-bottom:15px; font-family:{font_style}, sans-serif;">
                             <div style="color:{lbl_color}; font-size:{lbl_size}px; font-weight:500; margin-bottom:10px;">{card_title_col} {mode_text}</div>
                             <div style="color:{val_color}; font-size:{val_size}px; font-weight:bold;">{card_value:,.2f}</div>
                         </div>
                         """, unsafe_allow_html=True)
-                    except Exception as card_e:
-                        st.error(f"Ошибка расчета карточки: {card_e}")
+                    except:
+                        st.error("Ошибка расчета")
                 else:
                     st.caption("ℹ️ Выберите заголовок выше")
                     
-        # Кнопки управления количеством карточек показателей
         c_btn1, c_btn2 = st.columns(2)
         with c_btn1:
             if st.button("➕ Добавить карточку показателя"):
@@ -150,13 +158,11 @@ if uploaded_files:
             with c4:
                 chart_color = st.color_picker(f"Цвет элементов:", "#1f77b4", key=f"color_{i}")
                 
-            # Расширенные настройки отображения значений, шрифтов, выносок и ориентации текстов
             with st.expander("🎨 Полные настройки подписей, цветов, шрифтов и выносок текста"):
                 cc1, cc2, cc3, cc4 = st.columns(4)
                 with cc1:
                     show_labels = st.checkbox("Отображать значения на графике", value=True, key=f"show_lbl_{i}")
                     bar_orientation = "h" if "Bar" in chart_style and st.checkbox("Горизонтальные столбцы", value=False, key=f"bar_or_{i}") else "v"
-                    # Текст на выносках для кольцевых диаграмм (labels+percent или labels+value с указателями)
                     pie_labels_mode = st.selectbox("Стиль подписи кольца:", ["Текст на выноске (outside)", "Внутри секторов (inside)"], key=f"pie_mode_{i}") if "Donut" in chart_style else "auto"
                 with cc2:
                     label_pos = st.selectbox("Расположение надписи:", ["auto", "inside", "outside"], key=f"pos_{i}")
@@ -173,7 +179,8 @@ if uploaded_files:
             
             if x_axis != "-- Выберите заголовок --" and y_axis != "-- Выберите заголовок --":
                 try:
-                    df_m = main_df.copy()
+                    # Графики строятся по отфильтрованной базе df_filtered!
+                    df_m = df_filtered.copy()
                     df_m[y_axis] = pd.to_numeric(df_m[y_axis], errors='coerce').fillna(0)
                     df_g = df_m.groupby(x_axis, as_index=False)[y_axis].sum()
                     try: df_g = df_g.sort_values(by=y_axis, ascending=True if bar_orientation == "h" else False)
@@ -209,13 +216,12 @@ if uploaded_files:
                         ))
                         fig.update_layout(title=f"Воронка распределения '{y_axis}' по '{x_axis}'")
                     
-                    # КРУГОВАЯ / КОЛЬЦЕВАЯ С ВЫНОСКАМИ ТЕКСТА
+                    # КОЛЬЦЕВАЯ
                     elif "Donut" in chart_style:
                         p_pos = "outside" if "выноске" in pie_labels_mode else "inside"
                         fig.add_trace(go.Pie(
                             labels=df_g[x_axis], values=df_g[y_axis], 
-                            hole=0.4, rotation=pie_rotation, 
-                            textposition=p_pos,
+                            hole=0.4, rotation=pie_rotation, textposition=p_pos,
                             textinfo="label+value" if show_labels else "none"
                         ))
                         fig.update_layout(title=f"Доли распределения '{y_axis}'")
@@ -245,15 +251,31 @@ if uploaded_files:
                             ))
                         fig.update_layout(title=f"Распределение показателя '{y_axis}' по '{x_axis}'")
                     
-                    # Глобальное применение выбранных пользователем Enterprise-шрифтов, размеров и цветов текста
                     fig.update_layout(
                         xaxis=dict(tickangle=angle if bar_orientation == "v" else 0, tickfont=dict(color=text_color, size=text_size, family=chart_font)),
                         yaxis=dict(tickfont=dict(color=text_color, size=text_size, family=chart_font)),
                         uniformtext=dict(mode="hide", minsize=8),
-                        font=dict(color=text_color, size=text_size, family=chart_font)
+                        font=dict(color=text_color, size=text_size, family=chart_font),
+                        clickmode="event+select" # Включаем режим перехвата кликов мыши в браузере
                     )
-                    st.plotly_chart(fig, use_container_width=True, key=f"plotly_manual_{i}")
                     
+                    # ОТОБРАЖЕНИЕ С ФУНКЦИЕЙ ОПРОСА КЛИКОВ (on_select="rerun")
+                    event_data = st.plotly_chart(fig, use_container_width=True, key=f"plotly_manual_{i}", on_select="rerun")
+                    
+                    # Логика перехвата: если пользователь нажал на столбец или сектор
+                    if event_data and "selection" in event_data and "points" in event_data["selection"] and len(event_data["selection"]["points"]) > 0:
+                        clicked_point = event_data["selection"]["points"][0]
+                        
+                        # Записываем кликнутое значение в глобальную память сессии
+                        if "x" in clicked_point:
+                            st.session_state.active_filter_val = clicked_point["x"]
+                            st.session_state.active_filter_col = x_axis
+                            st.rerun()
+                        elif "label" in clicked_point:
+                            st.session_state.active_filter_val = clicked_point["label"]
+                            st.session_state.active_filter_col = x_axis
+                            st.rerun()
+                            
                 except Exception as e:
                     st.error(f"Ошибка визуализации №{i+1}: {e}")
             else:
