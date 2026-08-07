@@ -31,7 +31,9 @@ def load_and_merge_files(uploaded_files_list):
         return pd.DataFrame(), {}, False
         
     f_keys = list(frames_dict.keys())
-    f_name = f_keys[0]
+    f_name = f_keys[0] if f_keys else ""
+    if not f_name: return pd.DataFrame(), {}, False
+    
     b_cols = set(frames_dict[f_name].columns) - {'Источник (Файл)'}
     merge_possible = True
     
@@ -68,18 +70,19 @@ if uploaded_files:
             
         all_cols = ["-- Выберите заголовок --"] + list(main_df.columns)
 
-        # ФИЛЬТРАЦИЯ БАЗЫ ДАННЫХ
-        df_filtered = main_df.copy()
-        if st.session_state.active_filter_val is not None and st.session_state.active_filter_col in df_filtered.columns:
-            # Принудительно приводим к строковому типу для точного сравнения
-            df_filtered = df_filtered[df_filtered[st.session_state.active_filter_col].astype(str) == str(st.session_state.active_filter_val)]
-            
-            # ВЫВОДИМ КНОПКУ СБРОСА НА САМЫЙ ВВЕРХ ЭКРАНА
-            st.markdown("### 🧹 Управление активными фильтрами")
-            if st.button(f"❌ Сбросить фильтр: {st.session_state.active_filter_col} = {st.session_state.active_filter_val}", type="primary"):
+        # ДОБАВЛЯЕМ КНОПКУ СБРОСА В БОКОВУЮ ПАНЕЛЬ
+        st.sidebar.success("🟢 Интерактивный BI-движок активен!")
+        if st.session_state.active_filter_val is not None:
+            st.sidebar.markdown(f"**Активный фильтр:**\n`{st.session_state.active_filter_col}` = `{st.session_state.active_filter_val}`")
+            if st.sidebar.button("🧹 Очистить все фильтры", type="primary"):
                 st.session_state.active_filter_val = None
                 st.session_state.active_filter_col = None
                 st.rerun()
+
+        # ФИЛЬТРАЦИЯ БАЗЫ ДАННЫХ
+        df_filtered = main_df.copy()
+        if st.session_state.active_filter_val is not None and st.session_state.active_filter_col in df_filtered.columns:
+            df_filtered = df_filtered[df_filtered[st.session_state.active_filter_col].astype(str) == str(st.session_state.active_filter_val)]
 
         st.markdown("---")
         st.subheader("🎴 Панель Ключевых Показателей (KPI Карточки)")
@@ -255,16 +258,16 @@ if uploaded_files:
                     
                     event_data = st.plotly_chart(fig, use_container_width=True, key=f"plotly_manual_{i}", on_select="rerun")
                     
-                    # ИСПРАВЛЕННАЯ СМАРТ-ЛОГИКА: Теперь перехватывает клики с ЛЮБЫХ типов графиков (включая Водопад и Воронку)
+                    # УНИВЕРСАЛЬНЫЙ СКАНИРОВЩИК ТОЧЕК КЛИКА КАТЕГОРИЙ
                     if event_data and "selection" in event_data and "points" in event_data["selection"] and len(event_data["selection"]["points"]) > 0:
-                        pt = event_data["selection"]["points"][0]
+                        pt_list = event_data["selection"]["points"]
+                        pt = pt_list[0] # Берем самую первую выбранную точку
                         
                         val = None
                         if "x" in pt: val = pt["x"]
                         elif "label" in pt: val = pt["label"]
-                        elif "y" in pt and "Funnel" in chart_style: val = pt["y"]
+                        elif "y" in pt: val = pt["y"]
                         
-                        # Если кликнули на реальный сектор, а не на служебный столбец "ИТОГО"
                         if val is not None and str(val) != "ИТОГО":
                             st.session_state.active_filter_val = val
                             st.session_state.active_filter_col = x_axis
