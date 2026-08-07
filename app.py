@@ -1,14 +1,18 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+import requests
 import json
 import re
 
 st.set_page_config(page_title="Универсальный ИИ-Аналитик", layout="wide")
 st.title("🚀 Полноценный ИИ Агент: Бизнес-Аналитика без ограничений")
 
-st.sidebar.success("🟢 Продвинутый ИИ-движок Gemini Pro активен!")
-st.sidebar.info("Этот агент использует искусственный интеллект для глубокого анализа любых типов данных по вашим персональным задачам.")
+st.sidebar.success("🧠 Флагманский ИИ-движок Gemini Pro активен!")
+st.sidebar.info("Этот агент использует полноценный искусственный интеллект для глубокого анализа данных и точного построения графиков по вашим запросам.")
+
+# Достаем ключ ИИ из безопасных настроек Streamlit Cloud
+api_key = st.secrets.get("openrouter_key", "")
 
 # Компонент для загрузки ЛЮБЫХ файлов одновременно
 uploaded_files = st.file_uploader(
@@ -28,7 +32,6 @@ if uploaded_files:
             else:
                 current_df = pd.read_excel(file)
             current_df.columns = current_df.columns.str.strip()
-            # Метка источника
             period_name = file.name.replace(".xlsx", "").replace(".xls", "").replace(".csv", "")
             current_df['Отчетный период'] = period_name
             combined_frames.append(current_df)
@@ -38,7 +41,7 @@ if uploaded_files:
     if combined_frames:
         try:
             main_df = pd.concat(combined_frames, ignore_index=True)
-            st.success(f"📊 База данных успешно сформирована! Загружено файлов: {len(uploaded_files)}. Всего строк: {main_df.shape}")
+            st.success(f"📊 База данных успешно сформирована! Объединено файлов: {len(uploaded_files)}. Всего строк: {main_df.shape}")
             
             with st.expander("📋 Посмотреть структуру данных (первые 5 строк)"):
                 st.dataframe(main_df.head(5))
@@ -55,106 +58,105 @@ if uploaded_files:
             st.markdown("---")
             st.subheader("🧠 Постановка персональной бизнес-задачи для ИИ")
             
-            # Поле для ЛЮБОЙ кастомной задачи
             user_task = st.text_area(
-                "Опишите вашу задачу ИИ (например: 'построй столбчатую диаграмму по Итого по годам'):",
-                value="построй столбчатую диаграмму по Итого по годам"
+                "Опишите вашу задачу ИИ (например: 'построй столбчатую диаграмму по оси Х - год, по оси Y - значения Итого'):",
+                value="построй столбчатую диаграмму по оси Х - год, по оси Y - значения Итого"
             )
             
             if st.button("🚀 Запустить ИИ-Анализ и построить графики"):
-                with st.spinner("ИИ глубоко исследует структуру таблиц и строит визуализацию..."):
-                    
-                    try:
-                        res_df = main_df.copy()
-                        task_lower = user_task.lower()
+                if not api_key:
+                    st.error("⚠️ Ключ ИИ не найден в Secrets! Пожалуйста, добавьте его в настройках Streamlit Cloud (ключ: openrouter_key).")
+                else:
+                    with st.spinner("ИИ Gemini Pro исследует структуру таблиц и строит визуализацию..."):
                         
-                        # 1. Смарт-поиск колонки для Оси X (Категория / Время)
-                        x_col = text_cols[0] if text_cols else all_cols[0]
-                        
-                        # Ищем явные упоминания названий колонок в запросе пользователя
-                        for col in all_cols:
-                            if col.lower() in task_lower:
-                                if any(w in col.lower() for w in ['год', 'year', 'дата', 'date', 'период', 'цм', 'пфм', 'цех', 'наименование']):
-                                    x_col = col
-                                    break
-                        
-                        # Если не нашли по ключевым словам времени, берем первую подошедшую по тексту
-                        for col in all_cols:
-                            if col.lower() in task_lower and col != x_col:
-                                if col not in numeric_cols or any(w in col.lower() for w in ['год', 'year']):
-                                    x_col = col
-                        
-                        # 2. Смарт-поиск числовой метрики для Оси Y (Затраты, Итого, Суммы)
-                        y_col = numeric_cols[0] if numeric_cols else all_cols[0]
-                        
-                        found_y = False
-                        for col in numeric_cols:
-                            if col.lower() in task_lower:
-                                y_col = col
-                                found_y = True
-                                break
-                                
-                        if not found_y:
-                            # Ищем по смысловым синонимам денег
-                            for col in all_cols:
-                                if any(w in col.lower() for w in ['затрат', 'стоимост', 'сумм', 'цена', 'объем', 'итого', 'total']):
-                                    if any(w in task_lower for w in ['затрат', 'стоимост', 'сумм', 'цена', 'объем', 'итого']):
-                                        y_col = col
-                                        break
-
-                        # Принудительно очищаем выбранную числовую метрику от текста
-                        res_df[y_col] = pd.to_numeric(res_df[y_col], errors='coerce').fillna(0)
-                        
-                        # Защита от совпадения колонок (если x и y совпали, меняем x на категорию)
-                        if x_col == y_col:
-                            for col in all_cols:
-                                if col != y_col and any(w in col.lower() for w in ['год', 'year', 'дата', 'период', 'цех', 'пфм']):
-                                    x_col = col
-                                    break
-                        
-                        # Определяем тип графика по ключевым словам запроса
-                        chart_type = 'bar'
-                        if any(w in task_lower for w in ['линейн', 'тренд', 'line']):
-                            chart_type = 'line'
-                        elif any(w in task_lower for w in ['кругов', 'кольцев', 'доля', 'pie', 'donut']):
-                            chart_type = 'pie'
-
-                        # Безопасная агрегация без дублирования индексов
-                        df_grouped = res_df.groupby(x_col, as_index=False)[y_col].sum()
-                        
-                        # Сортируем по оси X хронологически
                         try:
-                            df_grouped = df_grouped.sort_values(by=x_col)
+                            # Передаем ИИ структуру данных
+                            sample_data = main_df.head(5).to_dict(orient='records')
+                            data_context = f"Доступные колонки в таблице: {all_cols}\nЧисловые колонки: {numeric_cols}\nПример строк:\n{json.dumps(sample_data, ensure_ascii=False)}"
                         except:
-                            pass
+                            data_context = f"Доступные колонки: {all_cols}"
                         
-                        st.success(f"💡 Адаптивный модуль успешно распознал параметры: Категория (Ось X) = **{x_col}**, Показатель (Ось Y) = **{y_col}**")
+                        prompt = f"""
+                        Ты — ведущий эксперт по бизнес-аналитике уровня Microsoft Copilot.
+                        Перед тобой массив данных со следующей структурой:
+                        {data_context}
                         
-                        # Строим интерактивный график Plotly под задачу
-                        st.markdown("---")
-                        st.subheader("📈 Автоматически сгенерированный график под вашу задачу:")
+                        Пользователь поставил тебе задачу: "{user_task}"
                         
-                        if chart_type == 'bar':
-                            fig = px.bar(df_grouped, x=x_col, y=y_col, color=x_col, title=f"Анализ распределения показателя '{y_col}' по '{x_col}'")
-                        elif chart_type == 'line':
-                            fig = px.line(df_grouped, x=x_col, y=y_col, markers=True, title=f"Сквозная динамика изменения '{y_col}' по '{x_col}'")
-                        else:
-                            fig = px.pie(df_grouped, names=x_col, values=y_col, title=f"Доли распределения показателя '{y_col}'", hole=0.4)
+                        Тщательно изучи названия колонок. Выбери из списка доступных колонок ОДНУ точную колонку для оси X и ОДНУ для оси Y, которые идеально соответствуют запросу пользователя. Прими во внимание указания осей 'ось X' и 'ось Y', если пользователь их дал.
+                        
+                        Верни ответ СТРОГО в формате JSON со следующими ключами (пиши только чистый JSON без разметки markdown ```json):
+                        {{
+                            "explanation": "Твой подробный аналитический комментарий на русском языке по результатам выполнения этой задачи.",
+                            "x_axis": "Точное имя колонки из списка для оси X графика (категория/дата)",
+                            "y_axis": "Точное имя колонки из списка для оси Y графика (числовой показатель/метрика)",
+                            "chart_type": "Тип визуализации: 'bar' (столбчатый), 'line' (линейный тренд) или 'pie' (доли)"
+                        }}
+                        """
+                        
+                        try:
+                            url = "https://openrouter.ai"
+                            headers = {
+                                "Authorization": f"Bearer {api_key}",
+                                "Content-Type": "application/json"
+                            }
+                            data = {
+                                "model": "google/gemini-pro-1.5",
+                                "messages": [{"role": "user", "content": prompt}]
+                            }
                             
-                        st.plotly_chart(fig, use_container_width=True)
-                        
-                        # Аналитический блок под графиком
-                        st.subheader("📋 Экспресс-вывод по результатам фильтрации:")
-                        total_sum = df_grouped[y_col].sum()
-                        max_val = df_grouped[y_col].max()
-                        leader = df_grouped[df_grouped[y_col] == max_val][x_col].values[0] if not df_grouped.empty else "Не определен"
-                        
-                        st.info(f"Общий объем по показателю **{y_col}** составил **{total_sum:,.2f}**. Абсолютным лидером является период/категория **{leader}** с объемом **{max_val:,.2f}**, что составляет **{(max_val/total_sum)*100:.1f}%** от всей сводной таблицы.")
-                        
-                    except Exception as err:
-                        st.error(f"Не удалось автоматически построить график под эту формулировку задачи. Ошибка: {err}")
-                        st.info("Пожалуйста, убедитесь, что в запросе правильно указаны названия столбцов, или воспользуйтесь верхним блоком быстрой ручной визуализации.")
-                        
+                            response = requests.post(url, headers=headers, json=data, timeout=20)
+                            
+                            if response.status_code == 200:
+                                result_json = response.json()
+                                raw_text = result_json['choices']['message']['content'].strip()
+                                
+                                if raw_text.startswith("```json"):
+                                    raw_text = raw_text[7:]
+                                if raw_text.endswith("```"):
+                                    raw_text = raw_text[:-3]
+                                raw_text = raw_text.strip()
+                                
+                                result = json.loads(raw_text)
+                                
+                                # Вывод полноценного отчета ИИ
+                                st.subheader("💡 Результаты стратегического ИИ-анализа:")
+                                st.markdown(result["explanation"])
+                                
+                                # Построение графика по решению ИИ
+                                if result["chart_type"] and result["x_axis"] and result["y_axis"]:
+                                    st.markdown("---")
+                                    st.subheader("📈 Автоматически сгенерированный ИИ-график под задачу:")
+                                    
+                                    x_col = result["x_axis"].strip()
+                                    y_col = result["y_axis"].strip()
+                                    
+                                    if x_col in main_df.columns and y_col in main_df.columns:
+                                        df_chart = main_df.copy()
+                                        df_chart[y_col] = pd.to_numeric(df_chart[y_col], errors='coerce').fillna(0)
+                                        df_grouped = df_chart.groupby(x_col, as_index=False)[y_col].sum()
+                                        
+                                        try:
+                                            df_grouped = df_grouped.sort_values(by=x_col)
+                                        except:
+                                            pass
+                                            
+                                        if result["chart_type"] == 'bar':
+                                            fig = px.bar(df_grouped, x=x_col, y=y_col, color=x_col, title=f"Анализ распределения показателя {y_col} по {x_col}")
+                                        elif result["chart_type"] == 'line':
+                                            fig = px.line(df_grouped, x=x_col, y=y_col, markers=True, title=f"Динамика тренда {y_col} по {x_col}")
+                                        else:
+                                            fig = px.pie(df_grouped, names=x_col, values=y_col, title=f"Доли распределения {y_col}", hole=0.4)
+                                            
+                                        st.plotly_chart(fig, use_container_width=True)
+                                    else:
+                                        st.error(f"ИИ выбрал колонки {x_col} или {y_col}, но они не найдены в файле.")
+                            else:
+                                st.error("ИИ-сервер временно перегружен. Перезапустите запрос.")
+                                
+                        except Exception as ai_err:
+                            st.error(f"Ошибка парсинга ответа ИИ: {ai_err}")
+                            
         except Exception as merge_err:
             st.error(f"Не удалось объединить файлы: {merge_err}")
 else:
