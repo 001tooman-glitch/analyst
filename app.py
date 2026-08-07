@@ -5,14 +5,14 @@ import plotly.graph_objects as go
 import requests
 import json
 
-st.set_page_config(page_title="Enterprise ИИ-Аналитик", layout="wide")
-st.title("🚀 Предприятие ИИ-Аналитик и BI Конструктор")
+st.set_page_config(page_title="Enterprise BI Конструктор", layout="wide")
+st.title("🚀 Enterprise BI Конструктор & Аналитическая Панель")
 
-# Проверяем ключ ИИ в Secrets
-api_key = st.secrets.get("openrouter_key", "")
-
+# Инициализируем списки количества графиков и карточек в памяти сессии
 if "manual_charts" not in st.session_state:
     st.session_state.manual_charts = 1
+if "manual_cards" not in st.session_state:
+    st.session_state.manual_cards = 1
 
 # Кэшируем чтение файлов для мгновенного отклика интерфейса
 @st.cache_data
@@ -65,42 +65,71 @@ if uploaded_files:
         if is_merged:
             st.success(f"📊 Создана единая сводная база данных! Файлов: {len(uploaded_files)}. Строк: {main_df.shape}")
         else:
-            st.warning("⚠️ Файлы имеют разную структуру. Анализ переключен на автоматическое установление внутренних связей.")
-            
-        with st.expander("📋 Просмотр структуры текущих данных (первые 5 строк)"):
-            st.dataframe(main_df.head(5))
+            st.warning("⚠️ Файлы имеют разную структуру. Сводная таблица не создана. Анализ переключен на первый файл.")
             
         all_cols = ["-- Выберите заголовок --"] + list(main_df.columns)
 
-        # 2. ВЗАИМОДЕЙСТВИЕ С ИИ КАК С АНАЛИТИКОМ ДАННЫХ
+        # 2. БЛОК ENTERPRISE KPI КАРТОЧЕК
         st.markdown("---")
-        st.subheader("🧠 Чат со стратегическим ИИ-Аналитиком данных")
-        user_task = st.text_area("Задайте вопрос ИИ (анализ зависимостей, поиск аномалий, аудит трендов):", 
-                                value="Проанализируй взаимосвязи в данных, выяви скрытые аномалии и предложи план оптимизации.")
+        st.subheader("🎴 Панель Ключевых Показателей (KPI Карточки)")
         
-        if st.button("🚀 Запустить ИИ-Консультацию"):
-            if not api_key:
-                st.error("Ключ ИИ не найден в Secrets!")
-            else:
-                with st.spinner("ИИ исследует ваши датасеты..."):
-                    meta_summary = ""
-                    for name, df_i in dataframes_dict.items():
-                        meta_summary += f"Файл: {name}, Колонки: {list(df_i.columns)}, Строк: {df_i.shape}\nПревью:\n{json.dumps(df_i.head(2).to_dict(orient='records'), ensure_ascii=False)}\n"
+        # Отображаем карточки в гибкой сетке
+        card_cols = st.columns(st.session_state.manual_cards)
+        
+        for j in range(st.session_state.manual_cards):
+            with card_cols[j % len(card_cols)]:
+                st.markdown(f"**📌 Настройка карточки № {j+1}**")
+                
+                # Выбор столбца и математической функции
+                card_title_col = st.selectbox(f"Заголовок для карточки:", all_cols, key=f"card_t_col_{j}")
+                calc_mode = st.selectbox(f"Функция расчета:", ["Сумма (SUM)", "Среднее значение (AVERAGE)"], key=f"card_calc_{j}")
+                
+                # Дизайнерские No-Code настройки стилей карточки
+                with st.expander(f"🎨 Стили карточки № {j+1}"):
+                    bg_color = st.color_picker(f"Цвет фона карточки:", "#f8f9fa", key=f"card_bg_{j}")
+                    lbl_color = st.color_picker(f"Цвет текста названия:", "#6c757d", key=f"card_lbl_c_{j}")
+                    val_color = st.color_picker(f"Цвет значения:", "#1f77b4", key=f"card_val_c_{j}")
                     
-                    prompt = f"Ты — Главный дата-аналитик. Изучи данные:\n{meta_summary}\nЗадача от пользователя:\n{user_task}\nВыдай подробный профессиональный разбор со списками и жирным шрифтом на русском языке."
-                    
+                    font_style = st.selectbox(f"Шрифт карточки:", ["Arial", "Helvetica", "Times New Roman", "Courier New", "Verdana"], key=f"card_font_{j}")
+                    lbl_size = st.slider(f"Размер названия (px):", 12, 30, 16, key=f"card_lbl_sz_{j}")
+                    val_size = st.slider(f"Размер значения (px):", 20, 60, 36, key=f"card_val_sz_{j}")
+                
+                # Расчет и отрисовка HTML/CSS карточки на экране
+                if card_title_col != "-- Выберите заголовок --":
                     try:
-                        url = "https://sambanova.ai"
-                        headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
-                        data = {"model": "Meta-Llama-3.1-70B-Instructor", "messages": [{"role": "user", "content": prompt}], "temperature": 0.2}
-                        response = requests.post(url, headers=headers, json=data, timeout=20)
-                        if response.status_code == 200:
-                            st.markdown("### 💡 Аналитический отчет ИИ:")
-                            st.markdown(response.json()['choices']['message']['content'])
+                        df_card_clean = main_df.copy()
+                        df_card_clean[card_title_col] = pd.to_numeric(df_card_clean[card_title_col], errors='coerce').fillna(0)
+                        
+                        if "Сумма" in calc_mode:
+                            card_value = df_card_clean[card_title_col].sum()
+                            mode_text = "(Сумма)"
                         else:
-                            st.error(f"ИИ-сервер временно занят (Код {response.status_code}). Воспользуйтесь конструктором ниже.")
-                    except Exception as e:
-                        st.error(f"Не удалось получить ответ ИИ: {e}")
+                            card_value = df_card_clean[card_title_col].mean()
+                            mode_text = "(Среднее)"
+                            
+                        # Генерируем красивую кастомную карточку через HTML-стили
+                        st.markdown(f"""
+                        <div style="background-color:{bg_color}; border:1px solid #dee2e6; border-radius:10px; padding:20px; text-align:center; margin-bottom:15px; font-family:{font_style}, sans-serif;">
+                            <div style="color:{lbl_color}; font-size:{lbl_size}px; font-weight:500; margin-bottom:10px;">{card_title_col} {mode_text}</div>
+                            <div style="color:{val_color}; font-size:{val_size}px; font-weight:bold;">{card_value:,.2f}</div>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    except Exception as card_e:
+                        st.error(f"Ошибка расчета карточки: {card_e}")
+                else:
+                    st.caption("ℹ️ Выберите заголовок выше")
+                    
+        # Кнопки управления количеством карточек показателей
+        c_btn1, c_btn2 = st.columns(2)
+        with c_btn1:
+            if st.button("➕ Добавить карточку показателя"):
+                st.session_state.manual_cards += 1
+                st.rerun()
+        with c_btn2:
+            if st.session_state.manual_cards > 1:
+                if st.button("🗑️ Удалить последнюю карточку"):
+                    st.session_state.manual_cards -= 1
+                    st.rerun()
         # 3. ENTERPRISE NO-CODE КОНСТРУКТОР ДИАГРАММ
         st.markdown("---")
         st.subheader("🛠️ Enterprise No-Code Конструктор Панелей")
@@ -121,21 +150,23 @@ if uploaded_files:
             with c4:
                 chart_color = st.color_picker(f"Цвет элементов:", "#1f77b4", key=f"color_{i}")
                 
-            # Продвинутые настройки отображения значений, шрифтов, вращения и ориентации
-            with st.expander("🎨 Настройки подписей, цветов, углов поворота и ориентации осей"):
+            # Расширенные настройки отображения значений, шрифтов, выносок и ориентации текстов
+            with st.expander("🎨 Полные настройки подписей, цветов, шрифтов и выносок текста"):
                 cc1, cc2, cc3, cc4 = st.columns(4)
                 with cc1:
                     show_labels = st.checkbox("Отображать значения на графике", value=True, key=f"show_lbl_{i}")
-                    # Динамическая кнопка горизонтального режима для столбчатого графика
                     bar_orientation = "h" if "Bar" in chart_style and st.checkbox("Горизонтальные столбцы", value=False, key=f"bar_or_{i}") else "v"
+                    # Текст на выносках для кольцевых диаграмм (labels+percent или labels+value с указателями)
+                    pie_labels_mode = st.selectbox("Стиль подписи кольца:", ["Текст на выноске (outside)", "Внутри секторов (inside)"], key=f"pie_mode_{i}") if "Donut" in chart_style else "auto"
                 with cc2:
                     label_pos = st.selectbox("Расположение надписи:", ["auto", "inside", "outside"], key=f"pos_{i}")
+                    chart_font = st.selectbox(f"Шрифт диаграммы:", ["Arial", "Helvetica", "Times New Roman", "Courier New", "Verdana"], key=f"ch_font_{i}")
                 with cc3:
-                    label_orient = st.selectbox("Ориентация надписи на осях:", ["Горизонтально (0°)", "Вертикально (90°)", "Наклонно (45°)"], key=f"orient_{i}")
+                    label_orient = st.selectbox("Ориентация подписи осей:", ["Горизонтально (0°)", "Вертикально (90°)", "Наклонно (45°)"], key=f"orient_{i}")
+                    text_size = st.slider(f"Размер шрифта диаграммы (px):", 10, 24, 12, key=f"txt_sz_{i}")
                 with cc4:
                     text_color = st.color_picker(f"Цвет подписей и значений:", "#333333", key=f"t_color_{i}")
                 
-                # Добавляем ползунок вращения только для кольцевой диаграммы
                 pie_rotation = 0
                 if "Donut" in chart_style:
                     pie_rotation = st.slider("🔄 Поворот кольцевой диаграммы (в градусах):", 0, 360, 0, step=15, key=f"rot_{i}")
@@ -178,11 +209,14 @@ if uploaded_files:
                         ))
                         fig.update_layout(title=f"Воронка распределения '{y_axis}' по '{x_axis}'")
                     
-                    # КРУГОВАЯ / КОЛЬЦЕВАЯ С ФУНКЦИЕЙ ВРАЩЕНИЯ
+                    # КРУГОВАЯ / КОЛЬЦЕВАЯ С ВЫНОСКАМИ ТЕКСТА
                     elif "Donut" in chart_style:
+                        p_pos = "outside" if "выноске" in pie_labels_mode else "inside"
                         fig.add_trace(go.Pie(
                             labels=df_g[x_axis], values=df_g[y_axis], 
-                            hole=0.4, rotation=pie_rotation, textinfo="label+value" if show_labels else "none"
+                            hole=0.4, rotation=pie_rotation, 
+                            textposition=p_pos,
+                            textinfo="label+value" if show_labels else "none"
                         ))
                         fig.update_layout(title=f"Доли распределения '{y_axis}'")
                     
@@ -195,10 +229,9 @@ if uploaded_files:
                         ))
                         fig.update_layout(title=f"Тренд показателя '{y_axis}' по '{x_axis}'")
                     
-                    # СТОЛБЧАТАЯ С УПРАВЛЕНИЕМ ВЕРТИКАЛЬНОЙ/ГОРИЗОНТАЛЬНОЙ ОРИЕНТАЦИЕЙ
+                    # СТОЛБЧАТАЯ
                     else:
                         if bar_orientation == "h":
-                            # Переворачиваем x и y для горизонтального отображения
                             fig.add_trace(go.Bar(
                                 y=df_g[x_axis].astype(str), x=df_g[y_axis],
                                 text=df_g[y_axis].map(lambda x: f"{x:,.0f}") if show_labels else None,
@@ -212,11 +245,12 @@ if uploaded_files:
                             ))
                         fig.update_layout(title=f"Распределение показателя '{y_axis}' по '{x_axis}'")
                     
+                    # Глобальное применение выбранных пользователем Enterprise-шрифтов, размеров и цветов текста
                     fig.update_layout(
-                        xaxis=dict(tickangle=angle if bar_orientation == "v" else 0, tickfont=dict(color=text_color)),
-                        yaxis=dict(tickfont=dict(color=text_color)),
+                        xaxis=dict(tickangle=angle if bar_orientation == "v" else 0, tickfont=dict(color=text_color, size=text_size, family=chart_font)),
+                        yaxis=dict(tickfont=dict(color=text_color, size=text_size, family=chart_font)),
                         uniformtext=dict(mode="hide", minsize=8),
-                        font=dict(color=text_color)
+                        font=dict(color=text_color, size=text_size, family=chart_font)
                     )
                     st.plotly_chart(fig, use_container_width=True, key=f"plotly_manual_{i}")
                     
