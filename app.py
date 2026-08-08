@@ -31,7 +31,7 @@ def load_and_merge_files(uploaded_files_list):
         return pd.DataFrame(), {}, False
         
     f_keys = list(frames_dict.keys())
-    f_name = f_keys[0] if f_keys else ""
+    f_name = f_keys if f_keys else ""
     if not f_name: return pd.DataFrame(), {}, False
     
     b_cols = set(frames_dict[f_name].columns) - {'Источник (Файл)'}
@@ -68,13 +68,11 @@ if uploaded_files:
         else:
             st.warning("⚠️ Файлы имеют разную структуру. Анализ переключен на первый файл.")
             
-        # ТРЕБОВАНИЕ: Отображение структуры сшитого файла на самом верху
         st.markdown("### 📋 Структура сводной таблицы (Заголовки и первые 5 строк):")
         st.dataframe(main_df.head(5), use_container_width=True)
             
         all_cols = ["-- Выберите заголовок --"] + list(main_df.columns)
 
-        # МЯГКИЙ СБРОС ФИЛЬТРА В БОКОВОЙ ПАНЕЛИ
         st.sidebar.success("🟢 Интерактивный BI-движок активен!")
         if st.session_state.active_filter_val is not None:
             st.sidebar.markdown(f"**Активный фильтр:**\n`{st.session_state.active_filter_col}` = `{st.session_state.active_filter_val}`")
@@ -82,7 +80,6 @@ if uploaded_files:
                 st.session_state.active_filter_val = None
                 st.session_state.active_filter_col = None
 
-        # ФИЛЬТРАЦИЯ ДАННЫХ
         df_filtered = main_df.copy()
         if st.session_state.active_filter_val is not None and st.session_state.active_filter_col in df_filtered.columns:
             df_filtered = df_filtered[df_filtered[st.session_state.active_filter_col].astype(str) == str(st.session_state.active_filter_val)]
@@ -187,10 +184,10 @@ if uploaded_files:
                     angle = 0 if "Горизонтально" in label_orient else (90 if "Вертикально" in label_orient else 45)
                     fig = go.Figure()
                     
-                    # СТРОИМ ВОДОПАД
+                    # СТРОИМ ВОДОПАД (УБРАН СИНТАКСИЧЕСКИЙ ЛИШНИЙ ПЛЮС)
                     if "Waterfall" in chart_style:
                         x_data = list(df_g[x_axis].astype(str)) + ["ИТОГО"]
-                        y_data = list(df_g[y_axis]) +
+                        y_data = list(df_g[y_axis]) + [0]
                         measure_data = ["relative"] * len(df_g[y_axis]) + ["total"]
                         text_data = [f"{v:,.0f}" for v in df_g[y_axis]] + [f"{df_g[y_axis].sum():,.0f}"]
                         
@@ -231,7 +228,7 @@ if uploaded_files:
                             text=df_g[y_axis].map(lambda x: f"{x:,.0f}") if show_labels else None,
                             textposition=f"{label_pos} top", line=dict(color=chart_color)
                         ))
-                        fig.update_layout(title=f"Тренд показателя '{y_axis}' по '{x_axis}'")
+                        fig.update_layout(title=f"Trend показателя '{y_axis}' по '{x_axis}'")
                     
                     # СТОЛБЧАТАЯ
                     else:
@@ -259,12 +256,11 @@ if uploaded_files:
                     
                     event_data = st.plotly_chart(fig, use_container_width=True, key=f"plotly_manual_{i}", on_select="rerun")
                     
-                    # УНИВЕРСАЛЬНЫЙ СМАРТ-СКАНЕР КЛИКОВ (ИСПРАВЛЕННЫЙ ДЛЯ КОЛЬЦА)
+                    # ИСПРАВЛЕННЫЙ УНИВЕРСАЛЬНЫЙ СКАНЕР КЛИКОВ (ДЛЯ КОЛЬЦА И ВОДОПАДА)
                     if event_data and "selection" in event_data and "points" in event_data["selection"] and len(event_data["selection"]["points"]) > 0:
-                        pt = event_data["selection"]["points"][0]
+                        pt = event_data["selection"]["points"]
                         val = None
                         
-                        # Если это кольцевая диаграмма, вытаскиваем категорию напрямую из списка данных по индексу сектора pointNumber
                         if "Donut" in chart_style and "pointNumber" in pt:
                             idx = pt["pointNumber"]
                             if idx < len(df_g):
