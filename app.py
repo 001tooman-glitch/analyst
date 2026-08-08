@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-import json
 
 st.set_page_config(page_title="Enterprise BI Конструктор", layout="wide")
 st.title("🚀 Enterprise BI Конструктор & Аналитическая Панель")
@@ -11,7 +10,6 @@ if "manual_charts" not in st.session_state:
     st.session_state.manual_charts = 1
 if "manual_cards" not in st.session_state:
     st.session_state.manual_cards = 1
-# Инициализируем переменные памяти сквозных фильтров
 if "active_filter_val" not in st.session_state:
     st.session_state.active_filter_val = None
 if "active_filter_col" not in st.session_state:
@@ -70,18 +68,21 @@ if uploaded_files:
         else:
             st.warning("⚠️ Файлы имеют разную структуру. Анализ переключен на первый файл.")
             
+        # ТРЕБОВАНИЕ: Отображение структуры сшитого файла на самом верху
+        st.markdown("### 📋 Структура сводной таблицы (Заголовки и первые 5 строк):")
+        st.dataframe(main_df.head(5), use_container_width=True)
+            
         all_cols = ["-- Выберите заголовок --"] + list(main_df.columns)
 
-        # МЯГКИЙ СБРОС ФИЛЬТРА В БОКОВОЙ ПАНЕЛИ БЕЗ ST.RERUN()
+        # МЯГКИЙ СБРОС ФИЛЬТРА В БОКОВОЙ ПАНЕЛИ
         st.sidebar.success("🟢 Интерактивный BI-движок активен!")
         if st.session_state.active_filter_val is not None:
             st.sidebar.markdown(f"**Активный фильтр:**\n`{st.session_state.active_filter_col}` = `{st.session_state.active_filter_val}`")
-            # Меняем значение флага напрямую в памяти сессии
             if st.sidebar.button("🧹 Очистить все фильтры", type="primary"):
                 st.session_state.active_filter_val = None
                 st.session_state.active_filter_col = None
 
-        # ПРИМЕНЕНИЕ СКВОЗНОЙ ФИЛЬТРАЦИИ К БАЗЕ
+        # ФИЛЬТРАЦИЯ ДАННЫХ
         df_filtered = main_df.copy()
         if st.session_state.active_filter_val is not None and st.session_state.active_filter_col in df_filtered.columns:
             df_filtered = df_filtered[df_filtered[st.session_state.active_filter_col].astype(str) == str(st.session_state.active_filter_val)]
@@ -189,7 +190,7 @@ if uploaded_files:
                     # СТРОИМ ВОДОПАД
                     if "Waterfall" in chart_style:
                         x_data = list(df_g[x_axis].astype(str)) + ["ИТОГО"]
-                        y_data = list(df_g[y_axis]) + [0]
+                        y_data = list(df_g[y_axis]) +
                         measure_data = ["relative"] * len(df_g[y_axis]) + ["total"]
                         text_data = [f"{v:,.0f}" for v in df_g[y_axis]] + [f"{df_g[y_axis].sum():,.0f}"]
                         
@@ -213,7 +214,7 @@ if uploaded_files:
                         ))
                         fig.update_layout(title=f"Воронка распределения '{y_axis}' по '{x_axis}'")
                     
-                    # КОЛЬЦЕВАЯ С ИНТЕРАКТИВНЫМ ПЕРЕХВАТОМ КЛИКОВ
+                    # КОЛЬЦЕВАЯ С ФУНКЦИЕЙ ПЕРЕХВАТА ИНДЕКСА СЕКТОРА
                     elif "Donut" in chart_style:
                         p_pos = "outside" if "выноске" in pie_labels_mode else "inside"
                         fig.add_trace(go.Pie(
@@ -258,21 +259,22 @@ if uploaded_files:
                     
                     event_data = st.plotly_chart(fig, use_container_width=True, key=f"plotly_manual_{i}", on_select="rerun")
                     
-                    # ИСПРАВЛЕННЫЙ ИНТЕЛЛЕКТУАЛЬНЫЙ ПОИСК ТОЧЕК КЛИКА ДЛЯ ВСЕХ ТИПОВ ГРАФИКОВ
+                    # УНИВЕРСАЛЬНЫЙ СМАРТ-СКАНЕР КЛИКОВ (ИСПРАВЛЕННЫЙ ДЛЯ КОЛЬЦА)
                     if event_data and "selection" in event_data and "points" in event_data["selection"] and len(event_data["selection"]["points"]) > 0:
                         pt = event_data["selection"]["points"][0]
                         val = None
                         
-                        # Кольцевая диаграмма использует label или pointNumber для сопоставления индексов
-                        if "label" in pt:
+                        # Если это кольцевая диаграмма, вытаскиваем категорию напрямую из списка данных по индексу сектора pointNumber
+                        if "Donut" in chart_style and "pointNumber" in pt:
+                            idx = pt["pointNumber"]
+                            if idx < len(df_g):
+                                val = df_g.iloc[idx][x_axis]
+                        elif "label" in pt:
                             val = pt["label"]
                         elif "x" in pt:
                             val = pt["x"]
                         elif "y" in pt:
                             val = pt["y"]
-                        elif "pointNumber" in pt and "Donut" in chart_style:
-                            # Прямой No-Code фоллбэк: берем имя категории из сгруппированного списка по номеру сектора
-                            val = df_g.iloc[pt["pointNumber"]][x_axis]
                         
                         if val is not None and str(val) != "ИТОГО":
                             st.session_state.active_filter_val = val
