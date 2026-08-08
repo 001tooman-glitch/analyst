@@ -15,9 +15,13 @@ if "active_filter_val" not in st.session_state:
 if "active_filter_col" not in st.session_state:
     st.session_state.active_filter_col = None
 
+# ИСПРАВЛЕННЫЙ КЭШ: Полная защита от ошибок типов (TypeError)
 @st.cache_data
 def load_and_merge_files(uploaded_files_list):
     frames_dict = {}
+    if not uploaded_files_list:
+        return pd.DataFrame(), {}, False
+        
     for f in uploaded_files_list:
         try:
             df_i = pd.read_csv(f) if f.name.endswith('.csv') else pd.read_excel(f)
@@ -31,10 +35,12 @@ def load_and_merge_files(uploaded_files_list):
         return pd.DataFrame(), {}, False
         
     f_keys = list(frames_dict.keys())
-    f_name = f_keys if f_keys else ""
-    if not f_name: return pd.DataFrame(), {}, False
+    # ГАРАНТИРОВАННОЕ ИСПРАВЛЕНИЕ: Извлекаем строго строку (первое имя файла), а не список
+    first_file_name = f_keys[0] if f_keys else ""
+    if not first_file_name: 
+        return pd.DataFrame(), {}, False
     
-    b_cols = set(frames_dict[f_name].columns) - {'Источник (Файл)'}
+    b_cols = set(frames_dict[first_file_name].columns) - {'Источник (Файл)'}
     merge_possible = True
     
     for n, df_c in frames_dict.items():
@@ -47,7 +53,7 @@ def load_and_merge_files(uploaded_files_list):
         merged_df = pd.concat(frames_dict.values(), ignore_index=True)
         return merged_df, frames_dict, True
     else:
-        return frames_dict[f_name], frames_dict, False
+        return frames_dict[first_file_name], frames_dict, False
 
 uploaded_files = st.file_uploader(
     "Загрузите один или несколько любых файлов Excel/CSV:", 
@@ -95,7 +101,7 @@ if uploaded_files:
                 card_title_col = st.selectbox(f"Заголовок для карточки:", all_cols, key=f"card_t_col_{j}")
                 calc_mode = st.selectbox(f"Функция расчета:", ["Сумма (SUM)", "Среднее значение (AVERAGE)"], key=f"card_calc_{j}")
                 
-                with st.expander(f"🎨 Стили карточки № {j+1}"):
+                with st.expander("🎨 Стили карточки"):
                     bg_color = st.color_picker(f"Цвет фона карточки:", "#f8f9fa", key=f"card_bg_{j}")
                     lbl_color = st.color_picker(f"Цвет текста названия:", "#6c757d", key=f"card_lbl_c_{j}")
                     val_color = st.color_picker(f"Цвет значения:", "#1f77b4", key=f"card_val_c_{j}")
@@ -184,10 +190,10 @@ if uploaded_files:
                     angle = 0 if "Горизонтально" in label_orient else (90 if "Вертикально" in label_orient else 45)
                     fig = go.Figure()
                     
-                    # СТРОИМ ВОДОПАД (УБРАН СИНТАКСИЧЕСКИЙ ЛИШНИЙ ПЛЮС)
+                    # СТРОИМ ВОДОПАД (ЧИСТЫЙ СИНТАКСИС)
                     if "Waterfall" in chart_style:
                         x_data = list(df_g[x_axis].astype(str)) + ["ИТОГО"]
-                        y_data = list(df_g[y_axis]) + [0]
+                        y_data = list(df_g[y_axis]) + [df_g[y_axis].sum()]
                         measure_data = ["relative"] * len(df_g[y_axis]) + ["total"]
                         text_data = [f"{v:,.0f}" for v in df_g[y_axis]] + [f"{df_g[y_axis].sum():,.0f}"]
                         
@@ -211,7 +217,7 @@ if uploaded_files:
                         ))
                         fig.update_layout(title=f"Воронка распределения '{y_axis}' по '{x_axis}'")
                     
-                    # КОЛЬЦЕВАЯ С ФУНКЦИЕЙ ПЕРЕХВАТА ИНДЕКСА СЕКТОРА
+                    # КОЛЬЦЕВАЯ
                     elif "Donut" in chart_style:
                         p_pos = "outside" if "выноске" in pie_labels_mode else "inside"
                         fig.add_trace(go.Pie(
@@ -228,7 +234,7 @@ if uploaded_files:
                             text=df_g[y_axis].map(lambda x: f"{x:,.0f}") if show_labels else None,
                             textposition=f"{label_pos} top", line=dict(color=chart_color)
                         ))
-                        fig.update_layout(title=f"Trend показателя '{y_axis}' по '{x_axis}'")
+                        fig.update_layout(title=f"Тренд показателя '{y_axis}' по '{x_axis}'")
                     
                     # СТОЛБЧАТАЯ
                     else:
@@ -256,9 +262,9 @@ if uploaded_files:
                     
                     event_data = st.plotly_chart(fig, use_container_width=True, key=f"plotly_manual_{i}", on_select="rerun")
                     
-                    # ИСПРАВЛЕННЫЙ УНИВЕРСАЛЬНЫЙ СКАНЕР КЛИКОВ (ДЛЯ КОЛЬЦА И ВОДОПАДА)
+                    # УНИВЕРСАЛЬНЫЙ СКАНЕР КЛИКОВ (ДЛЯ КОЛЬЦА И ВОДОПАДА)
                     if event_data and "selection" in event_data and "points" in event_data["selection"] and len(event_data["selection"]["points"]) > 0:
-                        pt = event_data["selection"]["points"]
+                        pt = event_data["selection"]["points"][0]
                         val = None
                         
                         if "Donut" in chart_style and "pointNumber" in pt:
@@ -288,9 +294,11 @@ if uploaded_files:
         with btn_col1:
             if st.button("➕ Добавить график/диаграмму"):
                 st.session_state.manual_charts += 1
+                st.rerun()
         with btn_col2:
             if st.session_state.manual_charts > 1:
                 if st.button("🗑️ Удалить последнюю диаграмму"):
                     st.session_state.manual_charts -= 1
+                    st.rerun()
 else:
     st.info("Ожидание загрузки любых файлов Excel/CSV для активации BI-панели...")
