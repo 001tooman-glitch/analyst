@@ -15,7 +15,6 @@ if "active_filter_val" not in st.session_state:
 if "active_filter_col" not in st.session_state:
     st.session_state.active_filter_col = None
 
-# ИСПРАВЛЕННЫЙ КЭШ: Полная защита от ошибок типов (TypeError)
 @st.cache_data
 def load_and_merge_files(uploaded_files_list):
     frames_dict = {}
@@ -35,7 +34,6 @@ def load_and_merge_files(uploaded_files_list):
         return pd.DataFrame(), {}, False
         
     f_keys = list(frames_dict.keys())
-    # ГАРАНТИРОВАННОЕ ИСПРАВЛЕНИЕ: Извлекаем строго строку (первое имя файла), а не список
     first_file_name = f_keys[0] if f_keys else ""
     if not first_file_name: 
         return pd.DataFrame(), {}, False
@@ -85,6 +83,8 @@ if uploaded_files:
             if st.sidebar.button("🧹 Очистить все фильтры", type="primary"):
                 st.session_state.active_filter_val = None
                 st.session_state.active_filter_col = None
+                st.slots = {} # Сбрасываем кэш Plotly виджетов
+                st.rerun()
 
         df_filtered = main_df.copy()
         if st.session_state.active_filter_val is not None and st.session_state.active_filter_col in df_filtered.columns:
@@ -136,10 +136,12 @@ if uploaded_files:
         with c_btn1:
             if st.button("➕ Добавить карточку показателя"):
                 st.session_state.manual_cards += 1
+                st.rerun()
         with c_btn2:
             if st.session_state.manual_cards > 1:
                 if st.button("🗑️ Удалить последнюю карточку"):
                     st.session_state.manual_cards -= 1
+                    st.rerun()
         # 3. ENTERPRISE NO-CODE КОНСТРУКТОР ДИАГРАММ
         st.markdown("---")
         st.subheader("🛠️ Enterprise No-Code Конструктор Панелей")
@@ -179,7 +181,7 @@ if uploaded_files:
                 if "Donut" in chart_style:
                     pie_rotation = st.slider("🔄 Поворот кольцевой диаграммы (в градусах):", 0, 360, 0, step=15, key=f"rot_{i}")
             
-            if x_axis != "-- Выберите заголовок --" and y_axis != "-- Выберите заголовок --":
+            if x_axis != "-- Wyберите заголовок --" and y_axis != "-- Выберите заголовок --":
                 try:
                     df_m = df_filtered.copy()
                     df_m[y_axis] = pd.to_numeric(df_m[y_axis], errors='coerce').fillna(0)
@@ -190,7 +192,6 @@ if uploaded_files:
                     angle = 0 if "Горизонтально" in label_orient else (90 if "Вертикально" in label_orient else 45)
                     fig = go.Figure()
                     
-                    # СТРОИМ ВОДОПАД (ЧИСТЫЙ СИНТАКСИС)
                     if "Waterfall" in chart_style:
                         x_data = list(df_g[x_axis].astype(str)) + ["ИТОГО"]
                         y_data = list(df_g[y_axis]) + [df_g[y_axis].sum()]
@@ -205,9 +206,7 @@ if uploaded_files:
                             decreasing={"marker": {"color": "red"}},
                             totals={"marker": {"color": "green"}}
                         ))
-                        fig.update_layout(title=f"Водопад изменений '{y_axis}' по '{x_axis}'")
                     
-                    # СТРОИМ ВОРОНКУ
                     elif "Funnel" in chart_style:
                         fig.add_trace(go.Funnel(
                             y=df_g[x_axis].astype(str), x=df_g[y_axis],
@@ -215,9 +214,7 @@ if uploaded_files:
                             textinfo="value+percent initial" if show_labels else "none",
                             marker={"color": chart_color}
                         ))
-                        fig.update_layout(title=f"Воронка распределения '{y_axis}' по '{x_axis}'")
                     
-                    # КОЛЬЦЕВАЯ
                     elif "Donut" in chart_style:
                         p_pos = "outside" if "выноске" in pie_labels_mode else "inside"
                         fig.add_trace(go.Pie(
@@ -225,18 +222,14 @@ if uploaded_files:
                             hole=0.4, rotation=pie_rotation, textposition=p_pos,
                             textinfo="label+value" if show_labels else "none"
                         ))
-                        fig.update_layout(title=f"Доли распределения '{y_axis}'")
                     
-                    # ЛИНЕЙНЫЙ
                     elif "Line" in chart_style:
                         fig.add_trace(go.Scatter(
                             x=df_g[x_axis], y=df_g[y_axis], mode="lines+markers+text" if show_labels else "lines+markers",
                             text=df_g[y_axis].map(lambda x: f"{x:,.0f}") if show_labels else None,
                             textposition=f"{label_pos} top", line=dict(color=chart_color)
                         ))
-                        fig.update_layout(title=f"Тренд показателя '{y_axis}' по '{x_axis}'")
                     
-                    # СТОЛБЧАТАЯ
                     else:
                         if bar_orientation == "h":
                             fig.add_trace(go.Bar(
@@ -250,7 +243,6 @@ if uploaded_files:
                                 text=df_g[y_axis].map(lambda x: f"{x:,.0f}") if show_labels else None,
                                 textposition=label_pos, orientation="v", marker_color=chart_color
                             ))
-                        fig.update_layout(title=f"Распределение показателя '{y_axis}' по '{x_axis}'")
                     
                     fig.update_layout(
                         xaxis=dict(tickangle=angle if bar_orientation == "v" else 0, tickfont=dict(color=text_color, size=text_size, family=chart_font)),
@@ -262,11 +254,13 @@ if uploaded_files:
                     
                     event_data = st.plotly_chart(fig, use_container_width=True, key=f"plotly_manual_{i}", on_select="rerun")
                     
-                    # УНИВЕРСАЛЬНЫЙ СКАНЕР КЛИКОВ (ДЛЯ КОЛЬЦА И ВОДОПАДА)
+                    # ГАРАНТИРОВАННОЕ ИСПРАВЛЕНИЕ КЛИКА ПО КОЛЬЦУ
                     if event_data and "selection" in event_data and "points" in event_data["selection"] and len(event_data["selection"]["points"]) > 0:
+                        # Извлекаем СТРОГО первый элемент массива точек клика
                         pt = event_data["selection"]["points"][0]
                         val = None
                         
+                        # Если тип графика - кольцо, считываем pointNumber для точного No-Code сопоставления категорий
                         if "Donut" in chart_style and "pointNumber" in pt:
                             idx = pt["pointNumber"]
                             if idx < len(df_g):
