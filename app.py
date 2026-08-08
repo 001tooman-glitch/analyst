@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
+import json
 
 st.set_page_config(page_title="Enterprise BI Конструктор", layout="wide")
 st.title("🚀 Enterprise BI Конструктор & Аналитическая Панель")
@@ -10,6 +11,7 @@ if "manual_charts" not in st.session_state:
     st.session_state.manual_charts = 1
 if "manual_cards" not in st.session_state:
     st.session_state.manual_cards = 1
+# Инициализируем переменные памяти сквозных фильтров
 if "active_filter_val" not in st.session_state:
     st.session_state.active_filter_val = None
 if "active_filter_col" not in st.session_state:
@@ -70,16 +72,16 @@ if uploaded_files:
             
         all_cols = ["-- Выберите заголовок --"] + list(main_df.columns)
 
-        # ДОБАВЛЯЕМ КНОПКУ СБРОСА В БОКОВУЮ ПАНЕЛЬ
+        # МЯГКИЙ СБРОС ФИЛЬТРА В БОКОВОЙ ПАНЕЛИ БЕЗ ST.RERUN()
         st.sidebar.success("🟢 Интерактивный BI-движок активен!")
         if st.session_state.active_filter_val is not None:
             st.sidebar.markdown(f"**Активный фильтр:**\n`{st.session_state.active_filter_col}` = `{st.session_state.active_filter_val}`")
+            # Меняем значение флага напрямую в памяти сессии
             if st.sidebar.button("🧹 Очистить все фильтры", type="primary"):
                 st.session_state.active_filter_val = None
                 st.session_state.active_filter_col = None
-                st.rerun()
 
-        # ФИЛЬТРАЦИЯ БАЗЫ ДАННЫХ
+        # ПРИМЕНЕНИЕ СКВОЗНОЙ ФИЛЬТРАЦИИ К БАЗЕ
         df_filtered = main_df.copy()
         if st.session_state.active_filter_val is not None and st.session_state.active_filter_col in df_filtered.columns:
             df_filtered = df_filtered[df_filtered[st.session_state.active_filter_col].astype(str) == str(st.session_state.active_filter_val)]
@@ -130,12 +132,10 @@ if uploaded_files:
         with c_btn1:
             if st.button("➕ Добавить карточку показателя"):
                 st.session_state.manual_cards += 1
-                st.rerun()
         with c_btn2:
             if st.session_state.manual_cards > 1:
                 if st.button("🗑️ Удалить последнюю карточку"):
                     st.session_state.manual_cards -= 1
-                    st.rerun()
         # 3. ENTERPRISE NO-CODE КОНСТРУКТОР ДИАГРАММ
         st.markdown("---")
         st.subheader("🛠️ Enterprise No-Code Конструктор Панелей")
@@ -213,7 +213,7 @@ if uploaded_files:
                         ))
                         fig.update_layout(title=f"Воронка распределения '{y_axis}' по '{x_axis}'")
                     
-                    # КОЛЬЦЕВАЯ
+                    # КОЛЬЦЕВАЯ С ИНТЕРАКТИВНЫМ ПЕРЕХВАТОМ КЛИКОВ
                     elif "Donut" in chart_style:
                         p_pos = "outside" if "выноске" in pie_labels_mode else "inside"
                         fig.add_trace(go.Pie(
@@ -258,15 +258,21 @@ if uploaded_files:
                     
                     event_data = st.plotly_chart(fig, use_container_width=True, key=f"plotly_manual_{i}", on_select="rerun")
                     
-                    # УНИВЕРСАЛЬНЫЙ СКАНИРОВЩИК ТОЧЕК КЛИКА КАТЕГОРИЙ
+                    # ИСПРАВЛЕННЫЙ ИНТЕЛЛЕКТУАЛЬНЫЙ ПОИСК ТОЧЕК КЛИКА ДЛЯ ВСЕХ ТИПОВ ГРАФИКОВ
                     if event_data and "selection" in event_data and "points" in event_data["selection"] and len(event_data["selection"]["points"]) > 0:
-                        pt_list = event_data["selection"]["points"]
-                        pt = pt_list[0] # Берем самую первую выбранную точку
-                        
+                        pt = event_data["selection"]["points"][0]
                         val = None
-                        if "x" in pt: val = pt["x"]
-                        elif "label" in pt: val = pt["label"]
-                        elif "y" in pt: val = pt["y"]
+                        
+                        # Кольцевая диаграмма использует label или pointNumber для сопоставления индексов
+                        if "label" in pt:
+                            val = pt["label"]
+                        elif "x" in pt:
+                            val = pt["x"]
+                        elif "y" in pt:
+                            val = pt["y"]
+                        elif "pointNumber" in pt and "Donut" in chart_style:
+                            # Прямой No-Code фоллбэк: берем имя категории из сгруппированного списка по номеру сектора
+                            val = df_g.iloc[pt["pointNumber"]][x_axis]
                         
                         if val is not None and str(val) != "ИТОГО":
                             st.session_state.active_filter_val = val
@@ -284,11 +290,9 @@ if uploaded_files:
         with btn_col1:
             if st.button("➕ Добавить график/диаграмму"):
                 st.session_state.manual_charts += 1
-                st.rerun()
         with btn_col2:
             if st.session_state.manual_charts > 1:
                 if st.button("🗑️ Удалить последнюю диаграмму"):
                     st.session_state.manual_charts -= 1
-                    st.rerun()
 else:
     st.info("Ожидание загрузки любых файлов Excel/CSV для активации BI-панели...")
