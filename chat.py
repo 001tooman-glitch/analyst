@@ -105,15 +105,15 @@ if uploaded_files:
                                             sort_col = col
                                             break
                                         
-                                # 2. СМАРТ-ПОДБОР КАТЕГОРИИ (ОСИ X)
+                                # 2. СМАРТ-ПОДБОР КАТЕГОРИИ
                                 cat_col = text_cols if text_cols else all_cols
                                 found_cat = False
                                 
-                                # Поиск совпадений слов из запроса пользователя с именами колонок Excel
+                                # Ищем, какую текстовую колонку упомянул пользователь в запросе
                                 for col in all_cols:
                                     if col.lower() in task_lower and col != sort_col:
-                                        # Если слово из запроса есть в названии столбца (например "срок" или "хранения")
-                                        if any(w in task_lower for w in ['срок', 'хранен', 'период', 'год', 'стать', 'фонд', 'цех', 'материал'] if w in col.lower()):
+                                        words_in_col = [w for w in re.split(r'\W+', col.lower()) if len(w) > 2]
+                                        if any(w in task_lower for w in words_in_col) or any(w in col.lower() for w in ['срок', 'хранен', 'период', 'год', 'стать', 'фонд', 'цех', 'материал', 'счет']):
                                             cat_col = col
                                             found_cat = True
                                             break
@@ -143,15 +143,15 @@ if uploaded_files:
                                     
                                 ai_response += f"\n#### ⚠️ 1. Ключевые выводы и обнаруженные тренды:\n"
                                 if not df_grouped.empty:
-                                    # ИСПРАВЛЕНО: Извлекаем лидера СТРОГО по его фиксированной строковой строчке (0)
-                                    leader_name = df_grouped.iloc[0][cat_col]
-                                    leader_val = df_grouped.iloc[0][sort_col]
+                                    # ЖЕСТКАЯ ФИКСАЦИЯ ИНДЕКСОВ: Больше никаких сбоев iloc!
+                                    leader_name = df_grouped.iloc[0, 0]
+                                    leader_val = df_grouped.iloc[0, 1]
                                     ai_response += f"*   **Абсолютный лидер нагрузки**: Наибольший объем по выбранному срезу зафиксирован по позиции **{leader_name}** (**{leader_val:,.2f}**).\n"
                                 ai_response += f"*   **Структурная концентрация**: Выведенные топ-{limit_val} сегментов формируют основную финансовую массу по колонке '{sort_col}'. Управленческий контроль этих элементов имеет ключевое значение.\n\n"
                                 
                                 ai_response += "#### 🎯 2. Дальнейшие шаги и рекомендации:\n"
                                 if not df_grouped.empty:
-                                    leader_name_rec = df_grouped.iloc[0][cat_col]
+                                    leader_name_rec = df_grouped.iloc[0, 0]
                                     ai_response += f"1. Провести детальный аудит спецификаций элементов, входящих в группу **{leader_name_rec}**.\n"
                                 ai_response += f"2. Перейти во вторую вкладку нашей BI-панели и построить там кольцевую диаграмму, выбрав по оси X столбец '{cat_col}', чтобы наглядно оценить долю каждого сегмента визуально.\n"
                                 ai_response += f"3. Использовать сквозную интерактивную фильтрацию по клику на панели для сопоставления категорий '{cat_col}' с годами."
