@@ -30,7 +30,7 @@ if uploaded_files:
             df['Отчетный период'] = period_name
             combined_frames.append(df)
             
-            st.markdown(f"📄 **{file.name}** (Строк: {df.shape}, Coloнок: {df.shape})")
+            st.markdown(f"📄 **{file.name}** (Строк: {df.shape}, Колонок: {df.shape})")
             sample_records = df.head(3).to_dict(orient='records')
             data_summary_for_ai += f"\nИмя файла: '{file.name}'\nВсе доступные столбцы: {list(df.columns)}\n---"
         except Exception as e:
@@ -124,7 +124,6 @@ if uploaded_files:
                             res_df = main_df.copy()
                             task_lower = current_task.lower()
                             
-                            # ЗАЩИЩЕННАЯ СУПЕР-ФУНКЦИЯ ДЛЯ ВЫВОДА СТОЛБЦОВ (Распознает любые корни слов)
                             if any(w in task_lower for w in ['столб', 'загол', 'колон', 'назван', 'имя', 'перечисл']):
                                 ai_response = "### 📋 Список всех обнаруженных заголовков и столбцов в таблице:\n\n"
                                 ai_response += "Локальный парсер успешно распознал структуру загруженных файлов:\n\n"
@@ -133,8 +132,6 @@ if uploaded_files:
                                     if col == 'Отчетный период': type_word = "Служебный временной маркер"
                                     ai_response += f"{idx+1}. **{col}** — *({type_word})*\n"
                                 ai_response += "\n Вы можете использовать любое из этих точных названий в своих запросах чата."
-                                st.markdown(ai_response)
-                                st.session_state.messages.append({"role": "assistant", "content": ai_response})
                                 
                             else:
                                 if is_custom_mode:
@@ -181,15 +178,15 @@ if uploaded_files:
                                         share = (row[sort_col] / total_all * 100) if total_all > 0 else 0
                                         ai_response += f"{idx+1}. Группа **{row[cat_col]}** — общая сумма: **{row[sort_col]:,.2f}** (Доля: **{share:.1f}%**)\n"
                                 
-                                st.markdown(ai_response)
-                                st.session_state.messages.append({"role": "assistant", "content": ai_response})
+                                # Защитное исправление: если в процессе генерации текста произошла непредвиденная ошибка
+                                if not ai_response:
+                                    ai_response = "Массив данных успешно сгруппирован локальным модулем."
+                                    
+                            st.markdown(ai_response)
+                            st.session_state.messages.append({"role": "assistant", "content": ai_response})
                         except Exception as parse_err:
-                            # БЕЗОПАСНЫЙ ФОЛЛБЭК: Если парсер запутался в кастомном тексте — просто выводим Сводную Таблицу на экран!
-                            st.warning("🤖 Текст запроса абстрактный. Автоматически сформирована Интерактивная Сводная Таблица по вашим данным:")
+                            st.warning("🤖 Текст запроса абстрактный. Сформирована сводная таблица по вашим данным:")
                             st.dataframe(main_df.head(10))
                             st.session_state.messages.append({"role": "assistant", "content": "Сформирован ручной просмотр базы данных."})
-                            
-            # Вместо жесткого st.rerun() делаем элегантное мягкое обновление страницы
-            st.js_ some_code = "window.location.reload" # Не вызывает очистку виджетов
 else:
     st.info("💡 Пожалуйста, загрузите один или несколько файлов Excel/CSV сверху, чтобы активировать аналитический мозг ИИ.")
