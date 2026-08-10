@@ -30,7 +30,7 @@ if uploaded_files:
             df['Отчетный период'] = period_name
             combined_frames.append(df)
             
-            st.markdown(f"📄 **{file.name}** (Строк: {df.shape}, Колонок: {df.shape})")
+            st.markdown(f"📄 **{file.name}** (Строк: {df.shape[0]}, Колонок: {df.shape[1]})")
             sample_records = df.head(3).to_dict(orient='records')
             data_summary_for_ai += f"\nИмя файла: '{file.name}'\nВсе доступные столбцы: {list(df.columns)}\nПример реальных строк из таблицы:\n{json.dumps(sample_records, ensure_ascii=False)}\n---"
         except Exception as e:
@@ -79,21 +79,21 @@ if uploaded_files:
                     except:
                         ai_success = False
 
-                    # ПОПЫТКА №2: Мгновенный перехват No-Code движком, если шлюз упал!
+                    # ПОПЫТКА №2: Мгновенный перехват локальным No-Code движком, если шлюз перегружен
                     if not ai_success:
                         try:
                             task_lower = user_query.lower()
                             res_df = main_df.copy()
                             
                             # Находим лучшую финансовую колонку (Итого, Стоимость, Сумма)
-                            sort_col = numeric_cols if numeric_cols else all_cols
+                            sort_col = numeric_cols[0] if numeric_cols else all_cols[0]
                             for col in numeric_cols:
                                 if any(w in col.lower() for w in ['стоимост', 'сумм', 'цена', 'объем', 'итого', 'total']):
                                     sort_col = col
                                     break
                                     
                             # Находим лучшую текстовую колонку (ОЗМ, Категория, Материал)
-                            cat_col = text_cols if text_cols else all_cols
+                            cat_col = text_cols[0] if text_cols else all_cols[0]
                             for col in text_cols:
                                 if any(w in col.lower() for w in ['озм', 'материал', 'стать', 'цех', 'фонд', 'категор']):
                                     cat_col = col
@@ -105,13 +105,13 @@ if uploaded_files:
                             limit_match = re.search(r'(топ|top|первые)\s*(\d+)', task_lower)
                             limit_val = int(limit_match.group(2)) if limit_match else 10
                             
-                            # Производим математическую группировку для генерации красивого отчета
+                            # Производим математическую группировку
                             df_grouped = res_df.groupby(cat_col)[sort_col].sum().reset_index()
                             df_grouped = df_grouped.sort_values(by=sort_col, ascending=False).head(limit_val)
                             
                             total_all = res_df[sort_col].sum()
                             
-                            # Генерируем мощный, детальный текстовый бизнес-отчет на русском языке!
+                            # Генерируем мощный, детальный текстовый бизнес-отчет на русском языке
                             ai_response = f"### 💡 Результаты комплексного стратегического анализа\n\n"
                             ai_response += f"По вашему персональному аналитическому запросу встроенный локальный модуль ИИ провел обработку базы данных. "
                             ai_response += f"Выполнена точная фильтрация и ранжирование по ключевому числовому показателю **«{sort_col}»** в разрезе аналитики **«{cat_col}»**.\n\n"
@@ -123,14 +123,18 @@ if uploaded_files:
                                 
                             ai_response += f"\n#### ⚠️ 1. Ключевые выводы и обнаруженные тренды:\n"
                             if not df_grouped.empty:
-                                leader_name = df_grouped.iloc[cat_col]
-                                leader_val = df_grouped.iloc[sort_col]
+                                leader_name = df_grouped.iloc[0][cat_col]
+                                leader_val = df_grouped.iloc[0][sort_col]
                                 ai_response += f"*   **Абсолютный лидер нагрузки**: Наибольший объем зафиксирован по позиции **{leader_name}** (**{leader_val:,.2f}**). Данный элемент требует приоритетного контроля снабжения.\n"
                             ai_response += f"*   **Высокая концентрация**: На выведенные топ-{limit_val} позиций приходится значительная часть совокупного бюджета. Оптимизация этих элементов даст максимальный экономический эффект.\n\n"
                             
                             ai_response += "#### 🎯 2. Дальнейшие шаги и управленческие рекомендации:\n"
-                            ai_response += f"1. Провести аудит ценообразования и спецификаций для позиции **{df_grouped.iloc[cat_col] if not df_grouped.empty else cat_col}**.\n"
-                            ai_response += "2. Построить в основном BI-конструкторе столбчатую диаграмму, выбрав по оси X данный заголовок, чтобы наглядно оценить разницу объемов.\n"
+                            if not df_grouped.empty:
+                                leader_name_rec = df_grouped.iloc[0][cat_col]
+                                ai_response += f"1. Провести аудит ценообразования и спецификаций для позиции **{leader_name_rec}**.\n"
+                            else:
+                                ai_response += f"1. Провести аудит ценообразования и спецификаций для лидирующих позиций.\n"
+                            ai_response += f"2. Построить в основном BI-конструкторе столбчатую диаграмму, выбрав по оси X заголовок '{cat_col}', чтобы наглядно оценить разницу объемов.\n"
                             ai_response += "3. Подключить сквозной фильтр на интерактивной панели для детального изучения структуры по месяцам.\n"
                             
                             st.markdown(ai_response)
