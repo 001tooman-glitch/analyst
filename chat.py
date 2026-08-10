@@ -1,4 +1,4 @@
-import streamlit as st
+import streamlit st as st
 import pandas as pd
 import requests
 import json
@@ -8,7 +8,7 @@ st.set_page_config(page_title="ИИ Чат-Аналитик", layout="wide")
 st.title("🧠 Персональный ИИ-Аналитик Данных & Стратег")
 
 st.sidebar.success("🚀 Гибридный текстовый движок ИИ активен!")
-st.sidebar.info("Система автоматически переключается на автономный локальный расчет отчетов, если внешний шлюз перегружен.")
+st.sidebar.info("Система полностью адаптирована под обработку текстовых интервалов и текстовых данных в аналитических колонках.")
 
 # Компонент для загрузки файлов в ИИ-чат
 uploaded_files = st.file_uploader(
@@ -32,7 +32,7 @@ if uploaded_files:
             
             st.markdown(f"📄 **{file.name}** (Строк: {df.shape}, Колонок: {df.shape})")
             sample_records = df.head(3).to_dict(orient='records')
-            data_summary_for_ai += f"\nИмя файла: '{file.name}'\nВсе доступные столбцы: {list(df.columns)}\nПример реальных строк из таблицы:\n{json.dumps(sample_records, ensure_ascii=False)}\n---"
+            data_summary_for_ai += f"\nИмя файла: '{file.name}'\nВсе доступные столбцы: {list(df.columns)}\n---"
         except Exception as e:
             st.error(f"Не удалось прочитать файл {file.name}: {e}")
 
@@ -47,13 +47,12 @@ if uploaded_files:
         
         if "messages" not in st.session_state:
             st.session_state.messages = [
-                {"role": "assistant", "content": "Здравствуйте! Я изучил структуру ваших файлов. Задайте мне любой вопрос. Я могу найти скрытые зависимости, сопоставить данные, выявить финансовые аномалии или составить готовый отчет для руководства."}
+                {"role": "assistant", "content": "Здравствуйте! Я изучил структуру ваших файлов. Задайте мне любой вопрос. Я полностью адаптирован под текстовые данные (например, сроки хранения вроде '35-46 мес.') и готов рассчитать аналитику по ним."}
             ]
 
         for msg in st.session_state.messages:
             with st.chat_message(msg["role"]):
                 st.markdown(msg["content"])
-
         if user_query := st.chat_input("Напишите ваш вопрос..."):
             with st.chat_message("user"):
                 st.markdown(user_query)
@@ -91,49 +90,66 @@ if uploaded_files:
                                     ai_response += f"{idx+1}. **{col}** — *({type_word})*\n"
                                 
                             else:
-                                # 1. ПОДБОР ЧИСЛОВОЙ КОЛОНКИ
-                                sort_col = numeric_cols[0] if numeric_cols else all_cols[0]
+                                # 1. ПОДБОР ЧИСЛОВОЙ КОЛОНКИ (ОСЬ Y)
+                                sort_col = numeric_cols if numeric_cols else all_cols
                                 for col in numeric_cols:
                                     if col.lower() in task_lower:
                                         sort_col = col
                                         break
+                                else:
+                                    for col in numeric_cols:
+                                        if any(w in col.lower() for w in ['стоимост', 'сумм', 'цена', 'объем', 'итого', 'total']):
+                                            sort_col = col
+                                            break
                                 
-                                # 2. ПОДБОР ТЕКСТОВОЙ КАТЕГОРИИ
-                                cat_col = text_cols[0] if text_cols else all_cols[0]
+                                # 2. ПОДБОР КАТЕГОРИИ (ОСЬ X) С УЧЕТОМ НАЛИЧИЯ ТЕКСТА
+                                cat_col = text_cols if text_cols else all_cols
+                                found_cat = False
                                 for col in all_cols:
                                     if col.lower() in task_lower and col != sort_col:
-                                        cat_col = col
-                                        break
-                                        
+                                        if any(w in task_lower for w in ['срок', 'хранен', 'период', 'год', 'стать', 'фонд', 'цех', 'материал', 'счет'] if w in col.lower()):
+                                            cat_col = col
+                                            found_cat = True
+                                            break
+                                            
+                                if not found_cat:
+                                    for col in text_cols:
+                                        if col.lower() in task_lower:
+                                            cat_col = col
+                                            found_cat = True
+                                            break
+                                
+                                # ОЧИСТКА ДАННЫХ: Числа превращаем в числа, а текстовую колонку осей принудительно оставляем текстом!
                                 res_df[sort_col] = pd.to_numeric(res_df[sort_col], errors='coerce').fillna(0)
+                                res_df[cat_col] = res_df[cat_col].astype(str).str.strip()
+                                
                                 limit_match = re.search(r'(топ|top|первые)\s*(\d+)', task_lower)
                                 limit_val = int(limit_match.group(2)) if limit_match else 10
                                 
-                                # Группируем данные на лету
+                                # Группируем данные (текстовые интервалы станут уникальными строками)
                                 df_grouped = res_df.groupby(cat_col, as_index=False)[sort_col].sum()
                                 df_grouped = df_grouped.sort_values(by=sort_col, ascending=False).head(limit_val)
                                 total_all = res_df[sort_col].sum()
                                 
-                                # Генерируем полностью динамический бизнес-отчет без шаблонов!
-                                ai_response = f"### 💡 Результаты комплексного стратегического анализа\n\n"
-                                ai_response += f"Локальный ИИ-модуль провел расчет по числовому показателю **«{sort_col}»** в разрезе аналитики **«{cat_col}»**.\n\n"
+                                # ГЕНЕРИРУЕМ ОТЧЕТ
+                                ai_response = f"### 💡 Результаты комплексного стратегического анализа выборки\n\n"
+                                ai_response += f"Встроенный локальный модуль ИИ успешно сгруппировал данные по текстовым интервалам/значениям колонки **«{cat_col}»** и рассчитал совокупный объем по показателю **«{sort_col}»**.\n\n"
                                 ai_response += f"#### 📊 Сводный рейтинг лидирующих позиций (Топ-{limit_val}):\n"
                                 
-                                # Динамический вывод строк из таблицы
                                 for idx, row in df_grouped.reset_index(drop=True).iterrows():
                                     share = (row[sort_col] / total_all * 100) if total_all > 0 else 0
-                                    ai_response += f"{idx+1}. **{row[cat_col]}** — суммарный объем: **{row[sort_col]:,.2f}** (Доля в общей структуре: **{share:.1f}%**)\n"
+                                    ai_response += f"{idx+1}. Интервал/Группа **{row[cat_col]}** — суммарная стоимость: **{row[sort_col]:,.2f}** (Доля в общей структуре затрат: **{share:.1f}%**)\n"
                                     
                                 ai_response += f"\n#### ⚠️ 1. Ключевые выводы и обнаруженные тренды:\n"
                                 if not df_grouped.empty:
-                                    top_name = df_grouped.iloc[0][cat_col]
-                                    top_val = df_grouped.iloc[0][sort_col]
-                                    ai_response += f"*   **Абсолютный лидер нагрузки**: Максимальный объем зафиксирован по позиции **{top_name}** и составляет **{top_val:,.2f}**.\n"
-                                ai_response += f"*   **Финансовая концентрация**: Данная выборка формирует основную массу по показателю '{sort_col}'. Рекомендуется оптимизация этих ключевых элементов.\n\n"
+                                    leader_name = str(df_grouped[cat_col].values[0])
+                                    leader_val = float(df_grouped[sort_col].values[0])
+                                    ai_response += f"*   **Абсолютный лидер нагрузки**: Максимальная финансовая масса зафиксирована по текстовой группе **{leader_name}** и составляет **{leader_val:,.2f}**.\n"
+                                ai_response += f"*   **Финансовая концентрация**: Данная аналитическая выборка формирует основную массу по показателю '{sort_col}'. Рекомендуется оптимизация этих ключевых элементов.\n\n"
                                 
                                 ai_response += "#### 🎯 2. Дальнейшие шаги и рекомендации:\n"
-                                ai_response += f"1. Построить в нашей основной BI-панели столбчатую диаграмму, выбрав по оси X столбец '{cat_col}', для наглядного сопоставления долей.\n"
-                                ai_response += "2. Использовать сквозную интерактивную фильтрацию по клику на панели для отслеживания трендов.\n"
+                                ai_response += f"1. Построить в нашей основной BI-панели диаграмму, выбрав по оси X столбец '{cat_col}', для наглядного сопоставления долей.\n"
+                                ai_response += "2. Использовать сквозную интерактивную фильтрацию по клику на панели для отслеживания трендов."
                             
                             st.markdown(ai_response)
                             st.session_state.messages.append({"role": "assistant", "content": ai_response})
