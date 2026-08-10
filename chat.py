@@ -8,7 +8,7 @@ st.set_page_config(page_title="ИИ Чат-Аналитик", layout="wide")
 st.title("🧠 Персональный ИИ-Аналитик Данных & Стратег")
 
 st.sidebar.success("🚀 Интерактивный No-Code движок ИИ активен!")
-st.sidebar.info("Выберите готовый сценарий анализа из выпадающего меню или введите свой запрос вручную.")
+st.sidebar.info("Выберите готовый сценарий анализа из выпадающего меню или введите свой запрос вручную в чат.")
 
 # Компонент для загрузки файлов в ИИ-чат
 uploaded_files = st.file_uploader(
@@ -42,7 +42,7 @@ if uploaded_files:
         numeric_cols = list(main_df.select_dtypes(include=['number']).columns)
         text_cols = [col for col in all_cols if col not in numeric_cols and col != 'Отчетный период']
 
-        # 🛠️ НОВЫЙ БЛОК: ИНТЕРАКТИВНОЕ NO-CODE МЕНЮ СЦЕНАРИЕВ
+        # Панель выбора аналитического сценария
         st.markdown("---")
         st.subheader("🎯 Панель выбора аналитического сценария")
         
@@ -52,47 +52,60 @@ if uploaded_files:
                 "🔍 Показать чистый справочный список уникальных значений (Вывод сроков, фондов, ПФМ и т.д.)",
                 "📊 Рассчитать общую финансовую стоимость по выбранной категории",
                 "⚠️ Выявить критические аномалии и крупные затраты по базе",
-                "💬 Мой собственный текстовый запрос (Ввести задачу вручную текстом)"
+                "💬 Мой собственный текстовый запрос (Ввести задачу вручную внизу страницы)"
             ]
         )
         
-        # Переменные для осей
-        c1, c2 = st.columns(2)
-        with c1:
-            target_category = st.selectbox("Выберите категорию для исследования (Ось X):", text_cols if text_cols else all_cols)
-        with c2:
-            target_metric = st.selectbox("Выберите числовой показатель (Ось Y):", numeric_cols if numeric_cols else all_cols)
-
-        # Поле ввода показываем только если выбран кастомный режим
-        user_input_task = ""
-        if "Собственный" in selected_scenario:
-            user_input_task = st.text_area("Опишите вашу уникальную задачу своими словами:", value="какие сроки хранения указаны?")
+        # Интерактивные списки осей показываются ТОЛЬКО для готовых No-Code сценариев
+        cat_col = text_cols if text_cols else all_cols
+        sort_col = numeric_cols if numeric_cols else all_cols
+        
+        if "Собственный" not in selected_scenario:
+            c1, c2 = st.columns(2)
+            with c1:
+                cat_col = st.selectbox("Выберите категорию для исследования (Ось X):", text_cols if text_cols else all_cols)
+            with c2:
+                sort_col = st.selectbox("Выберите числовой показатель (Ось Y):", numeric_cols if numeric_cols else all_cols)
+            
+            # Кнопка запуска выводится только для шаблонов меню
+            run_template = st.button("🚀 Выполнить выбранный сценарий анализа")
+        else:
+            run_template = False
 
         st.markdown("---")
         st.subheader("💬 Диалог с ИИ-Аналитиком")
         
         if "messages" not in st.session_state:
             st.session_state.messages = [
-                {"role": "assistant", "content": "Здравствуйте! Я изучил структуру файлов. Выберите готовый аналитический сценарий выше или введите свой запрос, и я мгновенно сформирую отчет."}
+                {"role": "assistant", "content": "Здравствуйте! Я изучил структуру ваших файлов. Выберите готовый аналитический сценарий выше, либо введите любой собственный текстовый запрос в строку ввода в самом низу страницы."}
             ]
 
         for msg in st.session_state.messages:
             with st.chat_message(msg["role"]):
                 st.markdown(msg["content"])
-        # Кнопка запуска анализа по выбранному сценарию
-        if st.button("🚀 Выполнить выбранный сценарий анализа"):
-            # Формируем итоговый текст задачи
-            if "Собственный" in selected_scenario:
-                current_task = user_input_task
-            else:
-                current_task = f"{selected_scenario} по категории {target_category} и показателю {target_metric}"
-                
+        # АКТИВАЦИЯ СТРОКИ ВВОДА ДЛЯ ЛЮБЫХ КАСТОМНЫХ ЗАПРОСОВ
+        user_query = st.chat_input("Напишите ваш собственный вопрос сюда (работает при выборе режима кастомного запроса)...")
+        
+        # Определяем, какое действие сейчас нужно запустить
+        execute_analysis = False
+        current_task = ""
+        is_custom_mode = False
+        
+        if run_template:
+            current_task = f"{selected_scenario} по категории {cat_col} и показателю {sort_col}"
+            execute_analysis = True
+        elif user_query and "Собственный" in selected_scenario:
+            current_task = user_query
+            execute_analysis = True
+            is_custom_mode = True
+            
+        if execute_analysis:
             with st.chat_message("user"):
                 st.markdown(current_task)
             st.session_state.messages.append({"role": "user", "content": current_task})
 
             with st.chat_message("assistant"):
-                with st.spinner("ИИ обрабатывает данные и строит отчет..."):
+                with st.spinner("Обработка данных и генерация отчета..."):
                     
                     ai_success = False
                     try:
@@ -113,16 +126,16 @@ if uploaded_files:
                     if not ai_success:
                         try:
                             res_df = main_df.copy()
-                            cat_col = target_category
-                            sort_col = target_metric
+                            task_lower = current_task.lower()
                             
-                            # Если выбран кастомный режим — перехватываем умный подбор колонок по тексту
-                            if "Собственный" in selected_scenario:
-                                task_lower = current_task.lower()
+                            # ЛОГИКА ДЛЯ КАСТОМНОГО ЗАПРОСА (Автоподбор осей по тексту вопроса пользователя)
+                            if is_custom_mode:
+                                cat_col = text_cols if text_cols else all_cols
                                 for col in all_cols:
-                                    if any(root in task_lower and root in col.lower() for root in ['срок', 'хран', 'матер', 'фонд', 'пфм', 'зап', 'счёт']):
+                                    if any(root in task_lower and root in col.lower() for root in ['срок', 'хран', 'матер', 'фонд', 'пфм', 'зап', 'счёт', 'групп']):
                                         cat_col = col
                                         break
+                                sort_col = numeric_cols if numeric_cols else all_cols
                                 for col in numeric_cols:
                                     if any(w in col.lower() for w in ['стоимост', 'сумм', 'цена', 'объем', 'итого']):
                                         sort_col = col
@@ -132,18 +145,21 @@ if uploaded_files:
                             res_df[sort_col] = pd.to_numeric(res_df[sort_col], errors='coerce').fillna(0)
                             res_df[cat_col] = res_df[cat_col].astype(str).str.strip()
                             
-                            # ИСПОЛНЕНИЕ СЦЕНАРИЯ №1: ЧИСТЫЙ СПРАВОЧНЫЙ СПИСОК (БЕЗ ДЕНЕГ)
-                            if "чистый справочный список" in selected_scenario or ( "Собственный" in selected_scenario and not any(w in current_task.lower() for w in ['стоимост', 'сумм', 'цена', 'объем', 'итого']) ):
+                            limit_match = re.search(r'(топ|top|первые)\s*(\d+)', task_lower)
+                            limit_val = int(limit_match.group(2)) if limit_match else 15
+                            
+                            # СЦЕНАРИЙ А: Чистый справочный перечень значений (Без денег)
+                            if "чистый справочный список" in selected_scenario or (is_custom_mode and not any(w in task_lower for w in ['стоимост', 'сумм', 'цена', 'объем', 'итого', 'сколько'])):
                                 val_counts = res_df[cat_col].value_counts()
                                 
-                                ai_response = f"### 📋 Справочный список уникальных значений\n\n"
-                                ai_response += f"В соответствии с выбранным сценарием, извлечены все уникальные текстовые элементы из столбца **«{cat_col}»**:\n\n"
+                                ai_response = f"### 📋 Справочный список уникальных значений по запросу\n\n"
+                                ai_response += f"В соответствии с вашим текстовым запросом, извлечены все уникальные значения из столбца **«{cat_col}»**:\n\n"
                                 for idx, (val_name, count) in enumerate(val_counts.items()):
                                     if val_name and val_name != "nan" and val_name != "None":
-                                        ai_response += f"{idx+1}. **{val_name}** — *(зафиксировано строк в базе: {count})*\n"
+                                        ai_response += f"{idx+1}. **{val_name}** — *(зафиксировано строк в таблице: {count})*\n"
                                 ai_response += f"\n Всего в таблице обнаружено уникальных групп: **{len(val_counts)}**."
                             
-                            # ИСПОЛНЕНИЕ СЦЕНАРИЯ №3: ПОИСК КРИТИЧЕСКИХ АНОМАЛИЙ
+                            # СЦЕНАРИЙ Б: Поиск крупных аномалий
                             elif "критические аномалии" in selected_scenario:
                                 mean_line = res_df[sort_col].mean()
                                 anomalies_df = res_df[res_df[sort_col] > (mean_line * 3)].sort_values(by=sort_col, ascending=False).head(10)
@@ -157,10 +173,10 @@ if uploaded_files:
                                 else:
                                     ai_response += "Критических единичных скачков и аномалий в строках не обнаружено, расходы распределены равномерно.\n"
 
-                            # ИСПОЛНЕНИЕ СЦЕНАРИЯ №2: ЭКОНОМИЧЕСКИЙ РАСЧЕТ СУММЫ (Ваш прошлый точный отчет по ОЗМ/Срокам)
+                            # СЦЕНАРИЙ В: Экономический расчет (Суммирование стоимости)
                             else:
                                 df_grouped = res_df.groupby(cat_col, as_index=False)[sort_col].sum()
-                                df_grouped = df_grouped.sort_values(by=sort_col, ascending=False).head(15)
+                                df_grouped = df_grouped.sort_values(by=sort_col, ascending=False).head(limit_val)
                                 total_all = res_df[sort_col].sum()
                                 
                                 ai_response = f"### 💡 Результаты комплексного анализа и калькуляции\n\n"
@@ -168,15 +184,19 @@ if uploaded_files:
                                 
                                 for idx, row in df_grouped.reset_index(drop=True).iterrows():
                                     share = (row[sort_col] / total_all * 100) if total_all > 0 else 0
-                                    ai_response += f"{idx+1}. Группа/Интервал **{row[cat_col]}** — суммарная стоимость: **{row[sort_col]:,.2f}** (Доля в общей структуре: **{share:.1f}%**)\n"
+                                    ai_response += f"{idx+1}. Группа/Интервал **{row[cat_col]}** — общая сумма: **{row[sort_col]:,.2f}** (Доля: **{share:.1f}%**)\n"
                                     
                                 ai_response += f"\n#### ⚠️ Ключевые рекомендации:\n"
                                 ai_response += f"1. Рекомендуется построить в нашей основной BI-панели диаграмму по оси X '{cat_col}' для наглядного контроля долей.\n"
-                                ai_response += f"2. Используйте сквозную фильтрацию по клику на дашборде для сквозного контроля трендов."
+                                ai_response += "2. Используйте сквозную фильтрацию по клику на дашборде для сквозного контроля трендов."
                             
                             st.markdown(ai_response)
                             st.session_state.messages.append({"role": "assistant", "content": ai_response})
                         except Exception as parse_err:
                             st.error(f"Ошибка локальной обработки данных: {parse_err}")
+                            
+        # Сброс флага user_query для предотвращения зацикливания Streamlit виджетов
+        if user_query:
+            st.rerun()
 else:
     st.info("💡 Пожалуйста, загрузите один или несколько файлов Excel/CSV сверху, чтобы активировать аналитический мозг ИИ.")
