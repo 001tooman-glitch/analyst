@@ -109,11 +109,10 @@ if uploaded_files:
                                 cat_col = text_cols if text_cols else all_cols
                                 found_cat = False
                                 
-                                # Ищем, какую текстовую колонку упомянул пользователь в запросе
+                                # Поиск совпадений слов из запроса пользователя с именами колонок Excel
                                 for col in all_cols:
                                     if col.lower() in task_lower and col != sort_col:
-                                        words_in_col = [w for w in re.split(r'\W+', col.lower()) if len(w) > 2]
-                                        if any(w in task_lower for w in words_in_col) or any(w in col.lower() for w in ['срок', 'хранен', 'период', 'год', 'стать', 'фонд', 'цех', 'материал', 'счет']):
+                                        if any(w in task_lower for w in ['срок', 'хранен', 'период', 'год', 'стать', 'фонд', 'цех', 'материал', 'счет'] if w in col.lower()):
                                             cat_col = col
                                             found_cat = True
                                             break
@@ -143,7 +142,7 @@ if uploaded_files:
                                     
                                 ai_response += f"\n#### ⚠️ 1. Ключевые выводы и обнаруженные тренды:\n"
                                 if not df_grouped.empty:
-                                    # ЖЕСТКАЯ ФИКСАЦИЯ ИНДЕКСОВ: Больше никаких сбоев iloc!
+                                    # ГАРАНТИРОВАННОЕ ИСПРАВЛЕНИЕ: Точные двумерные координаты строки и столбца [0, 0]
                                     leader_name = df_grouped.iloc[0, 0]
                                     leader_val = df_grouped.iloc[0, 1]
                                     ai_response += f"*   **Абсолютный лидер нагрузки**: Наибольший объем по выбранному срезу зафиксирован по позиции **{leader_name}** (**{leader_val:,.2f}**).\n"
