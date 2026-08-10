@@ -8,7 +8,7 @@ st.set_page_config(page_title="ИИ Чат-Аналитик", layout="wide")
 st.title("🧠 Персональный ИИ-Аналитик Данных & Стратег")
 
 st.sidebar.success("🚀 Гибридный текстовый движок ИИ активен!")
-st.sidebar.info("Система полностью адаптирована под обработку текстовых интервалов и текстовых данных в аналитических колонках.")
+st.sidebar.info("Система полностью адаптирована под обработку текстовых интервалов и любых падежей в запросах.")
 
 # Компонент для загрузки файлов в ИИ-чат
 uploaded_files = st.file_uploader(
@@ -47,7 +47,7 @@ if uploaded_files:
         
         if "messages" not in st.session_state:
             st.session_state.messages = [
-                {"role": "assistant", "content": "Здравствуйте! Я изучил структуру ваших файлов. Задайте мне любой вопрос. Я полностью адаптирован под текстовые данные (например, сроки хранения вроде '35-46 мес.') и готов рассчитать аналитику по ним."}
+                {"role": "assistant", "content": "Здравствуйте! Я изучил структуру ваших файлов. Задайте мне любой вопрос. Я полностью адаптирован под текстовые данные и готов рассчитать аналитику по срокам."}
             ]
 
         for msg in st.session_state.messages:
@@ -82,6 +82,7 @@ if uploaded_files:
                             task_lower = user_query.lower()
                             res_df = main_df.copy()
                             
+                            # СПЕЦ-ФУНКЦИЯ ДЛЯ ВЫВОДА ЗАГОРОВКОВ
                             if any(w in task_lower for w in ['заголовк', 'столбц', 'колонк', 'структур']):
                                 ai_response = "### 📋 Список всех обнаруженных заголовков в таблице:\n\n"
                                 for idx, col in enumerate(all_cols):
@@ -89,6 +90,7 @@ if uploaded_files:
                                     ai_response += f"{idx+1}. **{col}** — *({type_word})*\n"
                                 
                             else:
+                                # 1. УМНЫЙ ПОДБОР ЧИСЛОВОЙ КОЛОНКИ
                                 sort_col = numeric_cols if numeric_cols else all_cols
                                 for col in numeric_cols:
                                     if col.lower() in task_lower:
@@ -100,15 +102,17 @@ if uploaded_files:
                                             sort_col = col
                                             break
                                 
+                                # 2. УМНЫЙ ПОДБОР КАТЕГОРИИ ПО КОРНЯМ СЛОВ (Защита от падежей)
                                 cat_col = text_cols if text_cols else all_cols
                                 found_cat = False
+                                
                                 for col in all_cols:
-                                    if col.lower() in task_lower and col != sort_col:
-                                        if any(w in task_lower for w in ['срок', 'хранен', 'период', 'год', 'стать', 'фонд', 'цех', 'материал', 'счет'] if w in col.lower()):
-                                            cat_col = col
-                                            found_cat = True
-                                            break
-                                            
+                                    # Проверяем корни слов "срок", "хран", "материал", "фонд", "пфм"
+                                    if any(root in task_lower and root in col.lower() for root in ['срок', 'хран', 'матер', 'фонд', 'пфм', 'зап', 'счёт']):
+                                        cat_col = col
+                                        found_cat = True
+                                        break
+                                        
                                 if not found_cat:
                                     for col in text_cols:
                                         if col.lower() in task_lower:
@@ -116,32 +120,35 @@ if uploaded_files:
                                             found_cat = True
                                             break
                                 
+                                # БЕЗОПАСНАЯ ОЧИСТКА ДАННЫХ
                                 res_df[sort_col] = pd.to_numeric(res_df[sort_col], errors='coerce').fillna(0)
                                 res_df[cat_col] = res_df[cat_col].astype(str).str.strip()
                                 
                                 limit_match = re.search(r'(топ|top|первые)\s*(\d+)', task_lower)
-                                limit_val = int(limit_match.group(2)) if limit_match else 10
+                                limit_val = int(limit_match.group(2)) if limit_match else 15
                                 
+                                # Группируем данные по текстовым интервалам
                                 df_grouped = res_df.groupby(cat_col, as_index=False)[sort_col].sum()
                                 df_grouped = df_grouped.sort_values(by=sort_col, ascending=False).head(limit_val)
                                 total_all = res_df[sort_col].sum()
                                 
-                                ai_response = f"### 💡 Результаты комплексного стратегического анализа выборки\n\n"
-                                ai_response += f"Встроенный локальный модуль ИИ успешно сгруппировал данные по текстовым интервалам/значениям колонки **«{cat_col}»** и рассчитал совокупный объем по показателю **«{sort_col}»**.\n\n"
-                                ai_response += f"#### 📊 Сводный рейтинг лидирующих позиций (Топ-{limit_val}):\n"
+                                # ГЕНЕРИРУЕМ ОТЧЕТ С ПОЛНОЙ ЗАЩИТОЙ
+                                ai_response = f"### 💡 Результаты комплексного анализа по вашему запросу\n\n"
+                                ai_response += f"Встроенный локальный модуль ИИ успешно сгруппировал данные по значениям колонки **«{cat_col}»** и рассчитал совокупный объем по показателю **«{sort_col}»**.\n\n"
+                                ai_response += f"#### 📊 Сводный рейтинг позиций (Выборка Топ-{limit_val}):\n"
                                 
                                 for idx, row in df_grouped.reset_index(drop=True).iterrows():
                                     share = (row[sort_col] / total_all * 100) if total_all > 0 else 0
-                                    ai_response += f"{idx+1}. Группа **{row[cat_col]}** — суммарная стоимость: **{row[sort_col]:,.2f}** (Доля в общей структуре затрат: **{share:.1f}%**)\n"
+                                    ai_response += f"{idx+1}. Группа **{row[cat_col]}** — суммарный объем: **{row[sort_col]:,.2f}** (Доля в общей структуре затрат: **{share:.1f}%**)\n"
                                     
                                 ai_response += f"\n#### ⚠️ 1. Ключевые выводы и обнаруженные тренды:\n"
                                 if not df_grouped.empty:
                                     cat_array = df_grouped[cat_col].to_numpy()
                                     val_array = df_grouped[sort_col].to_numpy()
                                     
-                                    leader_name = str(cat_array[0])
-                                    leader_val = float(val_array[0])
-                                    ai_response += f"*   **Абсолютный лидер нагрузки**: Максимальная финансовая масса зафиксирована по текстовой группе **{leader_name}** и составляет **{leader_val:,.2f}**.\n"
+                                    leader_name = str(cat_array)
+                                    leader_val = float(val_array)
+                                    ai_response += f"*   **Абсолютный лидер нагрузки**: Максимальная финансовая масса зафиксирована по группе **{leader_name}** и составляет **{leader_val:,.2f}**.\n"
                                 ai_response += f"*   **Финансовая концентрация**: Данная аналитическая выборка формирует основную массу по показателю '{sort_col}'. Рекомендуется оптимизация этих ключевых элементов.\n\n"
                                 
                                 ai_response += "#### 🎯 2. Дальнейшие шаги и рекомендации:\n"
