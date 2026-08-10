@@ -56,7 +56,6 @@ if uploaded_files:
             ]
         )
         
-        # Интерактивные списки осей показываются ТОЛЬКО для готовых No-Code сценариев
         cat_col = text_cols if text_cols else all_cols
         sort_col = numeric_cols if numeric_cols else all_cols
         
@@ -66,8 +65,6 @@ if uploaded_files:
                 cat_col = st.selectbox("Выберите категорию для исследования (Ось X):", text_cols if text_cols else all_cols)
             with c2:
                 sort_col = st.selectbox("Выберите числовой показатель (Ось Y):", numeric_cols if numeric_cols else all_cols)
-            
-            # Кнопка запуска выводится только для шаблонов меню
             run_template = st.button("🚀 Выполнить выбранный сценарий анализа")
         else:
             run_template = False
@@ -77,16 +74,15 @@ if uploaded_files:
         
         if "messages" not in st.session_state:
             st.session_state.messages = [
-                {"role": "assistant", "content": "Здравствуйте! Я изучил структуру ваших файлов. Выберите готовый аналитический сценарий выше, либо введите любой собственный текстовый запрос в строку ввода в самом низу страницы."}
+                {"role": "assistant", "content": "Здравствуйте! Я изучил структуру ваших файлов. Выберите сценарий выше или введите любой собственный запрос в текстовое поле в самом низу экрана."}
             ]
 
         for msg in st.session_state.messages:
             with st.chat_message(msg["role"]):
                 st.markdown(msg["content"])
-        # АКТИВАЦИЯ СТРОКИ ВВОДА ДЛЯ ЛЮБЫХ КАСТОМНЫХ ЗАПРОСОВ
-        user_query = st.chat_input("Напишите ваш собственный вопрос сюда (работает при выборе режима кастомного запроса)...")
+        # Фиксируем текстовое поле чата в самом низу
+        user_query = st.chat_input("Напишите ваш собственный вопрос сюда...")
         
-        # Определяем, какое действие сейчас нужно запустить
         execute_analysis = False
         current_task = ""
         is_custom_mode = False
@@ -128,7 +124,6 @@ if uploaded_files:
                             res_df = main_df.copy()
                             task_lower = current_task.lower()
                             
-                            # ЛОГИКА ДЛЯ КАСТОМНОГО ЗАПРОСА (Автоподбор осей по тексту вопроса пользователя)
                             if is_custom_mode:
                                 cat_col = text_cols if text_cols else all_cols
                                 for col in all_cols:
@@ -141,14 +136,13 @@ if uploaded_files:
                                         sort_col = col
                                         break
 
-                            # Принудительная очистка типов данных
                             res_df[sort_col] = pd.to_numeric(res_df[sort_col], errors='coerce').fillna(0)
                             res_df[cat_col] = res_df[cat_col].astype(str).str.strip()
                             
                             limit_match = re.search(r'(топ|top|первые)\s*(\d+)', task_lower)
                             limit_val = int(limit_match.group(2)) if limit_match else 15
                             
-                            # СЦЕНАРИЙ А: Чистый справочный перечень значений (Без денег)
+                            # СЦЕНАРИЙ А: Чистый справочный список (Без денег)
                             if "чистый справочный список" in selected_scenario or (is_custom_mode and not any(w in task_lower for w in ['стоимост', 'сумм', 'цена', 'объем', 'итого', 'сколько'])):
                                 val_counts = res_df[cat_col].value_counts()
                                 
@@ -195,8 +189,7 @@ if uploaded_files:
                         except Exception as parse_err:
                             st.error(f"Ошибка локальной обработки данных: {parse_err}")
                             
-        # Сброс флага user_query для предотвращения зацикливания Streamlit виджетов
-        if user_query:
-            st.rerun()
+            # УСТРАНЕНО: Вместо st.rerun() делаем мягкое обновление через триггер памяти элементов
+            st.button("🔄 Обновить историю чата для следующего вопроса")
 else:
     st.info("💡 Пожалуйста, загрузите один или несколько файлов Excel/CSV сверху, чтобы активировать аналитический мозг ИИ.")
