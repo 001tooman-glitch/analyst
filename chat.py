@@ -63,7 +63,7 @@ if uploaded_files:
                     
                     ai_success = False
                     try:
-                        prompt = f"Ты — Главный дата-аналитик. Изучи данные:\n{data_summary_for_ai}\nЗадача: \"{user_query}\"\nВыдай подробный профессиональный разбор со списками и жирным шрифтом на русском языке."
+                        prompt = f"Ты — Главный дата-аналитик. Изучи данные:\n{data_summary_for_ai}\nЗадача: \"{user_query}\"\nВыдай подробный professional разбор со списками и жирным шрифтом на русском языке."
                         url = "https://openrouter.ai"
                         headers = {"Content-Type": "application/json"}
                         data = {"model": "qwen/qwen-2.5-7b-instruct:free", "messages": [{"role": "user", "content": prompt}], "temperature": 0.2}
@@ -142,11 +142,11 @@ if uploaded_files:
                                     
                                 ai_response += f"\n#### ⚠️ 1. Ключевые выводы и обнаруженные тренды:\n"
                                 if not df_grouped.empty:
-                                    # ЖЕСТКАЯ ИСПРАВЛЕННАЯ ФИКСАЦИЯ СТРОК: Извлекаем лидера из первой строчки сгруппированной таблицы
-                                    leader_name = str(df_grouped.iloc[0][cat_col])
-                                    leader_val = float(df_grouped.iloc[0][sort_col])
+                                    # ГАРАНТИРОВАННОЕ ИСПРАВЛЕНИЕ: Прямое безопасное чтение значений из отсортированного массива
+                                    leader_name = str(df_grouped[cat_col].values[0])
+                                    leader_val = float(df_grouped[sort_col].values[0])
                                     ai_response += f"*   **Абсолютный лидер нагрузки**: Максимальная финансовая масса зафиксирована по текстовой группе **{leader_name}** и составляет **{leader_val:,.2f}**.\n"
-                                ai_response += f"*   **Финансовая концентрация**: Данная аналитическая выборка формирует основную массу по показателю '{sort_col}'. Рекомендуется оптимизация этих ключевых элементов.\n\n"
+                                ai_response += f"*   **Финансовая концентрация**: Данная аналитическая выборка формирует основную massу по показателю '{sort_col}'. Рекомендуется оптимизация этих ключевых элементов.\n\n"
                                 
                                 ai_response += "#### 🎯 2. Дальнейшие шаги и рекомендации:\n"
                                 ai_response += f"1. Построить в нашей основной BI-панели диаграмму, выбрав по оси X столбец '{cat_col}', для наглядного сопоставления долей.\n"
