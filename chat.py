@@ -7,8 +7,8 @@ import re
 st.set_page_config(page_title="ИИ Чат-Аналитик", layout="wide")
 st.title("🧠 Персональный ИИ-Аналитик Данных & Стратег")
 
-st.sidebar.success("🚀 Интерактивный No-Code движок ИИ активен!")
-st.sidebar.info("Выберите готовый сценарий анализа из выпадающего меню или введите свой запрос вручную в чат.")
+st.sidebar.success("🚀 Свободный чат-движок ИИ активен!")
+st.sidebar.info("Вы можете выбирать готовые шаблоны из меню, либо просто вводить абсолютно любые кастомные вопросы в чат-инпут внизу.")
 
 # Компонент для загрузки файлов в ИИ-чат
 uploaded_files = st.file_uploader(
@@ -42,30 +42,31 @@ if uploaded_files:
         numeric_cols = list(main_df.select_dtypes(include=['number']).columns)
         text_cols = [col for col in all_cols if col not in numeric_cols and col != 'Отчетный период']
 
-        # Панель выбора аналитического сценария
+        # Выпадающее меню готовых No-Code сценариев
         st.markdown("---")
-        st.subheader("🎯 Панель выбора аналитического сценария")
+        st.subheader("🎯 Справочные шаблоны экспресс-анализа")
         
         selected_scenario = st.selectbox(
-            "Выберите тип анализа, который хотите провести:",
+            "Выберите шаблон из списка (или введите свой запрос в чат внизу без выбора меню):",
             [
+                "-- Использовать свободный ввод вопросов в чате --",
                 "🔍 Показать чистый справочный список уникальных значений (Вывод сроков, фондов, ПФМ и т.д.)",
                 "📊 Рассчитать общую финансовую стоимость по выбранной категории",
-                "⚠️ Выявить критические аномалии и крупные затраты по базе",
-                "💬 Мой собственный текстовый запрос (Ввести задачу вручную внизу страницы)"
+                "⚠️ Выявить критические аномалии и крупные затраты по базе"
             ]
         )
         
         cat_col = text_cols if text_cols else all_cols
         sort_col = numeric_cols if numeric_cols else all_cols
         
-        if "Собственный" not in selected_scenario:
+        # Показываем выбор осей только если выбран шаблон, отличный от чата
+        if selected_scenario != "-- Использовать свободный ввод вопросов в чате --":
             c1, c2 = st.columns(2)
             with c1:
-                cat_col = st.selectbox("Выберите категорию для исследования (Ось X):", text_cols if text_cols else all_cols)
+                cat_col = st.selectbox("Выберите категорию (Ось X):", text_cols if text_cols else all_cols)
             with c2:
                 sort_col = st.selectbox("Выберите числовой показатель (Ось Y):", numeric_cols if numeric_cols else all_cols)
-            run_template = st.button("🚀 Выполнить выбранный сценарий анализа")
+            run_template = st.button("🚀 Выполнить выбранный шаблон")
         else:
             run_template = False
 
@@ -74,26 +75,27 @@ if uploaded_files:
         
         if "messages" not in st.session_state:
             st.session_state.messages = [
-                {"role": "assistant", "content": "Здравствуйте! Я изучил структуру ваших файлов. Выберите сценарий выше или введите любой собственный запрос в текстовое поле в самом низу экрана."}
+                {"role": "assistant", "content": "Здравствуйте! Я изучил структуру ваших файлов. Вы можете выбрать готовый шаблон аналитики выше, либо задать мне любой кастомный вопрос в свободной строке чата в самом низу."}
             ]
 
         for msg in st.session_state.messages:
             with st.chat_message(msg["role"]):
                 st.markdown(msg["content"])
-        # Фиксируем текстовое поле чата в самом низу
-        user_query = st.chat_input("Напишите ваш собственный вопрос сюда...")
+        # Нижняя чат-строка для ввода ЛЮБЫХ вопросов руками
+        user_query = st.chat_input("Задайте собственный вопрос по таблице сюда (например: какие сроки хранения указаны?)...")
         
         execute_analysis = False
         current_task = ""
         is_custom_mode = False
         
-        if run_template:
-            current_task = f"{selected_scenario} по категории {cat_col} и показателю {sort_col}"
-            execute_analysis = True
-        elif user_query and "Собственный" in selected_scenario:
+        # ЖЕСТКИЙ ПРИОРИТЕТ: Если пользователь ввел текст в чат — выполняем СТРОГО ЕГО, забивая на меню!
+        if user_query:
             current_task = user_query
             execute_analysis = True
             is_custom_mode = True
+        elif run_template:
+            current_task = f"{selected_scenario} по категории {cat_col} и показателю {sort_col}"
+            execute_analysis = True
             
         if execute_analysis:
             with st.chat_message("user"):
@@ -124,6 +126,7 @@ if uploaded_files:
                             res_df = main_df.copy()
                             task_lower = current_task.lower()
                             
+                            # АВТОПОДБОР СЛОВ ДЛЯ СВОБОДНОГО ВВОДА (Определяем, про что спросил пользователь)
                             if is_custom_mode:
                                 cat_col = text_cols if text_cols else all_cols
                                 for col in all_cols:
@@ -142,54 +145,48 @@ if uploaded_files:
                             limit_match = re.search(r'(топ|top|первые)\s*(\d+)', task_lower)
                             limit_val = int(limit_match.group(2)) if limit_match else 15
                             
-                            # СЦЕНАРИЙ А: Чистый справочный список (Без денег)
-                            if "чистый справочный список" in selected_scenario or (is_custom_mode and not any(w in task_lower for w in ['стоимост', 'сумм', 'цена', 'объем', 'итого', 'сколько'])):
+                            # РЕЖИМ 1: Справочные перечни значений (Если в кастомном запросе НЕТ слов про деньги)
+                            if "справочный список" in selected_scenario or (is_custom_mode and not any(w in task_lower for w in ['стоимост', 'сумм', 'цена', 'объем', 'итого', 'сколько'])):
                                 val_counts = res_df[cat_col].value_counts()
                                 
-                                ai_response = f"### 📋 Справочный список уникальных значений по запросу\n\n"
-                                ai_response += f"В соответствии с вашим текстовым запросом, извлечены все уникальные значения из столбца **«{cat_col}»**:\n\n"
+                                ai_response = f"### 📋 Справочный список уникальных значений\n\n"
+                                ai_response += f"В соответствии с вашим запросом, извлечены все уникальные значения из столбца **«{cat_col}»**:\n\n"
                                 for idx, (val_name, count) in enumerate(val_counts.items()):
                                     if val_name and val_name != "nan" and val_name != "None":
-                                        ai_response += f"{idx+1}. **{val_name}** — *(зафиксировано строк в таблице: {count})*\n"
-                                ai_response += f"\n Всего в таблице обнаружено уникальных групп: **{len(val_counts)}**."
+                                        ai_response += f"{idx+1}. **{val_name}** — *(строк в базе: {count})*\n"
+                                ai_response += f"\n Всего обнаружено уникальных групп: **{len(val_counts)}**."
                             
-                            # СЦЕНАРИЙ Б: Поиск крупных аномалий
+                            # РЕЖИМ 2: Аномалии по базе
                             elif "критические аномалии" in selected_scenario:
                                 mean_line = res_df[sort_col].mean()
                                 anomalies_df = res_df[res_df[sort_col] > (mean_line * 3)].sort_values(by=sort_col, ascending=False).head(10)
                                 
                                 ai_response = f"### ⚠️ Отчет по критическим финансовым аномалиям\n\n"
-                                ai_response += f"Локальный модуль просканировал колонку **«{sort_col}»** на предмет единичных записей, превышающих средний уровень по базе ({mean_line:,.2f}) более чем в 3 раза.\n\n"
+                                ai_response += f"Срез по колонке **«{sort_col}»** (значения выше среднего уровня в 3 раза):\n\n"
                                 if not anomalies_df.empty:
-                                    ai_response += "**Обнаружены следующие крупные пиковые расходы:**\n"
                                     for idx, row in anomalies_df.reset_index(drop=True).iterrows():
-                                        ai_response += f"{idx+1}. В периоде *{row['Отчетный период']}* зафиксирована позиция стоимостью **{row[sort_col]:,.2f}** (аналитический срез: *{row[cat_col]}*)\n"
+                                        ai_response += f"{idx+1}. В периоде *{row['Отчетный период']}* позиция стоимостью **{row[sort_col]:,.2f}** (аналитика: *{row[cat_col]}*)\n"
                                 else:
-                                    ai_response += "Критических единичных скачков и аномалий в строках не обнаружено, расходы распределены равномерно.\n"
+                                    ai_response += "Критических единичных скачков не обнаружено.\n"
 
-                            # СЦЕНАРИЙ В: Экономический расчет (Суммирование стоимости)
+                            # РЕЖИМ 3: Математический расчет сумм
                             else:
                                 df_grouped = res_df.groupby(cat_col, as_index=False)[sort_col].sum()
                                 df_grouped = df_grouped.sort_values(by=sort_col, ascending=False).head(limit_val)
                                 total_all = res_df[sort_col].sum()
                                 
-                                ai_response = f"### 💡 Результаты комплексного анализа и калькуляции\n\n"
-                                ai_response += f"Модуль успешно сгруппировал таблицу по значениям **«{cat_col}»** и рассчитал суммарный объем по показателю **«{sort_col}»**:\n\n"
-                                
+                                ai_response = f"### 💡 Результаты калькуляции и анализа\n\n"
+                                ai_response += f"Агрегированные объемы по показателю **«{sort_col}»** в разрезе аналитики **«{cat_col}»**:\n\n"
                                 for idx, row in df_grouped.reset_index(drop=True).iterrows():
                                     share = (row[sort_col] / total_all * 100) if total_all > 0 else 0
-                                    ai_response += f"{idx+1}. Группа/Интервал **{row[cat_col]}** — общая сумма: **{row[sort_col]:,.2f}** (Доля: **{share:.1f}%**)\n"
-                                    
-                                ai_response += f"\n#### ⚠️ Ключевые рекомендации:\n"
-                                ai_response += f"1. Рекомендуется построить в нашей основной BI-панели диаграмму по оси X '{cat_col}' для наглядного контроля долей.\n"
-                                ai_response += "2. Используйте сквозную фильтрацию по клику на дашборде для сквозного контроля трендов."
+                                    ai_response += f"{idx+1}. Группа **{row[cat_col]}** — общая сумма: **{row[sort_col]:,.2f}** (Доля: **{share:.1f}%**)\n"
                             
                             st.markdown(ai_response)
                             st.session_state.messages.append({"role": "assistant", "content": ai_response})
                         except Exception as parse_err:
                             st.error(f"Ошибка локальной обработки данных: {parse_err}")
                             
-            # УСТРАНЕНО: Вместо st.rerun() делаем мягкое обновление через триггер памяти элементов
-            st.button("🔄 Обновить историю чата для следующего вопроса")
+            # Перезапуск сессии для мгновенного отображения сообщений друг за другом
+            st.rerun()
 else:
     st.info("💡 Пожалуйста, загрузите один или несколько файлов Excel/CSV сверху, чтобы активировать аналитический мозг ИИ.")
