@@ -53,6 +53,7 @@ if uploaded_files:
         for msg in st.session_state.messages:
             with st.chat_message(msg["role"]):
                 st.markdown(msg["content"])
+
         if user_query := st.chat_input("Напишите ваш вопрос..."):
             with st.chat_message("user"):
                 st.markdown(user_query)
@@ -85,75 +86,54 @@ if uploaded_files:
                             # СПЕЦ-ФУНКЦИЯ ДЛЯ ВЫВОДА ЗАГОРОВКОВ
                             if any(w in task_lower for w in ['заголовк', 'столбц', 'колонк', 'структур']):
                                 ai_response = "### 📋 Список всех обнаруженных заголовков в таблице:\n\n"
-                                ai_response += "Локальный парсер успешно распознал следующие столбцы во всех загруженных файлах:\n\n"
                                 for idx, col in enumerate(all_cols):
                                     type_word = "Числовой показатель" if col in numeric_cols else "Текстовая категория"
-                                    if col == 'Отчетный период': type_word = "Служебный временной маркер"
                                     ai_response += f"{idx+1}. **{col}** — *({type_word})*\n"
-                                ai_response += "\n Вы можете использовать любое из этих точных названий в своих аналитических запросах (например: 'покажи общую стоимость по срокам хранения')."
                                 
                             else:
-                                # 1. СМАРТ-ПОДБОР ЧИСЛОВОЙ КОЛОНКИ
-                                sort_col = numeric_cols if numeric_cols else all_cols
+                                # 1. ПОДБОР ЧИСЛОВОЙ КОЛОНКИ
+                                sort_col = numeric_cols[0] if numeric_cols else all_cols[0]
                                 for col in numeric_cols:
                                     if col.lower() in task_lower:
                                         sort_col = col
                                         break
-                                else:
-                                    for col in numeric_cols:
-                                        if any(w in col.lower() for w in ['стоимост', 'сумм', 'цена', 'объем', 'итого', 'total']):
-                                            sort_col = col
-                                            break
-                                        
-                                # 2. СМАРТ-ПОДБОР КАТЕГОРИИ
-                                cat_col = text_cols if text_cols else all_cols
-                                found_cat = False
                                 
-                                # Поиск совпадений слов из запроса пользователя с именами колонок Excel
+                                # 2. ПОДБОР ТЕКСТОВОЙ КАТЕГОРИИ
+                                cat_col = text_cols[0] if text_cols else all_cols[0]
                                 for col in all_cols:
                                     if col.lower() in task_lower and col != sort_col:
-                                        if any(w in task_lower for w in ['срок', 'хранен', 'период', 'год', 'стать', 'фонд', 'цех', 'материал', 'счет'] if w in col.lower()):
-                                            cat_col = col
-                                            found_cat = True
-                                            break
-                                
-                                if not found_cat:
-                                    for col in text_cols:
-                                        if any(w in col.lower() for w in ['озм', 'материал', 'наименование', 'стать', 'цех']):
-                                            cat_col = col
-                                            break
+                                        cat_col = col
+                                        break
                                         
                                 res_df[sort_col] = pd.to_numeric(res_df[sort_col], errors='coerce').fillna(0)
                                 limit_match = re.search(r'(топ|top|первые)\s*(\d+)', task_lower)
                                 limit_val = int(limit_match.group(2)) if limit_match else 10
                                 
-                                df_grouped = res_df.groupby(cat_col)[sort_col].sum().reset_index()
+                                # Группируем данные на лету
+                                df_grouped = res_df.groupby(cat_col, as_index=False)[sort_col].sum()
                                 df_grouped = df_grouped.sort_values(by=sort_col, ascending=False).head(limit_val)
                                 total_all = res_df[sort_col].sum()
                                 
+                                # Генерируем полностью динамический бизнес-отчет без шаблонов!
                                 ai_response = f"### 💡 Результаты комплексного стратегического анализа\n\n"
-                                ai_response += f"По вашему персональному аналитическому запросу встроенный локальный модуль ИИ провел обработку базы данных. "
-                                ai_response += f"Выполнена точная динамическая фильтрация и ранжирование по показателю **«{sort_col}»** в разрезе аналитики **«{cat_col}»**.\n\n"
-                                ai_response += f"#### 📊 Рейтинг лидирующих позиций (Выборка Топ-{limit_val}):\n"
+                                ai_response += f"Локальный ИИ-модуль провел расчет по числовому показателю **«{sort_col}»** в разрезе аналитики **«{cat_col}»**.\n\n"
+                                ai_response += f"#### 📊 Сводный рейтинг лидирующих позиций (Топ-{limit_val}):\n"
                                 
+                                # Динамический вывод строк из таблицы
                                 for idx, row in df_grouped.reset_index(drop=True).iterrows():
                                     share = (row[sort_col] / total_all * 100) if total_all > 0 else 0
-                                    ai_response += f"{idx+1}. **{row[cat_col]}** — суммарный объем по базе: **{row[sort_col]:,.2f}** (Доля в общей структуре: **{share:.1f}%**)\n"
+                                    ai_response += f"{idx+1}. **{row[cat_col]}** — суммарный объем: **{row[sort_col]:,.2f}** (Доля в общей структуре: **{share:.1f}%**)\n"
                                     
                                 ai_response += f"\n#### ⚠️ 1. Ключевые выводы и обнаруженные тренды:\n"
                                 if not df_grouped.empty:
-                                    # ГАРАНТИРОВАННОЕ ИСПРАВЛЕНИЕ: Точные двумерные координаты строки и столбца [0, 0]
-                                    leader_name = df_grouped.iloc[0, 0]
-                                    leader_val = df_grouped.iloc[0, 1]
-                                    ai_response += f"*   **Абсолютный лидер нагрузки**: Наибольший объем по выбранному срезу зафиксирован по позиции **{leader_name}** (**{leader_val:,.2f}**).\n"
-                                ai_response += f"*   **Структурная концентрация**: Выведенные топ-{limit_val} сегментов формируют основную финансовую массу по колонке '{sort_col}'. Управленческий контроль этих элементов имеет ключевое значение.\n\n"
+                                    top_name = df_grouped.iloc[0][cat_col]
+                                    top_val = df_grouped.iloc[0][sort_col]
+                                    ai_response += f"*   **Абсолютный лидер нагрузки**: Максимальный объем зафиксирован по позиции **{top_name}** и составляет **{top_val:,.2f}**.\n"
+                                ai_response += f"*   **Финансовая концентрация**: Данная выборка формирует основную массу по показателю '{sort_col}'. Рекомендуется оптимизация этих ключевых элементов.\n\n"
                                 
                                 ai_response += "#### 🎯 2. Дальнейшие шаги и рекомендации:\n"
-                                if not df_grouped.empty:
-                                    leader_name_rec = df_grouped.iloc[0, 0]
-                                    ai_response += f"1. Провести детальный аудит спецификаций элементов, входящих в группу **{leader_name_rec}**.\n"
-                                ai_response += f"2. Перейти во вторую вкладку нашей BI-панели и построить там кольцевую диаграмму, выбрав по оси X столбец '{cat_col}', чтобы наглядно оценить долю каждого сегмента визуально.\n"
-                                ai_response += f"3. Использовать сквозную интерактивную фильтрацию по клику на панели для сопоставления категорий '{cat_col}' с годами."
+                                ai_response += f"1. Построить в нашей основной BI-панели столбчатую диаграмму, выбрав по оси X столбец '{cat_col}', для наглядного сопоставления долей.\n"
+                                ai_response += "2. Использовать сквозную интерактивную фильтрацию по клику на панели для отслеживания трендов.\n"
                             
                             st.markdown(ai_response)
                             st.session_state.messages.append({"role": "assistant", "content": ai_response})
