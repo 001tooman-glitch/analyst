@@ -62,7 +62,7 @@ if uploaded_files:
         if selected_scenario != "-- Использовать свободный ввод вопросов в чате --":
             c1, c2 = st.columns(2)
             with c1:
-                cat_col = st.selectbox("Выберите категорию (Ось X):", text_cols if text_cols else all_cols)
+                cat_col = st.selectbox("Выберите kategoriю (Ось X):", text_cols if text_cols else all_cols)
             with c2:
                 sort_col = st.selectbox("Выберите числовой показатель (Ось Y):", numeric_cols if numeric_cols else all_cols)
             run_template = st.button("🚀 Выполнить выбранный шаблон")
@@ -81,7 +81,7 @@ if uploaded_files:
             with st.chat_message(msg["role"]):
                 st.markdown(msg["content"])
         # Нижняя чат-строка для ввода ЛЮБЫХ вопросов руками
-        user_query = st.chat_input("Задайте собственный вопрос по таблице сюда (например: дай названия столбцов)...")
+        user_query = st.chat_input("Задайте собственный вопрос по таблице сюда...")
         
         execute_analysis = False
         current_task = ""
@@ -92,7 +92,7 @@ if uploaded_files:
             execute_analysis = True
             is_custom_mode = True
         elif run_template:
-            current_task = f"{selected_scenario} по категории {cat_col} и показателю {sort_col}"
+            current_task = f"{selected_scenario} по категории {cat_col} and показателю {sort_col}"
             execute_analysis = True
             
         if execute_analysis:
@@ -124,30 +124,42 @@ if uploaded_files:
                             res_df = main_df.copy()
                             task_lower = current_task.lower()
                             
+                            # БЕЗОПАСНЫЙ ВЫВОД СТОЛБЦОВ
                             if any(w in task_lower for w in ['столб', 'загол', 'колон', 'назван', 'имя', 'перечисл']):
                                 ai_response = "### 📋 Список всех обнаруженных заголовков и столбцов в таблице:\n\n"
-                                ai_response += "Локальный парсер успешно распознал структуру загруженных файлов:\n\n"
                                 for idx, col in enumerate(all_cols):
                                     type_word = "Числовой показатель" if col in numeric_cols else "Текстовая категория"
-                                    if col == 'Отчетный период': type_word = "Служебный временной маркер"
                                     ai_response += f"{idx+1}. **{col}** — *({type_word})*\n"
-                                ai_response += "\n Вы можете использовать любое из этих точных названий в своих запросах чата."
                                 
                             else:
-                                if is_custom_mode:
-                                    cat_col = text_cols if text_cols else all_cols
-                                    for col in all_cols:
-                                        if any(root in task_lower and root in col.lower() for root in ['срок', 'хран', 'матер', 'фонд', 'пфм', 'зап', 'счёт', 'групп']):
-                                            cat_col = col
-                                            break
-                                    sort_col = numeric_cols if numeric_cols else all_cols
+                                # 1. АВТОПОДБОР БАЗОВЫХ КОЛОНОК
+                                sort_col = numeric_cols if numeric_cols else all_cols
+                                for col in numeric_cols:
+                                    if col.lower() in task_lower: sort_col = col; break
+                                else:
                                     for col in numeric_cols:
                                         if any(w in col.lower() for w in ['стоимост', 'сумм', 'цена', 'объем', 'итого']):
-                                            sort_col = col
-                                            break
+                                            sort_col = col; break
+                                
+                                cat_col = text_cols if text_cols else all_cols
+                                for col in all_cols:
+                                    if any(root in task_lower and root in col.lower() for root in ['срок', 'хран', 'матер', 'фонд', 'пфм', 'зап', 'счёт', 'групп']):
+                                        cat_col = col; break
 
                                 res_df[sort_col] = pd.to_numeric(res_df[sort_col], errors='coerce').fillna(0)
                                 res_df[cat_col] = res_df[cat_col].astype(str).str.strip()
+                                
+                                # 🛠️ НОВЫЙ ИНТЕЛЛЕКТУАЛЬНЫЙ БЛОК: СКВОЗНАЯ ПЕРЕКРЁСТНАЯ ФИЛЬТРАЦИЯ ПО ТЕКСТУ ЗАПРОСА
+                                text_filters_applied = []
+                                # Ищем любые явные упоминания конкретных значений из ячеек (например цифры "1005" или фразы "более 4 лет")
+                                for col_to_filter in all_cols:
+                                    # Извлекаем все уникальные значения из этого столбца
+                                    unique_vals = res_df[col_to_filter].astype(str).unique()
+                                    for val in unique_vals:
+                                        if len(val) > 2 and val.lower() in task_lower:
+                                            # Накладываем жесткую построчную фильтрацию на датафрейм на лету!
+                                            res_df = res_df[res_df[col_to_filter].astype(str) == val]
+                                            text_filters_applied.append(f"**{col_to_filter}** = `{val}`")
                                 
                                 limit_match = re.search(r'(топ|top|первые)\s*(\d+)', task_lower)
                                 limit_val = int(limit_match.group(2)) if limit_match else 15
@@ -155,38 +167,30 @@ if uploaded_files:
                                 if "справочный список" in selected_scenario or (is_custom_mode and not any(w in task_lower for w in ['стоимост', 'сумм', 'цена', 'объем', 'итого', 'сколько'])):
                                     val_counts = res_df[cat_col].value_counts()
                                     ai_response = f"### 📋 Справочный список уникальных значений\n\n"
+                                    if text_filters_applied:
+                                        ai_response += f"⚠️ **Применены встроенные фильтры контекста:** {', '.join(text_filters_applied)}\n\n"
                                     for idx, (val_name, count) in enumerate(val_counts.items()):
                                         if val_name and val_name != "nan" and val_name != "None":
                                             ai_response += f"{idx+1}. **{val_name}** — *(строк: {count})*\n"
-                                    
-                                elif "критические аномалии" in selected_scenario:
-                                    mean_line = res_df[sort_col].mean()
-                                    anomalies_df = res_df[res_df[sort_col] > (mean_line * 3)].sort_values(by=sort_col, ascending=False).head(10)
-                                    ai_response = f"### ⚠️ Отчет по критическим финансовым аномалиям\n\n"
-                                    if not anomalies_df.empty:
-                                        for idx, row in anomalies_df.reset_index(drop=True).iterrows():
-                                            ai_response += f"{idx+1}. В файле *{row['Отчетный период']}* позиция стоимостью **{row[sort_col]:,.2f}** (аналитика: *{row[cat_col]}*)\n"
-                                    else:
-                                        ai_response += "Критических скачков не обнаружено.\n"
                                 else:
                                     df_grouped = res_df.groupby(cat_col, as_index=False)[sort_col].sum()
                                     df_grouped = df_grouped.sort_values(by=sort_col, ascending=False).head(limit_val)
                                     total_all = res_df[sort_col].sum()
                                     
-                                    ai_response = f"### 💡 Результаты калькуляции и анализа\n\n"
+                                    ai_response = f"### 💡 Результаты калькуляции и анализа по запросу\n\n"
+                                    if text_filters_applied:
+                                        ai_response += f"⚠️ **Внутрисистемные фильтры условий:** {', '.join(text_filters_applied)}\n\n"
+                                    ai_response += f"Агрегированные объемы по показателю **«{sort_col}»** в разрезе категории **«{cat_col}»**:\n\n"
                                     for idx, row in df_grouped.reset_index(drop=True).iterrows():
                                         share = (row[sort_col] / total_all * 100) if total_all > 0 else 0
                                         ai_response += f"{idx+1}. Группа **{row[cat_col]}** — общая сумма: **{row[sort_col]:,.2f}** (Доля: **{share:.1f}%**)\n"
                                 
-                                # Защитное исправление: если в процессе генерации текста произошла непредвиденная ошибка
                                 if not ai_response:
-                                    ai_response = "Массив данных успешно сгруппирован локальным модулем."
+                                    ai_response = "Расчет успешно выполнен локальным математическим модулем."
                                     
                             st.markdown(ai_response)
                             st.session_state.messages.append({"role": "assistant", "content": ai_response})
                         except Exception as parse_err:
-                            st.warning("🤖 Текст запроса абстрактный. Сформирована сводная таблица по вашим данным:")
+                            st.warning("🤖 Сформирована базовая сводная таблица по вашим данным:")
                             st.dataframe(main_df.head(10))
-                            st.session_state.messages.append({"role": "assistant", "content": "Сформирован ручной просмотр базы данных."})
-else:
-    st.info("💡 Пожалуйста, загрузите один или несколько файлов Excel/CSV сверху, чтобы активировать аналитический мозг ИИ.")
+                            st.session_state.messages.append({"role": "assistant", "content": "Сформирован просмотр базы данных."})
