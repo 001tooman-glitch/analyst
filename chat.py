@@ -63,7 +63,7 @@ if uploaded_files:
                     
                     ai_success = False
                     try:
-                        prompt = f"Ты — Главный дата-аналитик. Изучи данные:\n{data_summary_for_ai}\nЗадача: \"{user_query}\"\nВыдай подробный professional разбор со списками и жирным шрифтом на русском языке."
+                        prompt = f"Ты — Главный дата-аналитик. Изучи данные:\n{data_summary_for_ai}\nЗадача: \"{user_query}\"\nВыдай подробный профессиональный разбор со списками и жирным шрифтом на русском языке."
                         url = "https://openrouter.ai"
                         headers = {"Content-Type": "application/json"}
                         data = {"model": "qwen/qwen-2.5-7b-instruct:free", "messages": [{"role": "user", "content": prompt}], "temperature": 0.2}
@@ -82,7 +82,6 @@ if uploaded_files:
                             task_lower = user_query.lower()
                             res_df = main_df.copy()
                             
-                            # СПЕЦ-ФУНКЦИЯ ДЛЯ ВЫВОДА ЗАГОРОВКОВ
                             if any(w in task_lower for w in ['заголовк', 'столбц', 'колонк', 'структур']):
                                 ai_response = "### 📋 Список всех обнаруженных заголовков в таблице:\n\n"
                                 for idx, col in enumerate(all_cols):
@@ -90,7 +89,6 @@ if uploaded_files:
                                     ai_response += f"{idx+1}. **{col}** — *({type_word})*\n"
                                 
                             else:
-                                # 1. ПОДБОР ЧИСЛОВОЙ КОЛОНКИ (ОСЬ Y)
                                 sort_col = numeric_cols if numeric_cols else all_cols
                                 for col in numeric_cols:
                                     if col.lower() in task_lower:
@@ -102,7 +100,6 @@ if uploaded_files:
                                             sort_col = col
                                             break
                                 
-                                # 2. ПОДБОР КАТЕГОРИИ (ОСЬ X) С УЧЕТОМ НАЛИЧИЯ ТЕКСТА
                                 cat_col = text_cols if text_cols else all_cols
                                 found_cat = False
                                 for col in all_cols:
@@ -119,19 +116,16 @@ if uploaded_files:
                                             found_cat = True
                                             break
                                 
-                                # ОЧИСТКА ДАННЫХ
                                 res_df[sort_col] = pd.to_numeric(res_df[sort_col], errors='coerce').fillna(0)
                                 res_df[cat_col] = res_df[cat_col].astype(str).str.strip()
                                 
                                 limit_match = re.search(r'(топ|top|первые)\s*(\d+)', task_lower)
                                 limit_val = int(limit_match.group(2)) if limit_match else 10
                                 
-                                # Группируем данные по текстовым интервалам осей
                                 df_grouped = res_df.groupby(cat_col, as_index=False)[sort_col].sum()
                                 df_grouped = df_grouped.sort_values(by=sort_col, ascending=False).head(limit_val)
                                 total_all = res_df[sort_col].sum()
                                 
-                                # ГЕНЕРИРУЕМ ОТЧЕТ
                                 ai_response = f"### 💡 Результаты комплексного стратегического анализа выборки\n\n"
                                 ai_response += f"Встроенный локальный модуль ИИ успешно сгруппировал данные по текстовым интервалам/значениям колонки **«{cat_col}»** и рассчитал совокупный объем по показателю **«{sort_col}»**.\n\n"
                                 ai_response += f"#### 📊 Сводный рейтинг лидирующих позиций (Топ-{limit_val}):\n"
@@ -142,11 +136,13 @@ if uploaded_files:
                                     
                                 ai_response += f"\n#### ⚠️ 1. Ключевые выводы и обнаруженные тренды:\n"
                                 if not df_grouped.empty:
-                                    # ГАРАНТИРОВАННОЕ ИСПРАВЛЕНИЕ: Прямое безопасное чтение значений из отсортированного массива
-                                    leader_name = str(df_grouped[cat_col].values[0])
-                                    leader_val = float(df_grouped[sort_col].values[0])
+                                    cat_array = df_grouped[cat_col].to_numpy()
+                                    val_array = df_grouped[sort_col].to_numpy()
+                                    
+                                    leader_name = str(cat_array[0])
+                                    leader_val = float(val_array[0])
                                     ai_response += f"*   **Абсолютный лидер нагрузки**: Максимальная финансовая масса зафиксирована по текстовой группе **{leader_name}** и составляет **{leader_val:,.2f}**.\n"
-                                ai_response += f"*   **Финансовая концентрация**: Данная аналитическая выборка формирует основную massу по показателю '{sort_col}'. Рекомендуется оптимизация этих ключевых элементов.\n\n"
+                                ai_response += f"*   **Финансовая концентрация**: Данная аналитическая выборка формирует основную массу по показателю '{sort_col}'. Рекомендуется оптимизация этих ключевых элементов.\n\n"
                                 
                                 ai_response += "#### 🎯 2. Дальнейшие шаги и рекомендации:\n"
                                 ai_response += f"1. Построить в нашей основной BI-панели диаграмму, выбрав по оси X столбец '{cat_col}', для наглядного сопоставления долей.\n"
