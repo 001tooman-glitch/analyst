@@ -6,13 +6,8 @@ import json
 st.set_page_config(page_title="ИИ Чат-Аналитик", layout="wide")
 st.title("🧠 Персональный ИИ-Аналитик Данных & Стратег")
 
-# Достаем ключ SambaNova из безопасных настроек Secrets
-api_key = st.secrets.get("openrouter_key", "")
-
-if api_key:
-    st.sidebar.success("🚀 Безлимитный движок ИИ Llama 3.1 активен!")
-else:
-    st.sidebar.error("⚠️ API-ключ не найден в Secrets этого приложения!")
+st.sidebar.success("🚀 Безлимитный движок ИИ Qwen активен!")
+st.sidebar.info("Загрузите файлы и общайтесь с ИИ. Он работает полностью бесплатно и без API-ключей.")
 
 # Компонент для загрузки файлов в ИИ-чат
 uploaded_files = st.file_uploader(
@@ -31,21 +26,21 @@ if uploaded_files:
             df = pd.read_csv(file) if file.name.endswith('.csv') else pd.read_excel(file)
             df.columns = df.columns.str.strip()
             
-            st.markdown(f"📄 **{file.name}** (Строк: {df.shape[0]}, Колонок: {df.shape[1]})")
+            st.markdown(f"📄 **{file.name}** (Строк: {df.shape}, Колонок: {df.shape})")
             
             # Собираем метаструктуру (первые 3 строки)
             sample_records = df.head(3).to_dict(orient='records')
             data_summary_for_ai += f"\nИмя файла: '{file.name}'\nВсе доступные столбцы: {list(df.columns)}\nТипы данных: {df.dtypes.to_dict()}\nПример реальных строк из таблицы:\n{json.dumps(sample_records, ensure_ascii=False)}\n---"
         except Exception as e:
-            st.error(f"Не удалось прочитать file {file.name}: {e}")
+            st.error(f"Не удалось прочитать файл {file.name}: {e}")
 
     st.markdown("---")
     st.subheader("💬 Диалог с ИИ-Аналитиком (Задавайте любые вопросы)")
     
-    # Инициализируем историю сообщений чата, как в ChatGPT
+    # Инициализируем историю сообщений чата
     if "messages" not in st.session_state:
         st.session_state.messages = [
-            {"role": "assistant", "content": "Здравствуйте! Я подключился через стабильный шлюз SambaNova и полностью изучил структуру ваших файлов. Задайте мне любой вопрос. Я могу найти скрытые зависимости, сопоставить данные, выявить финансовые аномалии или составить готовый отчет для руководства."}
+            {"role": "assistant", "content": "Здравствуйте! Я подключился через открытый шлюз и полностью изучил структуру ваших файлов. Задайте мне любой вопрос. Я могу найти скрытые зависимости, сопоставить данные, выявить финансовые аномалии или составить готовый отчет для руководства."}
         ]
 
     # Отображаем историю чата на экране
@@ -54,7 +49,7 @@ if uploaded_files:
             st.markdown(msg["content"])
 
     # Поле ввода вопроса пользователя
-    if user_query := st.chat_input("Напишите ваш вопрос (например: 'покажи топ 10 ОЗМ по стоимости'):"):
+    if user_query := st.chat_input("Напишите ваш вопрос (например: 'покажи топ 10 ОЗМ по общей стоимости'):"):
         with st.chat_message("user"):
             st.markdown(user_query)
         st.session_state.messages.append({"role": "user", "content": user_query})
@@ -78,14 +73,11 @@ if uploaded_files:
                 """
                 
                 try:
-                    # Вызов ультра-стабильного API SambaNova (модель Llama 3.1 70B)
-                    url = "https://sambanova.ai"
-                    headers = {
-                        "Authorization": f"Bearer {api_key}",
-                        "Content-Type": "application/json"
-                    }
+                    # Вызов открытого шлюза без токенов авторизации
+                    url = "https://openrouter.ai"
+                    headers = {"Content-Type": "application/json"}
                     data = {
-                        "model": "Meta-Llama-3.1-70B-Instructor",
+                        "model": "qwen/qwen-2.5-7b-instruct:free",
                         "messages": [{"role": "user", "content": prompt}],
                         "temperature": 0.2
                     }
@@ -93,11 +85,11 @@ if uploaded_files:
                     response = requests.post(url, headers=headers, json=data, timeout=25)
                     
                     if response.status_code == 200:
-                        ai_response = response.json()['choices'][0]['message']['content'].strip()
+                        ai_response = response.json()['choices']['message']['content'].strip()
                         st.markdown(ai_response)
                         st.session_state.messages.append({"role": "assistant", "content": ai_response})
                     else:
-                        st.error(f"Ошибка шлюза API (Код {response.status_code}). Проверьте токен в настройках.")
+                        st.error(f"Ошибка шлюза API (Код {response.status_code}). Пожалуйста, попробуйте отправить запрос еще раз через пару секунд.")
                 except Exception as chat_err:
                     st.error(f"Не удалось отправить запрос в ИИ: {chat_err}")
 else:
