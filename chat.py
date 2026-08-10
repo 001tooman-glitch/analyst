@@ -62,7 +62,7 @@ if uploaded_files:
         if selected_scenario != "-- Использовать свободный ввод вопросов в чате --":
             c1, c2 = st.columns(2)
             with c1:
-                cat_col = st.selectbox("Выберите kategoriю (Ось X):", text_cols if text_cols else all_cols)
+                cat_col = st.selectbox("Выберите категорию (Ось X):", text_cols if text_cols else all_cols)
             with c2:
                 sort_col = st.selectbox("Выберите числовой показатель (Ось Y):", numeric_cols if numeric_cols else all_cols)
             run_template = st.button("🚀 Выполнить выбранный шаблон")
@@ -74,7 +74,7 @@ if uploaded_files:
         
         if "messages" not in st.session_state:
             st.session_state.messages = [
-                {"role": "assistant", "content": "Здравствуйте! Я изучил структуру ваших файлов. Вы можете выбрать готовый шаблон аналитики выше, либо задать мне любой кастомный вопрос в свободной строке чата в самом низу."}
+                {"role": "assistant", "content": "Здравствуйте! Я изучил структуру ваших файлов. Задайте мне любой вопрос в свободной строке чата в самом низу."}
             ]
 
         for msg in st.session_state.messages:
@@ -92,7 +92,7 @@ if uploaded_files:
             execute_analysis = True
             is_custom_mode = True
         elif run_template:
-            current_task = f"{selected_scenario} по категории {cat_col} and показателю {sort_col}"
+            current_task = f"{selected_scenario} по категории {cat_col} и показателю {sort_col}"
             execute_analysis = True
             
         if execute_analysis:
@@ -147,28 +147,42 @@ if uploaded_files:
                                         cat_col = col; break
 
                                 res_df[sort_col] = pd.to_numeric(res_df[sort_col], errors='coerce').fillna(0)
-                                res_df[cat_col] = res_df[cat_col].astype(str).str.strip()
                                 
-                                # 🛠️ НОВЫЙ ИНТЕЛЛЕКТУАЛЬНЫЙ БЛОК: СКВОЗНАЯ ПЕРЕКРЁСТНАЯ ФИЛЬТРАЦИЯ ПО ТЕКСТУ ЗАПРОСА
+                                # УЛУЧШЕННЫЙ ИНТЕЛЛЕКТУАЛЬНЫЙ БЛОК: СКАНИРОВАНИЕ КОРНЕЙ ТЕКСТА ДЛЯ ФИЛЬТРАЦИИ
                                 text_filters_applied = []
-                                # Ищем любые явные упоминания конкретных значений из ячеек (например цифры "1005" или фразы "более 4 лет")
-                                for col_to_filter in all_cols:
-                                    # Извлекаем все уникальные значения из этого столбца
-                                    unique_vals = res_df[col_to_filter].astype(str).unique()
-                                    for val in unique_vals:
-                                        if len(val) > 2 and val.lower() in task_lower:
-                                            # Накладываем жесткую построчную фильтрацию на датафрейм на лету!
-                                            res_df = res_df[res_df[col_to_filter].astype(str) == val]
-                                            text_filters_applied.append(f"**{col_to_filter}** = `{val}`")
+                                query_words = [w for w in re.split(r'\W+', task_lower) if len(w) > 2 and w not in ['дай', 'выдай', 'значение', 'общей', 'стоимости', 'срок', 'сроку', 'хранения', 'для']]
                                 
+                                for col_to_filter in all_cols:
+                                    if col_to_filter == sort_col: continue
+                                    unique_vals = res_df[col_to_filter].astype(str).unique()
+                                    
+                                    for val in unique_vals:
+                                        val_clean = val.lower().strip()
+                                        if not val_clean or val_clean in ['nan', 'none']: continue
+                                        
+                                        val_words = re.split(r'\W+', val_clean)
+                                        for qw in query_words:
+                                            if qw in val_clean or any(qw in vw for vw in val_words):
+                                                res_df = res_df[res_df[col_to_filter].astype(str) == val]
+                                                text_filters_applied.append(f"**{col_to_filter}** = `{val}`")
+                                                break
+
                                 limit_match = re.search(r'(топ|top|первые)\s*(\d+)', task_lower)
                                 limit_val = int(limit_match.group(2)) if limit_match else 15
                                 
-                                if "справочный список" in selected_scenario or (is_custom_mode and not any(w in task_lower for w in ['стоимост', 'сумм', 'цена', 'объем', 'итого', 'сколько'])):
+                                # ГЕНЕРИРУЕМ ФИНАЛЬНЫЙ ОТВЕТ С УЧЕТОМ НАЛОЖЕННЫХ ФИЛЬТРОВ
+                                if text_filters_applied:
+                                    total_filtered_sum = res_df[sort_col].sum()
+                                    ai_response = f"### 💡 Результаты точечного перекрестного анализа\n\n"
+                                    ai_response += f"Локальный ИИ-модуль успешно распознал в тексте запроса условия и применил следующие фильтры к базе данных:\n"
+                                    for f_text in set(text_filters_applied):
+                                        ai_response += f"*   {f_text}\n"
+                                    ai_response += f"\n🔥 **Итоговое суммарное значение по показателю «{sort_col}» составляет: {total_filtered_sum:,.2f}**\n"
+                                    ai_response += f"\n Всего под заданные критерии подошло строк в базе: **{len(res_df)}**."
+                                    
+                                elif "справочный список" in selected_scenario or (is_custom_mode and not any(w in task_lower for w in ['стоимост', 'сумм', 'цена', 'объем', 'итого', 'сколько'])):
                                     val_counts = res_df[cat_col].value_counts()
                                     ai_response = f"### 📋 Справочный список уникальных значений\n\n"
-                                    if text_filters_applied:
-                                        ai_response += f"⚠️ **Применены встроенные фильтры контекста:** {', '.join(text_filters_applied)}\n\n"
                                     for idx, (val_name, count) in enumerate(val_counts.items()):
                                         if val_name and val_name != "nan" and val_name != "None":
                                             ai_response += f"{idx+1}. **{val_name}** — *(строк: {count})*\n"
@@ -177,9 +191,7 @@ if uploaded_files:
                                     df_grouped = df_grouped.sort_values(by=sort_col, ascending=False).head(limit_val)
                                     total_all = res_df[sort_col].sum()
                                     
-                                    ai_response = f"### 💡 Результаты калькуляции и анализа по запросу\n\n"
-                                    if text_filters_applied:
-                                        ai_response += f"⚠️ **Внутрисистемные фильтры условий:** {', '.join(text_filters_applied)}\n\n"
+                                    ai_response = f"### 💡 Результаты калькуляции и анализа\n\n"
                                     ai_response += f"Агрегированные объемы по показателю **«{sort_col}»** в разрезе категории **«{cat_col}»**:\n\n"
                                     for idx, row in df_grouped.reset_index(drop=True).iterrows():
                                         share = (row[sort_col] / total_all * 100) if total_all > 0 else 0
