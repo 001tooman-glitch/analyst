@@ -1,4 +1,4 @@
-import streamlit st as st
+import streamlit as st
 import pandas as pd
 import requests
 import json
@@ -119,14 +119,14 @@ if uploaded_files:
                                             found_cat = True
                                             break
                                 
-                                # ОЧИСТКА ДАННЫХ: Числа превращаем в числа, а текстовую колонку осей принудительно оставляем текстом!
+                                # ОЧИСТКА ДАННЫХ
                                 res_df[sort_col] = pd.to_numeric(res_df[sort_col], errors='coerce').fillna(0)
                                 res_df[cat_col] = res_df[cat_col].astype(str).str.strip()
                                 
                                 limit_match = re.search(r'(топ|top|первые)\s*(\d+)', task_lower)
                                 limit_val = int(limit_match.group(2)) if limit_match else 10
                                 
-                                # Группируем данные (текстовые интервалы станут уникальными строками)
+                                # Группируем данные по текстовым интервалам осей
                                 df_grouped = res_df.groupby(cat_col, as_index=False)[sort_col].sum()
                                 df_grouped = df_grouped.sort_values(by=sort_col, ascending=False).head(limit_val)
                                 total_all = res_df[sort_col].sum()
@@ -138,12 +138,13 @@ if uploaded_files:
                                 
                                 for idx, row in df_grouped.reset_index(drop=True).iterrows():
                                     share = (row[sort_col] / total_all * 100) if total_all > 0 else 0
-                                    ai_response += f"{idx+1}. Интервал/Группа **{row[cat_col]}** — суммарная стоимость: **{row[sort_col]:,.2f}** (Доля в общей структуре затрат: **{share:.1f}%**)\n"
+                                    ai_response += f"{idx+1}. Группа **{row[cat_col]}** — суммарная стоимость: **{row[sort_col]:,.2f}** (Доля в общей структуре затрат: **{share:.1f}%**)\n"
                                     
                                 ai_response += f"\n#### ⚠️ 1. Ключевые выводы и обнаруженные тренды:\n"
                                 if not df_grouped.empty:
-                                    leader_name = str(df_grouped[cat_col].values[0])
-                                    leader_val = float(df_grouped[sort_col].values[0])
+                                    # ЖЕСТКАЯ ИСПРАВЛЕННАЯ ФИКСАЦИЯ СТРОК: Извлекаем лидера из первой строчки сгруппированной таблицы
+                                    leader_name = str(df_grouped.iloc[0][cat_col])
+                                    leader_val = float(df_grouped.iloc[0][sort_col])
                                     ai_response += f"*   **Абсолютный лидер нагрузки**: Максимальная финансовая масса зафиксирована по текстовой группе **{leader_name}** и составляет **{leader_val:,.2f}**.\n"
                                 ai_response += f"*   **Финансовая концентрация**: Данная аналитическая выборка формирует основную массу по показателю '{sort_col}'. Рекомендуется оптимизация этих ключевых элементов.\n\n"
                                 
