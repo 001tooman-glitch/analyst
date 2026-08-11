@@ -23,6 +23,8 @@ if "active_filter_col" not in st.session_state:
     st.session_state.active_filter_col = None
 if "main_df" not in st.session_state:
     st.session_state.main_df = pd.DataFrame()
+if "uploaded_backup" not in st.session_state:
+    st.session_state.uploaded_backup = None
 
 # ВСЕЯДНЫЙ КЭШ-ДВИЖОК АВТОПОДБОРА ШАПОК И ВЫРАВНИВАНИЕМ СТРУКТУРЫ ТАБЛИЦ
 @st.cache_data
@@ -74,6 +76,12 @@ def load_clean_and_merge_files(uploaded_files_list):
     return merged_df, frames_dict, True
 uploaded_files = st.file_uploader("Загрузите один или несколько любых файлов Excel/CSV:", type=["csv", "xlsx"], accept_multiple_files=True)
 
+# ЖЕСТКАЯ ЗАЩИТА: Если файлы загружены, фиксируем их в защищенный бэкап сессии севера
+if uploaded_files:
+    st.session_state.uploaded_backup = uploaded_files
+elif st.session_state.uploaded_backup:
+    uploaded_files = st.session_state.uploaded_backup
+
 if uploaded_files:
     main_df, dataframes_dict, is_merged = load_clean_and_merge_files(uploaded_files)
     if not main_df.empty:
@@ -83,7 +91,7 @@ if uploaded_files:
         # ---------------- РАЗДЕЛ 1: ЗАГРУЗКА И ОЧИСТКА ДАННЫХ ----------------
         if page == "🗂️ 1. Загрузка и очистка данных":
             st.title("🚀 Модуль Предобработки & Импорта Данных")
-            st.success(f"📊 База данных создана! Файлов: {len(uploaded_files)}. Строк: {main_df.shape}")
+            st.success(f"📊 База данных создана! Файлов: {len(uploaded_files)}. Строк: {main_df.shape}, Колонок: {main_df.shape}")
                 
             st.markdown("### 📋 Структура сводной таблицы (Первые 5 строк):")
             try:
@@ -98,23 +106,23 @@ if uploaded_files:
             except Exception as de: st.error(f"Ошибка скачивания: {de}")
 
         # ---------------- РАЗДЕЛ 2: АНАЛИТИЧЕСКАЯ BI-ПАНЕЛЬ (КАРТОЧКИ + ДИАГРАММЫ) ----------------
-        elif page == "📊 2. Конструктор диаграмм":
+        elif page == "📊 2.grid Конструктор диаграмм" or page == "📊 2. Конструктор диаграмм":
             import plotly.graph_objects as go
             st.title("📊 Интерактивная BI-Панель Показателей")
             
             st.sidebar.success("🟢 Интерактивный BI-движок активен!")
             if st.session_state.active_filter_val is not None:
                 st.sidebar.markdown(f"**Активный фильтр:**\n`{st.session_state.active_filter_col}` = `{st.session_state.active_filter_val}`")
+                # УСТРАНЕНО ЗАЦИКЛИВАНИЕ: Кнопка очищает значения напрямую без разрушительного st.rerun()
                 if st.sidebar.button("🧹 Очистить все фильтры", type="primary", key="clr_f_cp"): 
                     st.session_state.active_filter_val = None
-                    st.session_state.active_filter_col = None; st.rerun()
+                    st.session_state.active_filter_col = None
+                    st.toast("🔄 Фильтры сброшены к исходной базе!")
 
-            # Сквозной фильтр Plotly: Сначала жестко фильтруем датафрейм по клику на сектор графиков
             df_f = main_df.copy()
             if st.session_state.active_filter_val is not None and st.session_state.active_filter_col in df_f.columns:
                 df_f = df_f[df_f[st.session_state.active_filter_col].astype(str) == str(st.session_state.active_filter_val)]
 
-            # КАРТОЧКИ KPI (Рассчитываются СТРОГО на основе отфильтрованного датафрейма df_f)
             st.subheader("🎴 Панель Ключевых Показателей (KPI Карточки)")
             card_cols = st.columns(st.session_state.manual_cards)
             for j in range(st.session_state.manual_cards):
@@ -131,13 +139,13 @@ if uploaded_files:
                         except: st.error("Ошибка")
             cc1, cc2 = st.columns(2)
             with cc1:
-                if st.button("➕ Добавить карточку"): st.session_state.manual_cards += 1; st.rerun()
+                if st.button("➕ Добавить карточку"): st.session_state.manual_cards += 1
             with cc2:
                 if st.session_state.manual_cards > 1:
-                    if st.button("🗑️ Удалить карточку"): st.session_state.manual_cards -= 1; st.rerun()
+                    if st.button("🗑️ Удалить карточку"): st.session_state.manual_cards -= 1
 
             st.markdown("---")
-            st.subheader("🛠️ No-Code Конструктор Графиков")
+            st.subheader("🛠️ No-Codebadge Конструктор Графиков")
             for i in range(st.session_state.manual_charts):
                 st.markdown(f"##### 📊 Настройка диаграммы № {i+1}")
                 c1, c2, c3, c4 = st.columns(4)
@@ -159,12 +167,11 @@ if uploaded_files:
                         fig = go.Figure()
                         
                         if "Waterfall" in style:
-                            # ОШИБКА УСТРАНЕНА: y_axis исправлена на точную y_ax
                             fig.add_trace(go.Waterfall(x=list(df_g[x_ax].astype(str)) + ["ИТОГО"], y=list(df_g[y_ax]) + [df_g[y_ax].sum()], measure=["relative"] * len(df_g[y_ax]) + ["total"], textposition="auto", text=[f"{v:,.0f}" for v in df_g[y_ax]] + [f"{df_g[y_ax].sum():,.0f}"] if lbl else None, increasing={"marker": {"color": color}}, totals={"marker": {"color": "green"}}))
                         elif "Funnel" in style:
                             fig.add_trace(go.Funnel(y=df_g[x_ax].astype(str), x=df_g[y_ax], textinfo="value+percent initial" if lbl else "none", marker={"color": color}))
                         elif "Donut" in style:
-                            fig.add_trace(go.Pie(labels=df_g[x_ax], values=df_g[y_ax], hole=0.4, rotation=rot, textinfo="label+value" if lbl else "none"))
+                            fig.add_trace(go.Pie(labels=df_g[x_ax], values=df_g[y_g], hole=0.4, rotation=rot, textinfo="label+value" if lbl else "none"))
                         elif "Line" in style:
                             fig.add_trace(go.Scatter(x=df_g[x_ax], y=df_g[y_ax], mode="lines+markers+text" if lbl else "lines+markers", text=df_g[y_ax].map(lambda x: f"{x:,.0f}") if lbl else None, line=dict(color=color)))
                         else:
@@ -174,19 +181,19 @@ if uploaded_files:
                         ev = st.plotly_chart(fig, use_container_width=True, key=f"p_{i}", on_select="rerun")
                         
                         if ev and "selection" in ev and "points" in ev["selection"] and len(ev["selection"]["points"]) > 0:
-                            pt = ev["selection"]["points"][0]
+                            pt = ev["selection"]["points"]
                             val = pt["label"] if "label" in pt else (pt["x"] if "x" in pt else pt["y"])
                             if val is not None and str(val) != "ИТОГО": 
                                 st.session_state.active_filter_val = val
-                                st.session_state.active_filter_col = x_ax; st.rerun()
+                                st.session_state.active_filter_col = x_ax
                     except Exception as ex: st.error(f"Ошибка: {ex}")
                 else: st.info("ℹ️ Выберите категории для построения графика")
                 st.markdown("<hr style='border:1px dashed #ddd'>", unsafe_allow_html=True)
                 
             b1, b2 = st.columns(2)
             with b1:
-                if st.button("➕ Добавить диаграмму"): st.session_state.manual_charts += 1; st.rerun()
+                if st.button("➕ Добавить диаграмму"): st.session_state.manual_charts += 1
             with b2:
                 if st.session_state.manual_charts > 1:
-                    if st.button("🗑️ Удалить диаграмму"): st.session_state.manual_charts -= 1; st.rerun()
+                    if st.button("🗑️ Удалить диаграмму"): st.session_state.manual_charts -= 1
 else: st.info("Ожидание загрузки любых файлов Excel/CSV для активации BI-панели...")
