@@ -71,8 +71,7 @@ def load_clean_and_merge_files(uploaded_files_list):
     
     merged_df = pd.concat(frames_dict.values(), ignore_index=True, join='outer')
     merged_df = merged_df.dropna(how='all')
-    return merged_df, frames_dict, True
-uploaded_files = st.file_uploader("Загрузите один или несколько любых файлов Excel/CSV:", type=["csv", "xlsx"], accept_multiple_files=True)
+    return mergeuploaded_files = st.file_uploader("Загрузите один или несколько любых файлов Excel/CSV:", type=["csv", "xlsx"], accept_multiple_files=True)
 
 if uploaded_files:
     st.session_state.uploaded_backup = uploaded_files
@@ -108,7 +107,6 @@ if uploaded_files:
             st.sidebar.success("🟢 Интерактивный BI-движок активен!")
             if st.session_state.active_filter_val is not None:
                 st.sidebar.markdown(f"**Активный фильтр:**\n`{st.session_state.active_filter_col}` = `{st.session_state.active_filter_val}`")
-                # ИСПРАВЛЕНИЕ: Мягкий сброс фильтра сессии БЕЗ обнуления No-Code виджетов осей диаграмм
                 if st.sidebar.button("🧹 Очистить все фильтры", type="primary", key="clr_f_cp"): 
                     st.session_state.active_filter_val = None
                     st.session_state.active_filter_col = None
@@ -134,20 +132,15 @@ if uploaded_files:
                         except: st.error("Ошибка")
             cc1, cc2 = st.columns(2)
             with cc1:
-                if st.button("➕ Добавить карточку"): st.session_state.manual_cards += 1; st.toast("Добавлена карточка!")
+                if st.button("➕ Добавить карточку"): st.session_state.manual_cards += 1
             with cc2:
                 if st.session_state.manual_cards > 1:
-                    if st.button("🗑️ Удалить карточку"): st.session_state.manual_cards -= 1; st.toast("Удалена карточка!")
+                    if st.button("🗑️ Удалить карточку"): st.session_state.manual_cards -= 1
 
             st.markdown("---")
             st.subheader("🛠️ No-Code Конструктор Графиков")
             for i in range(st.session_state.manual_charts):
                 st.markdown(f"##### 📊 Настройка диаграммы № {i+1}")
-                
-                # КЭШИРОВАНИЕ СОСТОЯНИЯ И ИНДЕКСОВ КОЛОНОК (Защита от сброса при очистке фильтров)
-                def_style_idx = 0
-                def_x_idx = 0
-                def_y_idx = 0
                 
                 c1, c2, c3, c4 = st.columns(4)
                 with c1: style = st.selectbox(f"Тип графики:", ["Столбчатая диаграмма (Bar)", "Линейный тренд (Line)", "Кольцевая долей (Donut)", "Диаграмма Водопад (Waterfall)", "Диаграмма Воронка (Funnel)"], key=f"s_{i}")
@@ -184,7 +177,8 @@ if uploaded_files:
                         ev_i = st.plotly_chart(fig, use_container_width=True, key=f"p_{i}", on_select="rerun")
                         
                         if ev_i and "selection" in ev_i and "points" in ev_i["selection"] and len(ev_i["selection"]["points"]) > 0:
-                            pt = ev_i["selection"]["points"]
+                            # БЕЗОПАСНОЕ ИЗВЛЕЧЕНИЕ: Считываем первую точку из списка как словарь и безопасно забираем имя
+                            pt = ev_i["selection"]["points"][0]
                             val = pt.get('x', pt.get('label', pt.get('y')))
                             if val is not None and str(val) != "ИТОГО": 
                                 st.session_state.active_filter_val = val
@@ -196,8 +190,9 @@ if uploaded_files:
                 
             b1, b2 = st.columns(2)
             with b1:
-                if st.button("➕ Добавить диаграмму"): st.session_state.manual_charts += 1; st.toast("Добавлен блок диаграммы!")
+                if st.button("➕ Добавить диаграмму"): st.session_state.manual_charts += 1; st.rerun()
             with b2:
                 if st.session_state.manual_charts > 1:
-                    if st.button("🗑️ Удалить диаграмму"): st.session_state.manual_charts -= 1; st.toast("Удален блок диаграммы!")
+                    if st.button("🗑️ Удалить диаграмму"): st.session_state.manual_charts -= 1; st.rerun()
 else: st.info("Ожидание загрузки любых файлов Excel/CSV для активации BI-панели...")
+d_df, frames_dict, True
