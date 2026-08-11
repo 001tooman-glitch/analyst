@@ -5,7 +5,7 @@ import re
 
 st.set_page_config(page_title="Enterprise BI Конструктор", layout="wide")
 
-# АВТОНОМНЫЙ И СТАБИЛЬНЫЙ ПЕРЕКЛЮЧАТЕЛЬ СТРАНИЦ
+# АВТОНОМНЫЙ И СТАБИЛЬНЫЙ ПЕРЕКЛЮЧАТЕЛЬ СТРАНИЦ В БОКОВОЙ ПАНЕЛИ
 st.sidebar.markdown("### 🗺️ Навигация по BI-платформе")
 page = st.sidebar.radio(
     "Перейти к разделу:",
@@ -35,7 +35,7 @@ def load_clean_and_merge_files(uploaded_files_list):
         try:
             df_i = pd.read_csv(f) if f.name.endswith('.csv') else pd.read_excel(f, header=None)
             
-            if df_i.shape > 1:
+            if df_i.shape[0] > 1:
                 row0 = df_i.iloc[0].astype(str).str.strip()
                 row1 = df_i.iloc[1].astype(str).str.strip()
                 is_row1_text = pd.to_numeric(row1, errors='coerce').isna().all()
@@ -74,7 +74,6 @@ def load_clean_and_merge_files(uploaded_files_list):
         
     f_keys = list(frames_dict.keys())
     first_file_name = f_keys[0] if f_keys else ""
-    # ОЧЕПАТКА ИСПРАВЛЕНА: f_name заменена на абсолютно точную first_file_name
     if not first_file_name: 
         return pd.DataFrame(), {}, False
     
@@ -105,8 +104,8 @@ if uploaded_files:
 
         if page == "🗂️ 1. Загрузка и очистка данных":
             st.title("🚀 Модуль Предобработки & Импорта Данных")
-            if is_merged: st.success(f"📊 База данных создана! Файлов: {len(uploaded_files)}. Строк: {main_df.shape}")
-            else: st.warning(f"⚠️ База объединена через 'Outer Join'. Строк: {main_df.shape}")
+            if is_merged: st.success(f"📊 База данных создана! Файлов: {len(uploaded_files)}. Строк: {main_df.shape[0]}")
+            else: st.warning(f"⚠️ База объединена через 'Outer Join'. Строк: {main_df.shape[0]}")
                 
             st.markdown("### 📋 Структура сводной таблицы (Первые 5 строк):")
             try:
@@ -117,7 +116,7 @@ if uploaded_files:
             
             try:
                 csv_data = main_df.to_csv(index=False, encoding='utf-8-sig', sep=';')
-                st.download_button(label="📥 Скачать объединенную базу (Excel CSV)", data=csv_data, file_name="Сводный_отчет_очищенный.csv", mime="text/csv")
+                st.download_button(label="📥 Скачать базу (Excel CSV)", data=csv_data, file_name="Сводный_отчет.csv", mime="text/csv")
             except Exception as de: st.error(f"Ошибка скачивания: {de}")
                 
             st.markdown("---")
