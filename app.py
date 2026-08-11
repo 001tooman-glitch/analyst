@@ -33,23 +33,18 @@ def load_clean_and_merge_files(uploaded_files_list):
         
     for f in uploaded_files_list:
         try:
-            # Читаем файл целиком как текст для безопасного анализа
             df_i = pd.read_csv(f) if f.name.endswith('.csv') else pd.read_excel(f, header=None)
             
-            # УМНЫЙ АВТОПОДБОР ШАПКИ ТАБЛИЦЫ (Сканируем первые 5 строк)
             header_row_idx = 0
             for r_idx in range(min(5, len(df_i))):
                 row_str = df_i.iloc[r_idx].astype(str).str.lower().values
-                # Если в строке есть ключевые бизнес-слова, значит это и есть шапка!
                 if any(w in "".join(row_str) for w in ['озм', 'материал', 'стоимост', 'сумма', 'количество', 'ед', 'цех', 'департамент']):
                     header_row_idx = r_idx
                     break
             
-            # Назначаем найденную строку заголовком
             df_i.columns = df_i.iloc[header_row_idx].astype(str).str.strip()
             df_i = df_i.iloc[header_row_idx + 1:].reset_index(drop=True)
             
-            # ВЫРЕЗАЕМ ЛЮБОЙ ТЕКСТОВЫЙ МУСОР ИЗ ШАПКИ
             cleaned_cols = []
             for idx, col in enumerate(df_i.columns):
                 c_str = str(col).replace('nan №', '').replace('№ nan', '').replace('nan', '').replace('Unnamed:', '').strip()
@@ -70,11 +65,10 @@ def load_clean_and_merge_files(uploaded_files_list):
         return pd.DataFrame(), {}, False
         
     f_keys = list(frames_dict.keys())
-    first_file_name = f_keys[0] if f_keys else ""
+    first_file_name = f_keys if f_keys else ""
     if not first_file_name: 
         return pd.DataFrame(), {}, False
     
-    # Объединяем все файлы через гибкий режим outer join (не боится разной структуры)
     merged_df = pd.concat(frames_dict.values(), ignore_index=True, join='outer')
     merged_df = merged_df.dropna(how='all')
     return merged_df, frames_dict, True
@@ -89,7 +83,7 @@ if uploaded_files:
         # ---------------- РАЗДЕЛ 1: ЗАГРУЗКА И ОЧИСТКА ДАННЫХ ----------------
         if page == "🗂️ 1. Загрузка и очистка данных":
             st.title("🚀 Модуль Предобработки & Импорта Данных")
-            st.success(f"📊 База данных создана! Файлов: {len(uploaded_files)}. Строк: {main_df.shape[0]}, Колонок: {main_df.shape[1]}")
+            st.success(f"📊 База данных создана! Файлов: {len(uploaded_files)}. Строк: {main_df.shape}")
                 
             st.markdown("### 📋 Структура сводной таблицы (Первые 5 строк):")
             try:
@@ -115,10 +109,12 @@ if uploaded_files:
                     st.session_state.active_filter_val = None
                     st.session_state.active_filter_col = None; st.rerun()
 
+            # Сквозной фильтр Plotly: Сначала жестко фильтруем датафрейм по клику на сектор графиков
             df_f = main_df.copy()
             if st.session_state.active_filter_val is not None and st.session_state.active_filter_col in df_f.columns:
                 df_f = df_f[df_f[st.session_state.active_filter_col].astype(str) == str(st.session_state.active_filter_val)]
 
+            # КАРТОЧКИ KPI (Рассчитываются СТРОГО на основе отфильтрованного датафрейма df_f)
             st.subheader("🎴 Панель Ключевых Показателей (KPI Карточки)")
             card_cols = st.columns(st.session_state.manual_cards)
             for j in range(st.session_state.manual_cards):
@@ -163,7 +159,8 @@ if uploaded_files:
                         fig = go.Figure()
                         
                         if "Waterfall" in style:
-                            fig.add_trace(go.Waterfall(x=list(df_g[x_ax].astype(str)) + ["ИТОГО"], y=list(df_g[y_ax]) + [df_g[y_ax].sum()], measure=["relative"] * len(df_g[y_g]) + ["total"], textposition="auto", text=[f"{v:,.0f}" for v in df_g[y_ax]] + [f"{df_g[y_ax].sum():,.0f}"] if lbl else None, increasing={"marker": {"color": color}}, totals={"marker": {"color": "green"}}))
+                            # ОШИБКА УСТРАНЕНА: y_axis исправлена на точную y_ax
+                            fig.add_trace(go.Waterfall(x=list(df_g[x_ax].astype(str)) + ["ИТОГО"], y=list(df_g[y_ax]) + [df_g[y_ax].sum()], measure=["relative"] * len(df_g[y_ax]) + ["total"], textposition="auto", text=[f"{v:,.0f}" for v in df_g[y_ax]] + [f"{df_g[y_ax].sum():,.0f}"] if lbl else None, increasing={"marker": {"color": color}}, totals={"marker": {"color": "green"}}))
                         elif "Funnel" in style:
                             fig.add_trace(go.Funnel(y=df_g[x_ax].astype(str), x=df_g[y_ax], textinfo="value+percent initial" if lbl else "none", marker={"color": color}))
                         elif "Donut" in style:
@@ -175,11 +172,13 @@ if uploaded_files:
                         
                         fig.update_layout(xaxis=dict(tickangle=45 if not horiz else 0), uniformtext=dict(mode="hide", minsize=8), clickmode="event+select")
                         ev = st.plotly_chart(fig, use_container_width=True, key=f"p_{i}", on_select="rerun")
+                        
                         if ev and "selection" in ev and "points" in ev["selection"] and len(ev["selection"]["points"]) > 0:
-                            pt = ev["selection"]["points"]
-                            val = pt["pointNumber"] if "pointNumber" in pt else (pt["label"] if "label" in pt else (pt["x"] if "x" in pt else pt["y"]))
-                            if "Donut" in style: val = df_g.iloc[val][x_ax]
-                            if val is not None and str(val) != "ИТОГО": st.session_state.active_filter_val = val; st.session_state.active_filter_col = x_ax; st.rerun()
+                            pt = ev["selection"]["points"][0]
+                            val = pt["label"] if "label" in pt else (pt["x"] if "x" in pt else pt["y"])
+                            if val is not None and str(val) != "ИТОГО": 
+                                st.session_state.active_filter_val = val
+                                st.session_state.active_filter_col = x_ax; st.rerun()
                     except Exception as ex: st.error(f"Ошибка: {ex}")
                 else: st.info("ℹ️ Выберите категории для построения графика")
                 st.markdown("<hr style='border:1px dashed #ddd'>", unsafe_allow_html=True)
