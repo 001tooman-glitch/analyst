@@ -104,8 +104,8 @@ if uploaded_files:
 
         if page == "🗂️ 1. Загрузка и очистка данных":
             st.title("🚀 Модуль Предобработки & Импорта Данных")
-            if is_merged: st.success(f"📊 База данных создана! Файлов: {len(uploaded_files)}. Строк: {main_df.shape[0]}")
-            else: st.warning(f"⚠️ База объединена через 'Outer Join'. Строк: {main_df.shape[0]}")
+            if is_merged: st.success(f"📊 База данных создана! Файлов: {len(uploaded_files)}. Строк: {main_df.shape}")
+            else: st.warning(f"⚠️ База объединена через 'Outer Join'. Строк: {main_df.shape}")
                 
             st.markdown("### 📋 Структура сводной таблицы (Первые 5 строк):")
             try:
@@ -181,20 +181,21 @@ if uploaded_files:
                         fig = go.Figure()
                         
                         if "Waterfall" in style:
-                            fig.add_trace(go.Waterfall(x=list(df_g[x_ax].astype(str)) + ["ИТОГО"], y=list(df_g[y_ax]) + [df_g[y_ax].sum()], measure=["relative"] * len(df_g[y_ax]) + ["total"], textposition="auto", text=[f"{v:,.0f}" for v in df_g[y_ax]] + [f"{df_g[y_axis].sum():,.0f}"] if lbl else None, increasing={"marker": {"color": color}}, totals={"marker": {"color": "green"}}))
+                            # ТА САМАЯ ОЧЕПАТКА ИСПРАВЛЕНА: y_axis заменена на y_ax
+                            fig.add_trace(go.Waterfall(x=list(df_g[x_ax].astype(str)) + ["ИТОГО"], y=list(df_g[y_ax]) + [df_g[y_ax].sum()], measure=["relative"] * len(df_g[y_ax]) + ["total"], textposition="auto", text=[f"{v:,.0f}" for v in df_g[y_ax]] + [f"{df_g[y_ax].sum():,.0f}"] if lbl else None, increasing={"marker": {"color": color}}, totals={"marker": {"color": "green"}}))
                         elif "Funnel" in style:
                             fig.add_trace(go.Funnel(y=df_g[x_ax].astype(str), x=df_g[y_ax], textinfo="value+percent initial" if lbl else "none", marker={"color": color}))
                         elif "Donut" in style:
                             fig.add_trace(go.Pie(labels=df_g[x_ax], values=df_g[y_ax], hole=0.4, rotation=rot, textinfo="label+value" if lbl else "none"))
                         elif "Line" in style:
-                            fig.add_trace(go.Scatter(x=df_g[x_ax], y=df_g[y_ax], mode="lines+markers+text" if lbl else "lines+markers", text=df_g[y_ax].map(lambda x: f"{x:,.0f}") if lbl else None, line=dict(color=color)))
+                            fig.add_trace(go.Scatter(x=df_g[x_ax], y=df_g[y_axis], mode="lines+markers+text" if lbl else "lines+markers", text=df_g[y_ax].map(lambda x: f"{x:,.0f}") if lbl else None, line=dict(color=color)))
                         else:
                             fig.add_trace(go.Bar(y=df_g[x_ax].astype(str) if horiz else df_g[y_ax], x=df_g[y_ax] if horiz else df_g[x_ax].astype(str), text=df_g[y_ax].map(lambda x: f"{x:,.0f}") if lbl else None, textposition="auto", orientation="h" if horiz else "v", marker_color=color))
                         
                         fig.update_layout(xaxis=dict(tickangle=45 if not horiz else 0), uniformtext=dict(mode="hide", minsize=8), clickmode="event+select")
                         ev = st.plotly_chart(fig, use_container_width=True, key=f"p_{i}", on_select="rerun")
                         if ev and "selection" in ev and "points" in ev["selection"] and len(ev["selection"]["points"]) > 0:
-                            pt = ev["selection"]["points"][0]
+                            pt = ev["selection"]["points"]
                             val = pt["pointNumber"] if "pointNumber" in pt else (pt["label"] if "label" in pt else (pt["x"] if "x" in pt else pt["y"]))
                             if "Donut" in style: val = df_g.iloc[val][x_ax]
                             if val is not None and str(val) != "ИТОГО": st.session_state.active_filter_val = val; st.session_state.active_filter_col = x_ax; st.rerun()
