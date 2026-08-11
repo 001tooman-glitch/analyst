@@ -35,7 +35,7 @@ def load_clean_and_merge_files(uploaded_files_list):
         try:
             df_i = pd.read_csv(f) if f.name.endswith('.csv') else pd.read_excel(f, header=None)
             
-            if df_i.shape[0] > 1:
+            if df_i.shape > 1:
                 row0 = df_i.iloc[0].astype(str).str.strip()
                 row1 = df_i.iloc[1].astype(str).str.strip()
                 is_row1_text = pd.to_numeric(row1, errors='coerce').isna().all()
@@ -102,10 +102,11 @@ if uploaded_files:
         st.session_state.main_df = main_df
         all_cols = ["-- Выберите заголовок --"] + list(main_df.columns)
 
+        # ---------------- РАЗДЕЛ 1: ЗАГРУЗКА И ОЧИСТКА ДАННЫХ ----------------
         if page == "🗂️ 1. Загрузка и очистка данных":
             st.title("🚀 Модуль Предобработки & Импорта Данных")
-            if is_merged: st.success(f"📊 База данных создана! Файлов: {len(uploaded_files)}. Строк: {main_df.shape[0]}")
-            else: st.warning(f"⚠️ База объединена через 'Outer Join'. Строк: {main_df.shape[0]}")
+            if is_merged: st.success(f"📊 База данных создана! Файлов: {len(uploaded_files)}. Строк: {main_df.shape}")
+            else: st.warning(f"⚠️ База объединена через 'Outer Join'. Строк: {main_df.shape}")
                 
             st.markdown("### 📋 Структура сводной таблицы (Первые 5 строк):")
             try:
@@ -118,17 +119,26 @@ if uploaded_files:
                 csv_data = main_df.to_csv(index=False, encoding='utf-8-sig', sep=';')
                 st.download_button(label="📥 Скачать базу (Excel CSV)", data=csv_data, file_name="Сводный_отчет.csv", mime="text/csv")
             except Exception as de: st.error(f"Ошибка скачивания: {de}")
-                
-            st.markdown("---")
-            st.subheader("🎴 Панель Ключевых Показателей (KPI Карточки)")
+
+        # ---------------- РАЗДЕЛ 2: АНАЛИТИЧЕСКАЯ BI-ПАНЕЛЬ (КАРТОЧКИ + ДИАГРАММЫ) ----------------
+        elif page == "📊 2. Конструктор диаграмм":
+            import plotly.graph_objects as go
+            st.title("📊 Интерактивная BI-Панель Показателей")
+            
+            # Боковой блок сквозной интерактивной фильтрации
+            st.sidebar.success("🟢 Интерактивный BI-движок активен!")
             if st.session_state.active_filter_val is not None:
                 st.sidebar.markdown(f"**Активный фильтр:**\n`{st.session_state.active_filter_col}` = `{st.session_state.active_filter_val}`")
-                if st.sidebar.button("🧹 Очистить все фильтры", type="primary", key="clr_f_mp"): st.session_state.active_filter_val = None; st.session_state.active_filter_col = None; st.rerun()
+                if st.sidebar.button("🧹 Очистить все фильтры", type="primary", key="clr_f_cp"): 
+                    st.session_state.active_filter_val = None
+                    st.session_state.active_filter_col = None; st.rerun()
 
             df_f = main_df.copy()
             if st.session_state.active_filter_val is not None and st.session_state.active_filter_col in df_f.columns:
                 df_f = df_f[df_f[st.session_state.active_filter_col].astype(str) == str(st.session_state.active_filter_val)]
 
+            # 🛠️ ПЕРЕНЕСЕНО СЮДА: Панель Ключевых Показателей (KPI Карточки) теперь сверху!
+            st.subheader("🎴 Панель Ключевых Показателей (KPI Карточки)")
             card_cols = st.columns(st.session_state.manual_cards)
             for j in range(st.session_state.manual_cards):
                 with card_cols[j % len(card_cols)]:
@@ -149,17 +159,8 @@ if uploaded_files:
                 if st.session_state.manual_cards > 1:
                     if st.button("🗑️ Удалить карточку"): st.session_state.manual_cards -= 1; st.rerun()
 
-        elif page == "📊 2. Конструктор диаграмм":
-            import plotly.graph_objects as go
-            st.title("🛠️ Enterprise No-Code Конструктор Панелей")
-            if st.session_state.active_filter_val is not None:
-                st.sidebar.markdown(f"**Активный фильтр:**\n`{st.session_state.active_filter_col}` = `{st.session_state.active_filter_val}`")
-                if st.sidebar.button("🧹 Очистить все фильтры", type="primary", key="clr_f_cp"): st.session_state.active_filter_val = None; st.session_state.active_filter_col = None; st.rerun()
-
-            df_f = main_df.copy()
-            if st.session_state.active_filter_val is not None and st.session_state.active_filter_col in df_f.columns:
-                df_f = df_f[df_f[st.session_state.active_filter_col].astype(str) == str(st.session_state.active_filter_val)]
-
+            st.markdown("---")
+            st.subheader("🛠️ No-Code Конструктор Графиков")
             for i in range(st.session_state.manual_charts):
                 st.markdown(f"##### 📊 Настройка диаграммы № {i+1}")
                 c1, c2, c3, c4 = st.columns(4)
