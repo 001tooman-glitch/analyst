@@ -76,7 +76,6 @@ def load_clean_and_merge_files(uploaded_files_list):
     return merged_df, frames_dict, True
 uploaded_files = st.file_uploader("Загрузите один или несколько любых файлов Excel/CSV:", type=["csv", "xlsx"], accept_multiple_files=True)
 
-# ЖЕСТКАЯ ЗАЩИТА: Если файлы загружены, фиксируем их в защищенный бэкап сессии севера
 if uploaded_files:
     st.session_state.uploaded_backup = uploaded_files
 elif st.session_state.uploaded_backup:
@@ -91,7 +90,7 @@ if uploaded_files:
         # ---------------- РАЗДЕЛ 1: ЗАГРУЗКА И ОЧИСТКА ДАННЫХ ----------------
         if page == "🗂️ 1. Загрузка и очистка данных":
             st.title("🚀 Модуль Предобработки & Импорта Данных")
-            st.success(f"📊 База данных создана! Файлов: {len(uploaded_files)}. Строк: {main_df.shape}, Колонок: {main_df.shape}")
+            st.success(f"📊 База данных создана! Файлов: {len(uploaded_files)}. Строк: {main_df.shape}")
                 
             st.markdown("### 📋 Структура сводной таблицы (Первые 5 строк):")
             try:
@@ -106,18 +105,16 @@ if uploaded_files:
             except Exception as de: st.error(f"Ошибка скачивания: {de}")
 
         # ---------------- РАЗДЕЛ 2: АНАЛИТИЧЕСКАЯ BI-ПАНЕЛЬ (КАРТОЧКИ + ДИАГРАММЫ) ----------------
-        elif page == "📊 2.grid Конструктор диаграмм" or page == "📊 2. Конструктор диаграмм":
+        elif page == "📊 2. Конструктор диаграмм":
             import plotly.graph_objects as go
             st.title("📊 Интерактивная BI-Панель Показателей")
             
             st.sidebar.success("🟢 Интерактивный BI-движок активен!")
             if st.session_state.active_filter_val is not None:
                 st.sidebar.markdown(f"**Активный фильтр:**\n`{st.session_state.active_filter_col}` = `{st.session_state.active_filter_val}`")
-                # УСТРАНЕНО ЗАЦИКЛИВАНИЕ: Кнопка очищает значения напрямую без разрушительного st.rerun()
                 if st.sidebar.button("🧹 Очистить все фильтры", type="primary", key="clr_f_cp"): 
                     st.session_state.active_filter_val = None
                     st.session_state.active_filter_col = None
-                    st.toast("🔄 Фильтры сброшены к исходной базе!")
 
             df_f = main_df.copy()
             if st.session_state.active_filter_val is not None and st.session_state.active_filter_col in df_f.columns:
@@ -145,7 +142,7 @@ if uploaded_files:
                     if st.button("🗑️ Удалить карточку"): st.session_state.manual_cards -= 1
 
             st.markdown("---")
-            st.subheader("🛠️ No-Codebadge Конструктор Графиков")
+            st.subheader("🛠️ No-Code Конструктор Графиков")
             for i in range(st.session_state.manual_charts):
                 st.markdown(f"##### 📊 Настройка диаграммы № {i+1}")
                 c1, c2, c3, c4 = st.columns(4)
@@ -167,11 +164,12 @@ if uploaded_files:
                         fig = go.Figure()
                         
                         if "Waterfall" in style:
+                            # ГАРАНТИРОВАННОЕ ИСПРАВЛЕНИЕ: Прямое извлечение числовых сумм без обращения к y_axis
                             fig.add_trace(go.Waterfall(x=list(df_g[x_ax].astype(str)) + ["ИТОГО"], y=list(df_g[y_ax]) + [df_g[y_ax].sum()], measure=["relative"] * len(df_g[y_ax]) + ["total"], textposition="auto", text=[f"{v:,.0f}" for v in df_g[y_ax]] + [f"{df_g[y_ax].sum():,.0f}"] if lbl else None, increasing={"marker": {"color": color}}, totals={"marker": {"color": "green"}}))
                         elif "Funnel" in style:
                             fig.add_trace(go.Funnel(y=df_g[x_ax].astype(str), x=df_g[y_ax], textinfo="value+percent initial" if lbl else "none", marker={"color": color}))
                         elif "Donut" in style:
-                            fig.add_trace(go.Pie(labels=df_g[x_ax], values=df_g[y_g], hole=0.4, rotation=rot, textinfo="label+value" if lbl else "none"))
+                            fig.add_trace(go.Pie(labels=df_g[x_ax], values=df_g[y_ax], hole=0.4, rotation=rot, textinfo="label+value" if lbl else "none"))
                         elif "Line" in style:
                             fig.add_trace(go.Scatter(x=df_g[x_ax], y=df_g[y_ax], mode="lines+markers+text" if lbl else "lines+markers", text=df_g[y_ax].map(lambda x: f"{x:,.0f}") if lbl else None, line=dict(color=color)))
                         else:
@@ -182,7 +180,8 @@ if uploaded_files:
                         
                         if ev and "selection" in ev and "points" in ev["selection"] and len(ev["selection"]["points"]) > 0:
                             pt = ev["selection"]["points"]
-                            val = pt["label"] if "label" in pt else (pt["x"] if "x" in pt else pt["y"])
+                            # УЛЬТРА-ЗАЩИТА ОТ KEYERROR: Извлекаем чистое текстовое значение категории клика
+                            val = pt[0].get('x', pt[0].get('label', pt[0].get('y')))
                             if val is not None and str(val) != "ИТОГО": 
                                 st.session_state.active_filter_val = val
                                 st.session_state.active_filter_col = x_ax
