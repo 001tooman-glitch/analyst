@@ -67,7 +67,7 @@ def load_clean_and_merge_files(uploaded_files_list):
         return pd.DataFrame(), {}, False
         
     f_keys = list(frames_dict.keys())
-    first_file_name = f_keys[0] if f_keys else ""
+    first_file_name = f_keys if f_keys else ""
     if not first_file_name: 
         return pd.DataFrame(), {}, False
     
@@ -87,6 +87,7 @@ if uploaded_files:
         st.session_state.main_df = main_df
         all_cols = ["-- Выберите заголовок --"] + list(main_df.columns)
 
+        # ---------------- РАЗДЕЛ 1: ЗАГРУЗКА И ОЧИСТКА ДАННЫХ ----------------
         if page == "🗂️ 1. Загрузка и очистка данных":
             st.title("🚀 Модуль Предобработки & Импорта Данных")
             st.success(f"📊 База данных создана! Файлов: {len(uploaded_files)}. Строк: {main_df.shape}")
@@ -103,11 +104,12 @@ if uploaded_files:
                 st.download_button(label="📥 Скачать базу (Excel CSV)", data=csv_data, file_name="Сводный_отчет.csv", mime="text/csv")
             except Exception as de: st.error(f"Ошибка скачивания: {de}")
 
+        # ---------------- РАЗДЕЛ 2: АНАЛИТИЧЕСКАЯ BI-ПАНЕЛЬ (КАРТОЧКИ + ДИАГРАММЫ) ----------------
         elif page == "📊 2. Конструктор диаграмм":
             import plotly.graph_objects as go
             st.title("📊 Интерактивная BI-Панель Показателей")
             
-            st.sidebar.success("🟢 Интерактивный BI-движок active!")
+            st.sidebar.success("🟢 Интерактивный BI-движок активен!")
             if st.session_state.active_filter_val is not None:
                 st.sidebar.markdown(f"**Активный фильтр:**\n`{st.session_state.active_filter_col}` = `{st.session_state.active_filter_val}`")
                 if st.sidebar.button("🧹 Очистить все фильтры", type="primary", key="clr_f_cp"): 
@@ -115,9 +117,10 @@ if uploaded_files:
                     st.session_state.active_filter_col = None
                     st.toast("🔄 Фильтры сброшены к исходной базе!")
 
-            df_f = main_df.copy()
-            if st.session_state.active_filter_val is not None and st.session_state.active_filter_col in df_f.columns:
-                df_f = df_f[df_f[st.session_state.active_filter_col].astype(str) == str(st.session_state.active_filter_val)]
+            # Глобальный фильтр по умолчанию для карточек KPI
+            df_cards = main_df.copy()
+            if st.session_state.active_filter_val is not None and st.session_state.active_filter_col in df_cards.columns:
+                df_cards = df_cards[df_cards[st.session_state.active_filter_col].astype(str) == str(st.session_state.active_filter_val)]
 
             st.subheader("🎴 Панель Ключевых Показателей (KPI Карточки)")
             card_cols = st.columns(st.session_state.manual_cards)
@@ -128,7 +131,7 @@ if uploaded_files:
                     c_mode = st.selectbox(f"Расчет:", ["Сумма (SUM)", "Среднее (AVERAGE)"], key=f"c_m_{j}")
                     if t_col != "-- Выберите заголовок --":
                         try:
-                            df_c = df_f.copy()
+                            df_c = df_cards.copy()
                             df_c[t_col] = pd.to_numeric(df_c[t_col], errors='coerce').fillna(0)
                             val = df_c[t_col].sum() if "Сумма" in c_mode else df_c[t_col].mean()
                             st.markdown(f'<div style="background-color:#f8f9fa; border:1px solid #dee2e6; border-radius:10px; padding:20px; text-align:center; margin-bottom:15px;"><div style="color:#6c757d; font-size:16px;">{t_col}</div><div style="color:#1f77b4; font-size:36px; font-weight:bold;">{val:,.2f}</div></div>', unsafe_allow_html=True)
@@ -158,9 +161,15 @@ if uploaded_files:
 
                 if x_ax != "-- Выберите заголовок --" and y_ax != "-- Выберите заголовок --":
                     try:
-                        df_m = df_f.copy()
-                        df_m[y_ax] = pd.to_numeric(df_m[y_ax], errors='coerce').fillna(0)
-                        df_g = df_m.groupby(x_ax, as_index=False)[y_ax].sum()
+                        # 🛠️ ИНТЕЛЛЕКТУАЛЬНЫЙ BI-ФИЛЬТР: График фильтруется только если кликнули по ДРУГОЙ категории.
+                        # Если активный фильтр совпадает с осью X этого графика — он отображает себя целиком (изоляция)
+                        df_chart = main_df.copy()
+                        if st.session_state.active_filter_val is not None and st.session_state.active_filter_col in df_chart.columns:
+                            if st.session_state.active_filter_col != x_ax:
+                                df_chart = df_chart[df_chart[st.session_state.active_filter_col].astype(str) == str(st.session_state.active_filter_val)]
+                        
+                        df_chart[y_ax] = pd.to_numeric(df_chart[y_ax], errors='coerce').fillna(0)
+                        df_g = df_chart.groupby(x_ax, as_index=False)[y_ax].sum()
                         if not horiz: df_g = df_g.sort_values(by=y_ax, ascending=False)
                         fig = go.Figure()
                         
