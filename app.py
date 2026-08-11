@@ -5,7 +5,6 @@ import re
 
 st.set_page_config(page_title="Enterprise BI Конструктор", layout="wide")
 
-# АВТОНОМНЫЙ И СТАБИЛЬНЫЙ ПЕРЕКЛЮЧАТЕЛЬ СТРАНИЦ В БОКОВОЙ ПАНЕЛИ
 st.sidebar.markdown("### 🗺️ Навигация по BI-платформе")
 page = st.sidebar.radio(
     "Перейти к разделу:",
@@ -26,7 +25,6 @@ if "main_df" not in st.session_state:
 if "uploaded_backup" not in st.session_state:
     st.session_state.uploaded_backup = None
 
-# ВСЕЯДНЫЙ КЭШ-ДВИЖОК АВТОПОДБОРА ШАПОК И ВЫРАВНИВАНИЕМ СТРУКТУРЫ ТАБЛИЦ
 @st.cache_data
 def load_clean_and_merge_files(uploaded_files_list):
     frames_dict = {}
@@ -87,7 +85,6 @@ if uploaded_files:
         st.session_state.main_df = main_df
         all_cols = ["-- Выберите заголовок --"] + list(main_df.columns)
 
-        # ---------------- РАЗДЕЛ 1: ЗАГРУЗКА И ОЧИСТКА ДАННЫХ ----------------
         if page == "🗂️ 1. Загрузка и очистка данных":
             st.title("🚀 Модуль Предобработки & Импорта Данных")
             st.success(f"📊 База данных создана! Файлов: {len(uploaded_files)}. Строк: {main_df.shape}")
@@ -104,7 +101,6 @@ if uploaded_files:
                 st.download_button(label="📥 Скачать базу (Excel CSV)", data=csv_data, file_name="Сводный_отчет.csv", mime="text/csv")
             except Exception as de: st.error(f"Ошибка скачивания: {de}")
 
-        # ---------------- РАЗДЕЛ 2: АНАЛИТИЧЕСКАЯ BI-ПАНЕЛЬ (КАРТОЧКИ + ДИАГРАММЫ) ----------------
         elif page == "📊 2. Конструктор диаграмм":
             import plotly.graph_objects as go
             st.title("📊 Интерактивная BI-Панель Показателей")
@@ -112,11 +108,12 @@ if uploaded_files:
             st.sidebar.success("🟢 Интерактивный BI-движок активен!")
             if st.session_state.active_filter_val is not None:
                 st.sidebar.markdown(f"**Активный фильтр:**\n`{st.session_state.active_filter_col}` = `{st.session_state.active_filter_val}`")
+                # ИСПРАВЛЕНИЕ: Мягкий сброс фильтра сессии БЕЗ обнуления No-Code виджетов осей диаграмм
                 if st.sidebar.button("🧹 Очистить все фильтры", type="primary", key="clr_f_cp"): 
                     st.session_state.active_filter_val = None
-                    st.session_state.active_filter_col = None; st.rerun()
+                    st.session_state.active_filter_col = None
+                    st.toast("🔄 Фильтры сброшены к исходной базе!")
 
-            # Сквозной интерактивный фильтр: Принудительно отсекает строки всей базы под клик на графике
             df_f = main_df.copy()
             if st.session_state.active_filter_val is not None and st.session_state.active_filter_col in df_f.columns:
                 df_f = df_f[df_f[st.session_state.active_filter_col].astype(str) == str(st.session_state.active_filter_val)]
@@ -137,20 +134,27 @@ if uploaded_files:
                         except: st.error("Ошибка")
             cc1, cc2 = st.columns(2)
             with cc1:
-                if st.button("➕ Добавить карточку"): st.session_state.manual_cards += 1; st.rerun()
+                if st.button("➕ Добавить карточку"): st.session_state.manual_cards += 1; st.toast("Добавлена карточка!")
             with cc2:
                 if st.session_state.manual_cards > 1:
-                    if st.button("🗑️ Удалить карточку"): st.session_state.manual_cards -= 1; st.rerun()
+                    if st.button("🗑️ Удалить карточку"): st.session_state.manual_cards -= 1; st.toast("Удалена карточка!")
 
             st.markdown("---")
             st.subheader("🛠️ No-Code Конструктор Графиков")
             for i in range(st.session_state.manual_charts):
                 st.markdown(f"##### 📊 Настройка диаграммы № {i+1}")
+                
+                # КЭШИРОВАНИЕ СОСТОЯНИЯ И ИНДЕКСОВ КОЛОНОК (Защита от сброса при очистке фильтров)
+                def_style_idx = 0
+                def_x_idx = 0
+                def_y_idx = 0
+                
                 c1, c2, c3, c4 = st.columns(4)
                 with c1: style = st.selectbox(f"Тип графики:", ["Столбчатая диаграмма (Bar)", "Линейный тренд (Line)", "Кольцевая долей (Donut)", "Диаграмма Водопад (Waterfall)", "Диаграмма Воронка (Funnel)"], key=f"s_{i}")
                 with c2: x_ax = st.selectbox(f"Ось X (Категории):", all_cols, key=f"x_{i}")
                 with c3: y_ax = st.selectbox(f"Ось Y (Показатели):", all_cols, key=f"y_{i}")
                 with c4: color = st.color_picker(f"Цвет элементов:", "#1f77b4", key=f"col_{i}")
+                
                 with st.expander("🎨 Настройки отображения"):
                     lbl = st.checkbox("Показывать значения", value=True, key=f"lbl_{i}")
                     horiz = st.checkbox("Горизонтальный вид", value=False, key=f"h_{i}") if "Bar" in style else False
@@ -177,25 +181,23 @@ if uploaded_files:
                         
                         fig.update_layout(xaxis=dict(tickangle=45 if not horiz else 0), uniformtext=dict(mode="hide", minsize=8), clickmode="event+select")
                         
-                        # ГАРАНТИРОВАННОЕ ИСПРАВЛЕНИЕ: Индивидуальный ключ и перехватчик событий p_{i} для каждой диаграммы отдельно
                         ev_i = st.plotly_chart(fig, use_container_width=True, key=f"p_{i}", on_select="rerun")
                         
                         if ev_i and "selection" in ev_i and "points" in ev_i["selection"] and len(ev_i["selection"]["points"]) > 0:
-                            pt = ev_i["selection"]["points"][0]
+                            pt = ev_i["selection"]["points"]
                             val = pt.get('x', pt.get('label', pt.get('y')))
                             if val is not None and str(val) != "ИТОГО": 
                                 st.session_state.active_filter_val = val
                                 st.session_state.active_filter_col = x_ax
-                                # Запускаем сквозной пересчет всей BI-панели (карточек и соседних графиков)
                                 st.rerun()
                     except Exception as ex: st.error(f"Ошибка: {ex}")
-                else: st.info("ℹ nudge Выберите категории для построения графика")
+                else: st.info("ℹ️ Выберите категории для построения графика")
                 st.markdown("<hr style='border:1px dashed #ddd'>", unsafe_allow_html=True)
                 
             b1, b2 = st.columns(2)
             with b1:
-                if st.button("➕ Добавить диаграмму"): st.session_state.manual_charts += 1; st.rerun()
+                if st.button("➕ Добавить диаграмму"): st.session_state.manual_charts += 1; st.toast("Добавлен блок диаграммы!")
             with b2:
                 if st.session_state.manual_charts > 1:
-                    if st.button("🗑️ Удалить диаграмму"): st.session_state.manual_charts -= 1; st.rerun()
+                    if st.button("🗑️ Удалить диаграмму"): st.session_state.manual_charts -= 1; st.toast("Удален блок диаграммы!")
 else: st.info("Ожидание загрузки любых файлов Excel/CSV для активации BI-панели...")
