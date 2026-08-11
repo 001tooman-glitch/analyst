@@ -5,9 +5,9 @@ import plotly.graph_objects as go
 st.set_page_config(page_title="Enterprise BI Конструктор - Диаграммы", layout="wide")
 st.title("🛠️ Enterprise No-Code Конструктор Панелей")
 
-# ПРИНУДИТЕЛЬНОЕ АКТИВИРОВАНИЕ МНОГОСТРАНИЧНОГО МЕНЮ В БОКОВОЙ ПАНЕЛИ
+# ИСПРАВЛЕННАЯ ССЫЛКА НАВИГАЦИИ: Главная страница обозначается точкой "."
 st.sidebar.markdown("### 🗺️ Навигация по BI-платформе")
-st.sidebar.page_link("app.py", label="🗂️ 1. Загрузка и очистка данных", icon="📁")
+st.sidebar.page_link(".", label="🗂️ 1. Загрузка и очистка данных", icon="📁")
 st.sidebar.page_link("pages/charts.py", label="📊 2. Конструктор диаграмм", icon="📈")
 st.sidebar.markdown("---")
 
