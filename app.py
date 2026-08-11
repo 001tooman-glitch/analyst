@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-import json
+import io
 
 st.set_page_config(page_title="Enterprise BI Конструктор", layout="wide")
 st.title("🚀 Enterprise BI Конструктор & Аналитическая Панель")
@@ -11,20 +11,55 @@ if "manual_charts" not in st.session_state:
     st.session_state.manual_charts = 1
 if "manual_cards" not in st.session_state:
     st.session_state.manual_cards = 1
-# Инициализируем переменные памяти сквозных фильтров
 if "active_filter_val" not in st.session_state:
     st.session_state.active_filter_val = None
 if "active_filter_col" not in st.session_state:
     st.session_state.active_filter_col = None
 
+# КЭШ-ДВИЖОК С АВТОМАТИЧЕСКОЙ ОЧИСТКОЙ И ВЫРАВНИВАНИЕМ СТРУКТУРЫ ТАБЛИЦ
 @st.cache_data
-def load_and_merge_files(uploaded_files_list):
+def load_clean_and_merge_files(uploaded_files_list):
     frames_dict = {}
+    if not uploaded_files_list:
+        return pd.DataFrame(), {}, False
+        
     for f in uploaded_files_list:
         try:
-            df_i = pd.read_csv(f) if f.name.endswith('.csv') else pd.read_excel(f)
-            df_i.columns = df_i.columns.str.strip()
-            df_i['Источник (Файл)'] = f.name
+            # Читаем файл
+            df_i = pd.read_csv(f) if f.name.endswith('.csv') else pd.read_excel(f, header=None)
+            
+            # ИНТЕЛЛЕКТУАЛЬНЫЙ АУДИТ СТРУКТУРЫ (Если заголовки разбиты на 1 или 2 верхние строки)
+            if df_i.shape[0] > 1:
+                # Проверяем, являются ли первые две строки чисто текстовыми
+                row0 = df_i.iloc[0].astype(str).str.strip()
+                row1 = df_i.iloc[1].astype(str).str.strip()
+                
+                # Если во второй строке тоже текст (а не числа), значит заголовок двухстрочный!
+                is_row1_text = pd.to_numeric(row1, errors='coerce').isna().all()
+                
+                if is_row1_text:
+                    # Схлопываем двухстрочный заголовок в одну строку через пробел
+                    new_cols = []
+                    for c0, c1 in zip(row0, row1):
+                        c0_c = "" if c0 in ['nan', 'None', 'Unnamed:'] else c0
+                        c1_c = "" if c1 in ['nan', 'None', 'Unnamed:'] else c1
+                        combined_name = f"{c0_c} {c1_c}".strip()
+                        new_cols.append(combined_name if combined_name else "Без названия")
+                    df_i.columns = new_cols
+                    df_i = df_i.iloc[2:].reset_index(drop=True)
+                else:
+                    # Если заголовок стандартный (однострочный)
+                    df_i.columns = row0
+                    df_i = df_i.iloc[1:].reset_index(drop=True)
+            
+            # Очищаем имена столбцов от случайных невидимых пробелов и спецсимволов
+            df_i.columns = df_i.columns.astype(str).str.replace(r'\s+', ' ', regex=True).str.strip()
+            # Удаляем полностью пустые системные столбцы без имен
+            df_i = df_i.loc[:, ~df_i.columns.str.contains('^Без названия|^Unnamed')]
+            
+            # Прописываем временной маркер файла
+            period_name = f.name.replace(".xlsx", "").replace(".xls", "").replace(".csv", "")
+            df_i['Источник (Файл)'] = period_name
             frames_dict[f.name] = df_i
         except:
             pass
@@ -33,23 +68,28 @@ def load_and_merge_files(uploaded_files_list):
         return pd.DataFrame(), {}, False
         
     f_keys = list(frames_dict.keys())
-    f_name = f_keys[0] if f_keys else ""
-    if not f_name: return pd.DataFrame(), {}, False
+    first_file_name = f_keys[0] if f_keys else ""
+    if not first_file_name: 
+        return pd.DataFrame(), {}, False
     
-    b_cols = set(frames_dict[f_name].columns) - {'Источник (Файл)'}
+    # Ищем пересечение колонок для безопасной сшивки
+    base_cols = set(frames_dict[first_file_name].columns) - {'Источник (Файл)'}
     merge_possible = True
     
     for n, df_c in frames_dict.items():
         c_cols = set(df_c.columns) - {'Источник (Файл)'}
-        if not b_cols.intersection(c_cols):
+        if not base_cols.intersection(c_cols):
             merge_possible = False
             break
             
     if merge_possible:
+        # Вертикально сшиваем выровненные таблицы
         merged_df = pd.concat(frames_dict.values(), ignore_index=True)
+        # ОЧИСТКА СВОДНОЙ БАЗЫ: Удаляем строки, где вообще все ячейки пустые
+        merged_df = merged_df.dropna(how='all')
         return merged_df, frames_dict, True
     else:
-        return frames_dict[f_name], frames_dict, False
+        return frames_dict[first_file_name], frames_dict, False
 
 uploaded_files = st.file_uploader(
     "Загрузите один или несколько любых файлов Excel/CSV:", 
@@ -62,26 +102,43 @@ dataframes_dict = {}
 is_merged = False
 
 if uploaded_files:
-    main_df, dataframes_dict, is_merged = load_and_merge_files(uploaded_files)
+    main_df, dataframes_dict, is_merged = load_clean_and_merge_files(uploaded_files)
 
     if not main_df.empty:
         if is_merged:
-            st.success(f"📊 Создана единая сводная база данных! Файлов: {len(uploaded_files)}. Строк: {main_df.shape}")
+            st.success(f"📊 Создана единая сводная база данных! Файлов: {len(uploaded_files)}. Строк: {main_df.shape[0]}, Колонок: {main_df.shape[1]}")
         else:
-            st.warning("⚠️ Файлы имеют разную структуру. Анализ переключен на первый файл.")
+            st.warning("⚠️ Файлы имеют разную структуру. Сводная таблица создана по первому файлу.")
+            
+        # ТРЕБОВАНИЕ 2: Отображение структуры сшитого файла на самом верху
+        st.markdown("### 📋 Структура сводной таблицы (Заголовки и первые 5 строк):")
+        st.dataframe(main_df.head(5), use_container_width=True)
+        
+        # ТРЕБОВАНИЕ 1: Выгрузка очищенной сводной таблицы в буфер обмена для скачивания в Excel
+        try:
+            buffer = io.BytesIO()
+            with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
+                main_df.to_excel(writer, index=False, sheet_name='Сводные данные')
+            
+            st.download_button(
+                label="📥 Скачать объединенную сводную базу (Excel)",
+                data=buffer.getvalue(),
+                file_name="Сводный_отчет_очищенный.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+        except Exception as download_err:
+            st.error(f"Не удалось подготовить файл для скачивания: {download_err}")
             
         all_cols = ["-- Выберите заголовок --"] + list(main_df.columns)
 
-        # МЯГКИЙ СБРОС ФИЛЬТРА В БОКОВОЙ ПАНЕЛИ БЕЗ ST.RERUN()
+        # МЯГКИЙ СБРОС ФИЛЬТРА В БОКОВОЙ ПАНЕЛИ
         st.sidebar.success("🟢 Интерактивный BI-движок активен!")
         if st.session_state.active_filter_val is not None:
             st.sidebar.markdown(f"**Активный фильтр:**\n`{st.session_state.active_filter_col}` = `{st.session_state.active_filter_val}`")
-            # Меняем значение флага напрямую в памяти сессии
             if st.sidebar.button("🧹 Очистить все фильтры", type="primary"):
                 st.session_state.active_filter_val = None
                 st.session_state.active_filter_col = None
 
-        # ПРИМЕНЕНИЕ СКВОЗНОЙ ФИЛЬТРАЦИИ К БАЗЕ
         df_filtered = main_df.copy()
         if st.session_state.active_filter_val is not None and st.session_state.active_filter_col in df_filtered.columns:
             df_filtered = df_filtered[df_filtered[st.session_state.active_filter_col].astype(str) == str(st.session_state.active_filter_val)]
@@ -97,7 +154,7 @@ if uploaded_files:
                 card_title_col = st.selectbox(f"Заголовок для карточки:", all_cols, key=f"card_t_col_{j}")
                 calc_mode = st.selectbox(f"Функция расчета:", ["Сумма (SUM)", "Среднее значение (AVERAGE)"], key=f"card_calc_{j}")
                 
-                with st.expander(f"🎨 Стили карточки № {j+1}"):
+                with st.expander("🎨 Стили карточки"):
                     bg_color = st.color_picker(f"Цвет фона карточки:", "#f8f9fa", key=f"card_bg_{j}")
                     lbl_color = st.color_picker(f"Цвет текста названия:", "#6c757d", key=f"card_lbl_c_{j}")
                     val_color = st.color_picker(f"Цвет значения:", "#1f77b4", key=f"card_val_c_{j}")
@@ -186,10 +243,9 @@ if uploaded_files:
                     angle = 0 if "Горизонтально" in label_orient else (90 if "Вертикально" in label_orient else 45)
                     fig = go.Figure()
                     
-                    # СТРОИМ ВОДОПАД
                     if "Waterfall" in chart_style:
                         x_data = list(df_g[x_axis].astype(str)) + ["ИТОГО"]
-                        y_data = list(df_g[y_axis]) + [0]
+                        y_data = list(df_g[y_axis]) + [df_g[y_axis].sum()]
                         measure_data = ["relative"] * len(df_g[y_axis]) + ["total"]
                         text_data = [f"{v:,.0f}" for v in df_g[y_axis]] + [f"{df_g[y_axis].sum():,.0f}"]
                         
@@ -201,9 +257,7 @@ if uploaded_files:
                             decreasing={"marker": {"color": "red"}},
                             totals={"marker": {"color": "green"}}
                         ))
-                        fig.update_layout(title=f"Водопад изменений '{y_axis}' по '{x_axis}'")
                     
-                    # СТРОИМ ВОРОНКУ
                     elif "Funnel" in chart_style:
                         fig.add_trace(go.Funnel(
                             y=df_g[x_axis].astype(str), x=df_g[y_axis],
@@ -211,9 +265,7 @@ if uploaded_files:
                             textinfo="value+percent initial" if show_labels else "none",
                             marker={"color": chart_color}
                         ))
-                        fig.update_layout(title=f"Воронка распределения '{y_axis}' по '{x_axis}'")
                     
-                    # КОЛЬЦЕВАЯ С ИНТЕРАКТИВНЫМ ПЕРЕХВАТОМ КЛИКОВ
                     elif "Donut" in chart_style:
                         p_pos = "outside" if "выноске" in pie_labels_mode else "inside"
                         fig.add_trace(go.Pie(
@@ -221,18 +273,14 @@ if uploaded_files:
                             hole=0.4, rotation=pie_rotation, textposition=p_pos,
                             textinfo="label+value" if show_labels else "none"
                         ))
-                        fig.update_layout(title=f"Доли распределения '{y_axis}'")
                     
-                    # ЛИНЕЙНЫЙ
                     elif "Line" in chart_style:
                         fig.add_trace(go.Scatter(
                             x=df_g[x_axis], y=df_g[y_axis], mode="lines+markers+text" if show_labels else "lines+markers",
                             text=df_g[y_axis].map(lambda x: f"{x:,.0f}") if show_labels else None,
                             textposition=f"{label_pos} top", line=dict(color=chart_color)
                         ))
-                        fig.update_layout(title=f"Тренд показателя '{y_axis}' по '{x_axis}'")
                     
-                    # СТОЛБЧАТАЯ
                     else:
                         if bar_orientation == "h":
                             fig.add_trace(go.Bar(
@@ -246,7 +294,6 @@ if uploaded_files:
                                 text=df_g[y_axis].map(lambda x: f"{x:,.0f}") if show_labels else None,
                                 textposition=label_pos, orientation="v", marker_color=chart_color
                             ))
-                        fig.update_layout(title=f"Распределение показателя '{y_axis}' по '{x_axis}'")
                     
                     fig.update_layout(
                         xaxis=dict(tickangle=angle if bar_orientation == "v" else 0, tickfont=dict(color=text_color, size=text_size, family=chart_font)),
@@ -258,21 +305,16 @@ if uploaded_files:
                     
                     event_data = st.plotly_chart(fig, use_container_width=True, key=f"plotly_manual_{i}", on_select="rerun")
                     
-                    # ИСПРАВЛЕННЫЙ ИНТЕЛЛЕКТУАЛЬНЫЙ ПОИСК ТОЧЕК КЛИКА ДЛЯ ВСЕХ ТИПОВ ГРАФИКОВ
                     if event_data and "selection" in event_data and "points" in event_data["selection"] and len(event_data["selection"]["points"]) > 0:
                         pt = event_data["selection"]["points"][0]
                         val = None
                         
-                        # Кольцевая диаграмма использует label или pointNumber для сопоставления индексов
-                        if "label" in pt:
-                            val = pt["label"]
-                        elif "x" in pt:
-                            val = pt["x"]
-                        elif "y" in pt:
-                            val = pt["y"]
-                        elif "pointNumber" in pt and "Donut" in chart_style:
-                            # Прямой No-Code фоллбэк: берем имя категории из сгруппированного списка по номеру сектора
-                            val = df_g.iloc[pt["pointNumber"]][x_axis]
+                        if "Donut" in chart_style and "pointNumber" in pt:
+                            idx = pt["pointNumber"]
+                            if idx < len(df_g): val = df_g.iloc[idx][x_axis]
+                        elif "label" in pt: val = pt["label"]
+                        elif "x" in pt: val = pt["x"]
+                        elif "y" in pt: val = pt["y"]
                         
                         if val is not None and str(val) != "ИТОГО":
                             st.session_state.active_filter_val = val
@@ -290,9 +332,11 @@ if uploaded_files:
         with btn_col1:
             if st.button("➕ Добавить график/диаграмму"):
                 st.session_state.manual_charts += 1
+                st.rerun()
         with btn_col2:
             if st.session_state.manual_charts > 1:
                 if st.button("🗑️ Удалить последнюю диаграмму"):
                     st.session_state.manual_charts -= 1
+                    st.rerun()
 else:
     st.info("Ожидание загрузки любых файлов Excel/CSV для активации BI-панели...")
