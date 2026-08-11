@@ -25,20 +25,14 @@ def load_clean_and_merge_files(uploaded_files_list):
         
     for f in uploaded_files_list:
         try:
-            # Читаем файл
             df_i = pd.read_csv(f) if f.name.endswith('.csv') else pd.read_excel(f, header=None)
             
-            # ИНТЕЛЛЕКТУАЛЬНЫЙ АУДИТ СТРУКТУРЫ (Если заголовки разбиты на 1 или 2 верхние строки)
             if df_i.shape[0] > 1:
-                # Проверяем, являются ли первые две строки чисто текстовыми
                 row0 = df_i.iloc[0].astype(str).str.strip()
                 row1 = df_i.iloc[1].astype(str).str.strip()
-                
-                # Если во второй строке тоже текст (а не числа), значит заголовок двухстрочный!
                 is_row1_text = pd.to_numeric(row1, errors='coerce').isna().all()
                 
                 if is_row1_text:
-                    # Схлопываем двухстрочный заголовок в одну строку через пробел
                     new_cols = []
                     for c0, c1 in zip(row0, row1):
                         c0_c = "" if c0 in ['nan', 'None', 'Unnamed:'] else c0
@@ -48,16 +42,12 @@ def load_clean_and_merge_files(uploaded_files_list):
                     df_i.columns = new_cols
                     df_i = df_i.iloc[2:].reset_index(drop=True)
                 else:
-                    # Если заголовок стандартный (однострочный)
                     df_i.columns = row0
                     df_i = df_i.iloc[1:].reset_index(drop=True)
             
-            # Очищаем имена столбцов от случайных невидимых пробелов и спецсимволов
             df_i.columns = df_i.columns.astype(str).str.replace(r'\s+', ' ', regex=True).str.strip()
-            # Удаляем полностью пустые системные столбцы без имен
             df_i = df_i.loc[:, ~df_i.columns.str.contains('^Без названия|^Unnamed')]
             
-            # Прописываем временной маркер файла
             period_name = f.name.replace(".xlsx", "").replace(".xls", "").replace(".csv", "")
             df_i['Источник (Файл)'] = period_name
             frames_dict[f.name] = df_i
@@ -72,7 +62,6 @@ def load_clean_and_merge_files(uploaded_files_list):
     if not first_file_name: 
         return pd.DataFrame(), {}, False
     
-    # Ищем пересечение колонок для безопасной сшивки
     base_cols = set(frames_dict[first_file_name].columns) - {'Источник (Файл)'}
     merge_possible = True
     
@@ -83,9 +72,7 @@ def load_clean_and_merge_files(uploaded_files_list):
             break
             
     if merge_possible:
-        # Вертикально сшиваем выровненные таблицы
         merged_df = pd.concat(frames_dict.values(), ignore_index=True)
-        # ОЧИСТКА СВОДНОЙ БАЗЫ: Удаляем строки, где вообще все ячейки пустые
         merged_df = merged_df.dropna(how='all')
         return merged_df, frames_dict, True
     else:
@@ -110,14 +97,13 @@ if uploaded_files:
         else:
             st.warning("⚠️ Файлы имеют разную структуру. Сводная таблица создана по первому файлу.")
             
-        # ТРЕБОВАНИЕ 2: Отображение структуры сшитого файла на самом верху
         st.markdown("### 📋 Структура сводной таблицы (Заголовки и первые 5 строк):")
         st.dataframe(main_df.head(5), use_container_width=True)
         
-        # ТРЕБОВАНИЕ 1: Выгрузка очищенной сводной таблицы в буфер обмена для скачивания в Excel
+        # ИСПРАВЛЕНИЕ: Используем стандартный движок openpyxl, который всегда есть в системе
         try:
             buffer = io.BytesIO()
-            with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
+            with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
                 main_df.to_excel(writer, index=False, sheet_name='Сводные данные')
             
             st.download_button(
@@ -131,7 +117,6 @@ if uploaded_files:
             
         all_cols = ["-- Выберите заголовок --"] + list(main_df.columns)
 
-        # МЯГКИЙ СБРОС ФИЛЬТРА В БОКОВОЙ ПАНЕЛИ
         st.sidebar.success("🟢 Интерактивный BI-движок активен!")
         if st.session_state.active_filter_val is not None:
             st.sidebar.markdown(f"**Активный фильтр:**\n`{st.session_state.active_filter_col}` = `{st.session_state.active_filter_val}`")
