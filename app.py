@@ -6,9 +6,9 @@ import re
 st.set_page_config(page_title="Enterprise BI Конструктор", layout="wide")
 st.title("🚀 Модуль Предобработки & Импорта Данных")
 
-# ИСПРАВЛЕННАЯ ССЫЛКА НАВИГАЦИИ: Главная страница обозначается точкой "."
+# НАДЁЖНАЯ ССЫЛКА НАВИГАЦИИ: Главный файл указывается как чистая строка названия файла
 st.sidebar.markdown("### 🗺️ Навигация по BI-платформе")
-st.sidebar.page_link(".", label="🗂️ 1. Загрузка и очистка данных", icon="📁")
+st.sidebar.page_link("app.py", label="🗂️ 1. Загрузка и очистка данных", icon="📁")
 st.sidebar.page_link("pages/charts.py", label="📊 2. Конструктор диаграмм", icon="📈")
 st.sidebar.markdown("---")
 
@@ -52,7 +52,6 @@ def load_clean_and_merge_files(uploaded_files_list):
                     df_i.columns = row0
                     df_i = df_i.iloc[1:].reset_index(drop=True)
             
-            # ОЧИСТКА ЗАГОРОВКОВ: полностью вырезаем артефакты nan, nan №, Unnamed из шапки
             cleaned_cols = []
             for col in df_i.columns:
                 c_str = str(col).replace('nan №', '').replace('№ nan', '').replace('nan', '').replace('Unnamed:', '').strip()
@@ -108,7 +107,6 @@ if uploaded_files:
     main_df, dataframes_dict, is_merged = load_clean_and_merge_files(uploaded_files)
 
     if not main_df.empty:
-        # Сохраняем сводную базу в общую память сессии для графической страницы
         st.session_state.main_df = main_df
         
         if is_merged:
@@ -126,7 +124,6 @@ if uploaded_files:
         except Exception as table_err:
             st.error(f"Не удалось отобразить превью таблицы: {table_err}")
         
-        # СКАЧИВАНИЕ СВОДНОГО EXCEL ЧЕРЕЗ OPENPYXL
         @st.cache_data
         def convert_df_to_excel(df):
             output = io.BytesIO()
