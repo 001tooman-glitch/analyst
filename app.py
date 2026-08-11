@@ -4,12 +4,13 @@ import io
 import re
 
 st.set_page_config(page_title="Enterprise BI Конструктор", layout="wide")
-st.title("🚀 Модуль Предобработки & Импорта Данных")
 
-# НАДЁЖНАЯ ССЫЛКА НАВИГАЦИИ: Главный файл указывается как чистая строка названия файла
+# АВТОНОМНЫЙ И СТАБИЛЬНЫЙ ПЕРЕКЛЮЧАТЕЛЬ СТРАНИЦ
 st.sidebar.markdown("### 🗺️ Навигация по BI-платформе")
-st.sidebar.page_link("app.py", label="🗂️ 1. Загрузка и очистка данных", icon="📁")
-st.sidebar.page_link("pages/charts.py", label="📊 2. Конструктор диаграмм", icon="📈")
+page = st.sidebar.radio(
+    "Перейти к разделу:",
+    ["🗂️ 1. Загрузка и очистка данных", "📊 2. Конструктор диаграмм"]
+)
 st.sidebar.markdown("---")
 
 if "manual_charts" not in st.session_state:
@@ -93,117 +94,118 @@ def load_clean_and_merge_files(uploaded_files_list):
         merged_df = pd.concat(frames_dict.values(), ignore_index=True, join='outer')
         merged_df = merged_df.dropna(how='all')
         return merged_df, frames_dict, False
-uploaded_files = st.file_uploader(
-    "Загрузите один или несколько любых файлов Excel/CSV:", 
-    type=["csv", "xlsx"], 
-    accept_multiple_files=True
-)
-
-main_df = pd.DataFrame()
-dataframes_dict = {}
-is_merged = False
+uploaded_files = st.file_uploader("Загрузите один или несколько любых файлов Excel/CSV:", type=["csv", "xlsx"], accept_multiple_files=True)
 
 if uploaded_files:
     main_df, dataframes_dict, is_merged = load_clean_and_merge_files(uploaded_files)
-
     if not main_df.empty:
         st.session_state.main_df = main_df
-        
-        if is_merged:
-            st.success(f"📊 Создана единая сводная база данных! Файлов: {len(uploaded_files)}. Строк: {main_df.shape}, Колонок: {main_df.shape}")
-        else:
-            st.warning(f"⚠️ Файлы имеют разную структуру (колонки не совпадают на 100%). Сводная база объединена через режим 'Outer Join'. Строк: {main_df.shape}, Колонок: {main_df.shape}")
-            
-        st.markdown("### 📋 Структура сводной таблицы (Заголовки и первые 5 строк):")
-        
-        try:
-            preview_df = main_df.head(5).copy()
-            for col in preview_df.columns:
-                preview_df[col] = preview_df[col].astype(str).fillna("Пусто")
-            st.dataframe(preview_df, use_container_width=True)
-        except Exception as table_err:
-            st.error(f"Не удалось отобразить превью таблицы: {table_err}")
-        
-        @st.cache_data
-        def convert_df_to_excel(df):
-            output = io.BytesIO()
-            with pd.ExcelWriter(output, engine='openpyxl') as wr:
-                df.to_excel(wr, index=False, sheet_name='Сводные данные')
-            return output.getvalue()
-            
-        try:
-            excel_data = convert_df_to_excel(main_df)
-            st.download_button(
-                label="📥 Скачать объединенную сводную базу (Excel)",
-                data=excel_data,
-                file_name="Сводный_отчет_очищенный.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            )
-        except Exception as download_err:
-            st.error(f"Не удалось подготовить файл для скачивания: {download_err}")
-            
         all_cols = ["-- Выберите заголовок --"] + list(main_df.columns)
 
-        st.sidebar.success("🟢 Интерактивный BI-движок активен!")
-        if st.session_state.active_filter_val is not None:
-            st.sidebar.markdown(f"**Активный фильтр:**\n`{st.session_state.active_filter_col}` = `{st.session_state.active_filter_val}`")
-            if st.sidebar.button("🧹 Очистить все фильтры", type="primary", key="clear_filters_main_page"):
-                st.session_state.active_filter_val = None
-                st.session_state.active_filter_col = None
-
-        df_filtered = main_df.copy()
-        if st.session_state.active_filter_val is not None and st.session_state.active_filter_col in df_filtered.columns:
-            df_filtered = df_filtered[df_filtered[st.session_state.active_filter_col].astype(str) == str(st.session_state.active_filter_val)]
-
-        st.markdown("---")
-        st.subheader("🎴 Панель Ключевых Показателей (KPI Карточки)")
-        
-        card_cols = st.columns(st.session_state.manual_cards)
-        
-        for j in range(st.session_state.manual_cards):
-            with card_cols[j % len(card_cols)]:
-                st.markdown(f"**📌 Настройка карточки № {j+1}**")
-                card_title_col = st.selectbox(f"Заголовок для карточки:", all_cols, key=f"card_t_col_{j}")
-                calc_mode = st.selectbox(f"Функция расчета:", ["Сумма (SUM)", "Среднее значение (AVERAGE)"], key=f"card_calc_{j}")
+        if page == "🗂️ 1. Загрузка и очистка данных":
+            st.title("🚀 Модуль Предобработки & Импорта Данных")
+            if is_merged: st.success(f"📊 База данных создана! Файлов: {len(uploaded_files)}. Строк: {main_df.shape[0]}")
+            else: st.warning(f"⚠️ База объединена через 'Outer Join'. Строк: {main_df.shape[0]}")
                 
-                with st.expander("🎨 Стили карточки"):
-                    bg_color = st.color_picker(f"Цвет фона карточки:", "#f8f9fa", key=f"card_bg_{j}")
-                    lbl_color = st.color_picker(f"Цвет текста названия:", "#6c757d", key=f"card_lbl_c_{j}")
-                    val_color = st.color_picker(f"Цвет значения:", "#1f77b4", key=f"card_val_c_{j}")
-                    font_style = st.selectbox(f"Шрифт карточки:", ["Arial", "Helvetica", "Times New Roman", "Courier New", "Verdana"], key=f"card_font_{j}")
-                    lbl_size = st.slider(f"Размер названия (px):", 12, 30, 16, key=f"card_lbl_sz_{j}")
-                    val_size = st.slider(f"Размер значения (px):", 20, 60, 36, key=f"card_val_sz_{j}")
+            st.markdown("### 📋 Структура сводной таблицы (Первые 5 строк):")
+            try:
+                preview_df = main_df.head(5).copy()
+                for c in preview_df.columns: preview_df[c] = preview_df[c].astype(str).fillna("Пусто")
+                st.dataframe(preview_df, use_container_width=True)
+            except Exception as e: st.error(f"Ошибка превью: {e}")
+            
+            try:
+                buffer = io.BytesIO()
+                with pd.ExcelWriter(buffer, engine='openpyxl') as wr: main_df.to_excel(wr, index=False, sheet_name='Свод')
+                st.download_button(label="📥 Скачать объединенную базу (Excel)", data=buffer.getvalue(), file_name="Сводный_отчет_очищенный.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+            except Exception as de: st.error(f"Ошибка скачивания: {de}")
                 
-                if card_title_col != "-- Выберите заголовок --":
+            st.markdown("---")
+            st.subheader("🎴 Панель Ключевых Показателей (KPI Карточки)")
+            if st.session_state.active_filter_val is not None:
+                st.sidebar.markdown(f"**Активный фильтр:**\n`{st.session_state.active_filter_col}` = `{st.session_state.active_filter_val}`")
+                if st.sidebar.button("🧹 Очистить все фильтры", type="primary", key="clr_f_mp"): st.session_state.active_filter_val = None; st.session_state.active_filter_col = None; st.rerun()
+
+            df_f = main_df.copy()
+            if st.session_state.active_filter_val is not None and st.session_state.active_filter_col in df_f.columns:
+                df_f = df_f[df_f[st.session_state.active_filter_col].astype(str) == str(st.session_state.active_filter_val)]
+
+            card_cols = st.columns(st.session_state.manual_cards)
+            for j in range(st.session_state.manual_cards):
+                with card_cols[j % len(card_cols)]:
+                    st.markdown(f"**📌 Карточка № {j+1}**")
+                    t_col = st.selectbox(f"Заголовок:", all_cols, key=f"c_t_{j}")
+                    c_mode = st.selectbox(f"Расчет:", ["Сумма (SUM)", "Среднее (AVERAGE)"], key=f"c_m_{j}")
+                    if t_col != "-- Выберите заголовок --":
+                        try:
+                            df_c = df_f.copy()
+                            df_c[t_col] = pd.to_numeric(df_c[t_col], errors='coerce').fillna(0)
+                            val = df_c[t_col].sum() if "Сумма" in c_mode else df_c[t_col].mean()
+                            st.markdown(f'<div style="background-color:#f8f9fa; border:1px solid #dee2e6; border-radius:10px; padding:20px; text-align:center; margin-bottom:15px;"><div style="color:#6c757d; font-size:16px;">{t_col}</div><div style="color:#1f77b4; font-size:36px; font-weight:bold;">{val:,.2f}</div></div>', unsafe_allow_html=True)
+                        except: st.error("Ошибка")
+            cc1, cc2 = st.columns(2)
+            with cc1:
+                if st.button("➕ Добавить карточку"): st.session_state.manual_cards += 1; st.rerun()
+            with cc2:
+                if st.session_state.manual_cards > 1:
+                    if st.button("🗑️ Удалить карточку"): st.session_state.manual_cards -= 1; st.rerun()
+
+        elif page == "📊 2. Конструктор диаграмм":
+            st.title("🛠️ Enterprise No-Code Конструктор Панелей")
+            if st.session_state.active_filter_val is not None:
+                st.sidebar.markdown(f"**Активный фильтр:**\n`{st.session_state.active_filter_col}` = `{st.session_state.active_filter_val}`")
+                if st.sidebar.button("🧹 Очистить все фильтры", type="primary", key="clr_f_cp"): st.session_state.active_filter_val = None; st.session_state.active_filter_col = None; st.rerun()
+
+            df_f = main_df.copy()
+            if st.session_state.active_filter_val is not None and st.session_state.active_filter_col in df_f.columns:
+                df_f = df_f[df_f[st.session_state.active_filter_col].astype(str) == str(st.session_state.active_filter_val)]
+
+            for i in range(st.session_state.manual_charts):
+                st.markdown(f"##### 📊 Настройка диаграммы № {i+1}")
+                c1, c2, c3, c4 = st.columns(4)
+                with c1: style = st.selectbox(f"Тип графики:", ["Столбчатая диаграмма (Bar)", "Линейный тренд (Line)", "Кольцевая долей (Donut)", "Диаграмма Водопад (Waterfall)", "Диаграмма Воронка (Funnel)"], key=f"s_{i}")
+                with c2: x_ax = st.selectbox(f"Ось X (Категории):", all_cols, key=f"x_{i}")
+                with c3: y_ax = st.selectbox(f"Ось Y (Показатели):", all_cols, key=f"y_{i}")
+                with c4: color = st.color_picker(f"Цвет элементов:", "#1f77b4", key=f"col_{i}")
+                with st.expander("🎨 Настройки отображения"):
+                    lbl = st.checkbox("Показывать значения", value=True, key=f"lbl_{i}")
+                    horiz = st.checkbox("Горизонтальный вид", value=False, key=f"h_{i}") if "Bar" in style else False
+                    rot = st.slider("🔄 Поворот (градусы):", 0, 360, 0, step=15, key=f"r_{i}") if "Donut" in style else 0
+
+                if x_ax != "-- Выберите заголовок --" and y_ax != "-- Выберите заголовок --":
                     try:
-                        df_card_clean = df_filtered.copy()
-                        df_card_clean[card_title_col] = pd.to_numeric(df_card_clean[card_title_col], errors='coerce').fillna(0)
+                        df_m = df_f.copy()
+                        df_m[y_ax] = pd.to_numeric(df_m[y_ax], errors='coerce').fillna(0)
+                        df_g = df_m.groupby(x_ax, as_index=False)[y_ax].sum()
+                        if not horiz: df_g = df_g.sort_values(by=y_ax, ascending=False)
+                        fig = go.Figure()
                         
-                        if "Сумма" in calc_mode:
-                            card_value = df_card_clean[card_title_col].sum()
-                            mode_text = "(Сумма)"
+                        if "Waterfall" in style:
+                            fig.add_trace(go.Waterfall(x=list(df_g[x_ax].astype(str)) + ["ИТОГО"], y=list(df_g[y_ax]) + [df_g[y_ax].sum()], measure=["relative"] * len(df_g[y_ax]) + ["total"], textposition="auto", text=[f"{v:,.0f}" for v in df_g[y_ax]] + [f"{df_g[y_axis].sum():,.0f}"] if lbl else None, increasing={"marker": {"color": color}}, totals={"marker": {"color": "green"}}))
+                        elif "Funnel" in style:
+                            fig.add_trace(go.Funnel(y=df_g[x_ax].astype(str), x=df_g[y_ax], textinfo="value+percent initial" if lbl else "none", marker={"color": color}))
+                        elif "Donut" in style:
+                            fig.add_trace(go.Pie(labels=df_g[x_ax], values=df_g[y_ax], hole=0.4, rotation=rot, textinfo="label+value" if lbl else "none"))
+                        elif "Line" in style:
+                            fig.add_trace(go.Scatter(x=df_g[x_ax], y=df_g[y_ax], mode="lines+markers+text" if lbl else "lines+markers", text=df_g[y_ax].map(lambda x: f"{x:,.0f}") if lbl else None, line=dict(color=color)))
                         else:
-                            card_value = df_card_clean[card_title_col].mean()
-                            mode_text = "(Среднее)"
-                            
-                        st.markdown(f"""
-                        <div style="background-color:{bg_color}; border:1px solid #dee2e6; border-radius:10px; padding:20px; text-align:center; margin-bottom:15px; font-family:{font_style}, sans-serif;">
-                            <div style="color:{lbl_color}; font-size:{lbl_size}px; font-weight:500; margin-bottom:10px;">{card_title_col} {mode_text}</div>
-                            <div style="color:{val_color}; font-size:{val_size}px; font-weight:bold;">{card_value:,.2f}</div>
-                        </div>
-                        """, unsafe_allow_html=True)
-                    except:
-                        st.error("Ошибка расчета")
-                else:
-                    st.caption("ℹ️ Выберите заголовок выше")
-                    
-        c_btn1, c_btn2 = st.columns(2)
-        with c_btn1:
-            if st.button("➕ Добавить карточку показателя"):
-                st.session_state.manual_cards += 1
-        with c_btn2:
-            if st.session_state.manual_cards > 1:
-                if st.button("🗑️ Удалить последнюю карточку"):
-                    st.session_state.manual_cards -= 1
-else:
-    st.info("Ожидание загрузки любых файлов Excel/CSV для активации BI-панели...")
+                            fig.add_trace(go.Bar(y=df_g[x_ax].astype(str) if horiz else df_g[y_ax], x=df_g[y_ax] if horiz else df_g[x_ax].astype(str), text=df_g[y_ax].map(lambda x: f"{x:,.0f}") if lbl else None, textposition="auto", orientation="h" if horiz else "v", marker_color=color))
+                        
+                        fig.update_layout(xaxis=dict(tickangle=45 if not horiz else 0), uniformtext=dict(mode="hide", minsize=8), clickmode="event+select")
+                        ev = st.plotly_chart(fig, use_container_width=True, key=f"p_{i}", on_select="rerun")
+                        if ev and "selection" in ev and "points" in ev["selection"] and len(ev["selection"]["points"]) > 0:
+                            pt = ev["selection"]["points"][0]
+                            val = pt["pointNumber"] if "pointNumber" in pt else (pt["label"] if "label" in pt else (pt["x"] if "x" in pt else pt["y"]))
+                            if "Donut" in style: val = df_g.iloc[val][x_ax]
+                            if val is not None and str(val) != "ИТОГО": st.session_state.active_filter_val = val; st.session_state.active_filter_col = x_ax; st.rerun()
+                    except Exception as ex: st.error(f"Ошибка: {ex}")
+                else: st.info("ℹ️ Выберите категории для построения графика")
+                st.markdown("<hr style='border:1px dashed #ddd'>", unsafe_allow_html=True)
+                
+            b1, b2 = st.columns(2)
+            with b1:
+                if st.button("➕ Добавить диаграмму"): st.session_state.manual_charts += 1; st.rerun()
+            with b2:
+                if st.session_state.manual_charts > 1:
+                    if st.button("🗑️ Удалить диаграмму"): st.session_state.manual_charts -= 1; st.rerun()
+else: st.info("Ожидание загрузки любых файлов Excel/CSV для активации BI-панели...")
