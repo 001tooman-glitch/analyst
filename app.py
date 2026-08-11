@@ -5,6 +5,7 @@ import re
 
 st.set_page_config(page_title="Enterprise BI Конструктор", layout="wide")
 
+# АВТОНОМНЫЙ И СТАБИЛЬНЫЙ ПЕРЕКЛЮЧАТЕЛЬ СТРАНИЦ В БОКОВОЙ ПАНЕЛИ
 st.sidebar.markdown("### 🗺️ Навигация по BI-платформе")
 page = st.sidebar.radio(
     "Перейти к разделу:",
@@ -25,6 +26,7 @@ if "main_df" not in st.session_state:
 if "uploaded_backup" not in st.session_state:
     st.session_state.uploaded_backup = None
 
+# ВСЕЯДНЫЙ КЭШ-ДВИЖОК АВТОПОДБОРА ШАПОК И ВЫРАВНИВАНИЕМ СТРУКТУРЫ ТАБЛИЦ
 @st.cache_data
 def load_clean_and_merge_files(uploaded_files_list):
     frames_dict = {}
@@ -65,13 +67,14 @@ def load_clean_and_merge_files(uploaded_files_list):
         return pd.DataFrame(), {}, False
         
     f_keys = list(frames_dict.keys())
-    first_file_name = f_keys if f_keys else ""
+    first_file_name = f_keys[0] if f_keys else ""
     if not first_file_name: 
         return pd.DataFrame(), {}, False
     
     merged_df = pd.concat(frames_dict.values(), ignore_index=True, join='outer')
     merged_df = merged_df.dropna(how='all')
-    return mergeuploaded_files = st.file_uploader("Загрузите один или несколько любых файлов Excel/CSV:", type=["csv", "xlsx"], accept_multiple_files=True)
+    return merged_df, frames_dict, True
+uploaded_files = st.file_uploader("Загрузите один или несколько любых файлов Excel/CSV:", type=["csv", "xlsx"], accept_multiple_files=True)
 
 if uploaded_files:
     st.session_state.uploaded_backup = uploaded_files
@@ -104,7 +107,7 @@ if uploaded_files:
             import plotly.graph_objects as go
             st.title("📊 Интерактивная BI-Панель Показателей")
             
-            st.sidebar.success("🟢 Интерактивный BI-движок активен!")
+            st.sidebar.success("🟢 Интерактивный BI-движок active!")
             if st.session_state.active_filter_val is not None:
                 st.sidebar.markdown(f"**Активный фильтр:**\n`{st.session_state.active_filter_col}` = `{st.session_state.active_filter_val}`")
                 if st.sidebar.button("🧹 Очистить все фильтры", type="primary", key="clr_f_cp"): 
@@ -132,10 +135,10 @@ if uploaded_files:
                         except: st.error("Ошибка")
             cc1, cc2 = st.columns(2)
             with cc1:
-                if st.button("➕ Добавить карточку"): st.session_state.manual_cards += 1
+                if st.button("➕ Добавить карточку"): st.session_state.manual_cards += 1; st.rerun()
             with cc2:
                 if st.session_state.manual_cards > 1:
-                    if st.button("🗑️ Удалить карточку"): st.session_state.manual_cards -= 1
+                    if st.button("🗑️ Удалить карточку"): st.session_state.manual_cards -= 1; st.rerun()
 
             st.markdown("---")
             st.subheader("🛠️ No-Code Конструктор Графиков")
@@ -177,13 +180,14 @@ if uploaded_files:
                         ev_i = st.plotly_chart(fig, use_container_width=True, key=f"p_{i}", on_select="rerun")
                         
                         if ev_i and "selection" in ev_i and "points" in ev_i["selection"] and len(ev_i["selection"]["points"]) > 0:
-                            # БЕЗОПАСНОЕ ИЗВЛЕЧЕНИЕ: Считываем первую точку из списка как словарь и безопасно забираем имя
-                            pt = ev_i["selection"]["points"][0]
-                            val = pt.get('x', pt.get('label', pt.get('y')))
-                            if val is not None and str(val) != "ИТОГО": 
-                                st.session_state.active_filter_val = val
-                                st.session_state.active_filter_col = x_ax
-                                st.rerun()
+                            pt_list = ev_i["selection"]["points"]
+                            if isinstance(pt_list, list) and len(pt_list) > 0:
+                                pt = pt_list[0]
+                                val = pt.get('x', pt.get('label', pt.get('y')))
+                                if val is not None and str(val) != "ИТОГО": 
+                                    st.session_state.active_filter_val = val
+                                    st.session_state.active_filter_col = x_ax
+                                    st.rerun()
                     except Exception as ex: st.error(f"Ошибка: {ex}")
                 else: st.info("ℹ️ Выберите категории для построения графика")
                 st.markdown("<hr style='border:1px dashed #ddd'>", unsafe_allow_html=True)
@@ -195,4 +199,3 @@ if uploaded_files:
                 if st.session_state.manual_charts > 1:
                     if st.button("🗑️ Удалить диаграмму"): st.session_state.manual_charts -= 1; st.rerun()
 else: st.info("Ожидание загрузки любых файлов Excel/CSV для активации BI-панели...")
-d_df, frames_dict, True
