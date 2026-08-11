@@ -24,7 +24,7 @@ if "active_filter_col" not in st.session_state:
 if "main_df" not in st.session_state:
     st.session_state.main_df = pd.DataFrame()
 
-# КЭШ-ДВИЖОК С АВТОМАТИЧЕСКОЙ ОЧИСТКОЙ И ВЫРАВНИВАНИЕМ СТРУКТУРЫ ТАБЛИЦ
+# ВСЕЯДНЫЙ КЭШ-ДВИЖОК АВТОПОДБОРА ШАПОК И ВЫРАВНИВАНИЕМ СТРУКТУРЫ ТАБЛИЦ
 @st.cache_data
 def load_clean_and_merge_files(uploaded_files_list):
     frames_dict = {}
@@ -33,31 +33,28 @@ def load_clean_and_merge_files(uploaded_files_list):
         
     for f in uploaded_files_list:
         try:
+            # Читаем файл целиком как текст для безопасного анализа
             df_i = pd.read_csv(f) if f.name.endswith('.csv') else pd.read_excel(f, header=None)
             
-            if df_i.shape > 1:
-                row0 = df_i.iloc[0].astype(str).str.strip()
-                row1 = df_i.iloc[1].astype(str).str.strip()
-                is_row1_text = pd.to_numeric(row1, errors='coerce').isna().all()
-                
-                if is_row1_text:
-                    new_cols = []
-                    for c0, c1 in zip(row0, row1):
-                        c0_c = "" if c0 in ['nan', 'None', 'Unnamed:'] or 'Unnamed' in c0 else c0
-                        c1_c = "" if c1 in ['nan', 'None', 'Unnamed:'] or 'Unnamed' in c1 else c1
-                        combined_name = f"{c0_c} {c1_c}".strip()
-                        new_cols.append(combined_name if combined_name else "Без названия")
-                    df_i.columns = new_cols
-                    df_i = df_i.iloc[2:].reset_index(drop=True)
-                else:
-                    df_i.columns = row0
-                    df_i = df_i.iloc[1:].reset_index(drop=True)
+            # УМНЫЙ АВТОПОДБОР ШАПКИ ТАБЛИЦЫ (Сканируем первые 5 строк)
+            header_row_idx = 0
+            for r_idx in range(min(5, len(df_i))):
+                row_str = df_i.iloc[r_idx].astype(str).str.lower().values
+                # Если в строке есть ключевые бизнес-слова, значит это и есть шапка!
+                if any(w in "".join(row_str) for w in ['озм', 'материал', 'стоимост', 'сумма', 'количество', 'ед', 'цех', 'департамент']):
+                    header_row_idx = r_idx
+                    break
             
+            # Назначаем найденную строку заголовком
+            df_i.columns = df_i.iloc[header_row_idx].astype(str).str.strip()
+            df_i = df_i.iloc[header_row_idx + 1:].reset_index(drop=True)
+            
+            # ВЫРЕЗАЕМ ЛЮБОЙ ТЕКСТОВЫЙ МУСОР ИЗ ШАПКИ
             cleaned_cols = []
-            for col in df_i.columns:
+            for idx, col in enumerate(df_i.columns):
                 c_str = str(col).replace('nan №', '').replace('№ nan', '').replace('nan', '').replace('Unnamed:', '').strip()
                 c_str = re.sub(r'\s+', ' ', c_str).strip()
-                cleaned_cols.append(c_str if c_str else "Без названия")
+                cleaned_cols.append(c_str if c_str else f"Столбец_{idx+1}")
                 
             df_i.columns = cleaned_cols
             df_i = df_i.loc[:, ~df_i.columns.str.contains('^Без названия|^Unnamed')]
@@ -77,23 +74,10 @@ def load_clean_and_merge_files(uploaded_files_list):
     if not first_file_name: 
         return pd.DataFrame(), {}, False
     
-    base_cols = set(frames_dict[first_file_name].columns) - {'Источник (Файл)'}
-    merge_possible = True
-    
-    for n, df_c in frames_dict.items():
-        c_cols = set(df_c.columns) - {'Источник (Файл)'}
-        if not base_cols.intersection(c_cols):
-            merge_possible = False
-            break
-            
-    if merge_possible:
-        merged_df = pd.concat(frames_dict.values(), ignore_index=True)
-        merged_df = merged_df.dropna(how='all')
-        return merged_df, frames_dict, True
-    else:
-        merged_df = pd.concat(frames_dict.values(), ignore_index=True, join='outer')
-        merged_df = merged_df.dropna(how='all')
-        return merged_df, frames_dict, False
+    # Объединяем все файлы через гибкий режим outer join (не боится разной структуры)
+    merged_df = pd.concat(frames_dict.values(), ignore_index=True, join='outer')
+    merged_df = merged_df.dropna(how='all')
+    return merged_df, frames_dict, True
 uploaded_files = st.file_uploader("Загрузите один или несколько любых файлов Excel/CSV:", type=["csv", "xlsx"], accept_multiple_files=True)
 
 if uploaded_files:
@@ -105,8 +89,7 @@ if uploaded_files:
         # ---------------- РАЗДЕЛ 1: ЗАГРУЗКА И ОЧИСТКА ДАННЫХ ----------------
         if page == "🗂️ 1. Загрузка и очистка данных":
             st.title("🚀 Модуль Предобработки & Импорта Данных")
-            if is_merged: st.success(f"📊 База данных создана! Файлов: {len(uploaded_files)}. Строк: {main_df.shape}")
-            else: st.warning(f"⚠️ База объединена через 'Outer Join'. Строк: {main_df.shape}")
+            st.success(f"📊 База данных создана! Файлов: {len(uploaded_files)}. Строк: {main_df.shape[0]}, Колонок: {main_df.shape[1]}")
                 
             st.markdown("### 📋 Структура сводной таблицы (Первые 5 строк):")
             try:
@@ -125,7 +108,6 @@ if uploaded_files:
             import plotly.graph_objects as go
             st.title("📊 Интерактивная BI-Панель Показателей")
             
-            # Боковой блок сквозной интерактивной фильтрации
             st.sidebar.success("🟢 Интерактивный BI-движок активен!")
             if st.session_state.active_filter_val is not None:
                 st.sidebar.markdown(f"**Активный фильтр:**\n`{st.session_state.active_filter_col}` = `{st.session_state.active_filter_val}`")
@@ -137,7 +119,6 @@ if uploaded_files:
             if st.session_state.active_filter_val is not None and st.session_state.active_filter_col in df_f.columns:
                 df_f = df_f[df_f[st.session_state.active_filter_col].astype(str) == str(st.session_state.active_filter_val)]
 
-            # 🛠️ ПЕРЕНЕСЕНО СЮДА: Панель Ключевых Показателей (KPI Карточки) теперь сверху!
             st.subheader("🎴 Панель Ключевых Показателей (KPI Карточки)")
             card_cols = st.columns(st.session_state.manual_cards)
             for j in range(st.session_state.manual_cards):
@@ -171,7 +152,7 @@ if uploaded_files:
                 with st.expander("🎨 Настройки отображения"):
                     lbl = st.checkbox("Показывать значения", value=True, key=f"lbl_{i}")
                     horiz = st.checkbox("Горизонтальный вид", value=False, key=f"h_{i}") if "Bar" in style else False
-                    rot = st.slider("🔄 Поворот (градусы):", 0, 360, 0, step=15, key=f"r_{i}") if "Donut" in style else 0
+                    rot = st.slider("🔄 Поворот (градусы):", 0, 360, 0, step=15, key=f"rot_{i}") if "Donut" in style else 0
 
                 if x_ax != "-- Выберите заголовок --" and y_ax != "-- Выберите заголовок --":
                     try:
@@ -182,7 +163,7 @@ if uploaded_files:
                         fig = go.Figure()
                         
                         if "Waterfall" in style:
-                            fig.add_trace(go.Waterfall(x=list(df_g[x_ax].astype(str)) + ["ИТОГО"], y=list(df_g[y_ax]) + [df_g[y_ax].sum()], measure=["relative"] * len(df_g[y_ax]) + ["total"], textposition="auto", text=[f"{v:,.0f}" for v in df_g[y_ax]] + [f"{df_g[y_ax].sum():,.0f}"] if lbl else None, increasing={"marker": {"color": color}}, totals={"marker": {"color": "green"}}))
+                            fig.add_trace(go.Waterfall(x=list(df_g[x_ax].astype(str)) + ["ИТОГО"], y=list(df_g[y_ax]) + [df_g[y_ax].sum()], measure=["relative"] * len(df_g[y_g]) + ["total"], textposition="auto", text=[f"{v:,.0f}" for v in df_g[y_ax]] + [f"{df_g[y_ax].sum():,.0f}"] if lbl else None, increasing={"marker": {"color": color}}, totals={"marker": {"color": "green"}}))
                         elif "Funnel" in style:
                             fig.add_trace(go.Funnel(y=df_g[x_ax].astype(str), x=df_g[y_ax], textinfo="value+percent initial" if lbl else "none", marker={"color": color}))
                         elif "Donut" in style:
