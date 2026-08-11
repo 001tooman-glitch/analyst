@@ -114,10 +114,10 @@ if uploaded_files:
                 st.dataframe(preview_df, use_container_width=True)
             except Exception as e: st.error(f"Ошибка превью: {e}")
             
+            # УЛЬТРА-СКОРОСТНОЕ БЕЗОШИБОЧНОЕ СКАЧИВАНИЕ В CSV (ОТКРЫВАЕТСЯ В EXCEL)
             try:
-                buffer = io.BytesIO()
-                with pd.ExcelWriter(buffer, engine='openpyxl') as wr: main_df.to_excel(wr, index=False, sheet_name='Свод')
-                st.download_button(label="📥 Скачать объединенную базу (Excel)", data=buffer.getvalue(), file_name="Сводный_отчет_очищенный.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+                csv_data = main_df.to_csv(index=False, encoding='utf-8-sig', sep=';')
+                st.download_button(label="📥 Скачать объединенную базу (Excel CSV)", data=csv_data, file_name="Сводный_отчет_очищенный.csv", mime="text/csv")
             except Exception as de: st.error(f"Ошибка скачивания: {de}")
                 
             st.markdown("---")
@@ -150,7 +150,8 @@ if uploaded_files:
                 if st.session_state.manual_cards > 1:
                     if st.button("🗑️ Удалить карточку"): st.session_state.manual_cards -= 1; st.rerun()
 
-        elif page == "📊 2. Конструктор диаграмм":
+        elif page == "📊 2.grid Конструктор диаграмм":
+            import plotly.graph_objects as go
             st.title("🛠️ Enterprise No-Code Конструктор Панелей")
             if st.session_state.active_filter_val is not None:
                 st.sidebar.markdown(f"**Активный фильтр:**\n`{st.session_state.active_filter_col}` = `{st.session_state.active_filter_val}`")
@@ -187,7 +188,6 @@ if uploaded_files:
                         elif "Donut" in style:
                             fig.add_trace(go.Pie(labels=df_g[x_ax], values=df_g[y_ax], hole=0.4, rotation=rot, textinfo="label+value" if lbl else "none"))
                         elif "Line" in style:
-                            # ТОЧНОЕ ИСПРАВЛЕНИЕ ОПЕЧАТКИ: y_axis заменено на y_ax
                             fig.add_trace(go.Scatter(x=df_g[x_ax], y=df_g[y_ax], mode="lines+markers+text" if lbl else "lines+markers", text=df_g[y_ax].map(lambda x: f"{x:,.0f}") if lbl else None, line=dict(color=color)))
                         else:
                             fig.add_trace(go.Bar(y=df_g[x_ax].astype(str) if horiz else df_g[y_ax], x=df_g[y_ax] if horiz else df_g[x_ax].astype(str), text=df_g[y_ax].map(lambda x: f"{x:,.0f}") if lbl else None, textposition="auto", orientation="h" if horiz else "v", marker_color=color))
