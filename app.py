@@ -6,9 +6,9 @@ import re
 st.set_page_config(page_title="Enterprise BI Конструктор", layout="wide")
 st.title("🚀 Модуль Предобработки & Импорта Данных")
 
-# ПРИНУДИТЕЛЬНОЕ АКТИВИРОВАНИЕ МНОГОСТРАНИЧНОГО МЕНЮ В БОКОВОЙ ПАНЕЛИ
+# ИСПРАВЛЕННАЯ ССЫЛКА НАВИГАЦИИ: Главная страница обозначается точкой "."
 st.sidebar.markdown("### 🗺️ Навигация по BI-платформе")
-st.sidebar.page_link("app.py", label="🗂️ 1. Загрузка и очистка данных", icon="📁")
+st.sidebar.page_link(".", label="🗂️ 1. Загрузка и очистка данных", icon="📁")
 st.sidebar.page_link("pages/charts.py", label="📊 2. Конструктор диаграмм", icon="📈")
 st.sidebar.markdown("---")
 
@@ -34,7 +34,7 @@ def load_clean_and_merge_files(uploaded_files_list):
         try:
             df_i = pd.read_csv(f) if f.name.endswith('.csv') else pd.read_excel(f, header=None)
             
-            if df_i.shape[0] > 1:
+            if df_i.shape > 1:
                 row0 = df_i.iloc[0].astype(str).str.strip()
                 row1 = df_i.iloc[1].astype(str).str.strip()
                 is_row1_text = pd.to_numeric(row1, errors='coerce').isna().all()
@@ -112,9 +112,9 @@ if uploaded_files:
         st.session_state.main_df = main_df
         
         if is_merged:
-            st.success(f"📊 Создана единая сводная база данных! Файлов: {len(uploaded_files)}. Строк: {main_df.shape[0]}, Колонок: {main_df.shape[1]}")
+            st.success(f"📊 Создана единая сводная база данных! Файлов: {len(uploaded_files)}. Строк: {main_df.shape}, Колонок: {main_df.shape}")
         else:
-            st.warning(f"⚠️ Файлы имеют разную структуру (колонки не совпадают на 100%). Сводная база объединена через режим 'Outer Join'. Строк: {main_df.shape[0]}, Колонок: {main_df.shape[1]}")
+            st.warning(f"⚠️ Файлы имеют разную структуру (колонки не совпадают на 100%). Сводная база объединена через режим 'Outer Join'. Строк: {main_df.shape}, Колонок: {main_df.shape}")
             
         st.markdown("### 📋 Структура сводной таблицы (Заголовки и первые 5 строк):")
         
