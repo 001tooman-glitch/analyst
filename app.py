@@ -48,6 +48,9 @@ def load_clean_and_merge_files(uploaded_files_list):
             df_i.columns = df_i.columns.astype(str).str.replace(r'\s+', ' ', regex=True).str.strip()
             df_i = df_i.loc[:, ~df_i.columns.str.contains('^Без названия|^Unnamed')]
             
+            # Защита: удаляем дубликаты столбцов внутри одного файла, если они есть
+            df_i = df_i.loc[:, ~df_i.columns.duplicated()]
+            
             period_name = f.name.replace(".xlsx", "").replace(".xls", "").replace(".csv", "")
             df_i['Источник (Файл)'] = period_name
             frames_dict[f.name] = df_i
@@ -76,7 +79,10 @@ def load_clean_and_merge_files(uploaded_files_list):
         merged_df = merged_df.dropna(how='all')
         return merged_df, frames_dict, True
     else:
-        return frames_dict[first_file_name], frames_dict, False
+        # Если структуры разные, сшиваем по совпадающим колонкам (outer join), не ломая базу
+        merged_df = pd.concat(frames_dict.values(), ignore_index=True, join='outer')
+        merged_df = merged_df.dropna(how='all')
+        return merged_df, frames_dict, False
 
 uploaded_files = st.file_uploader(
     "Загрузите один или несколько любых файлов Excel/CSV:", 
@@ -95,12 +101,20 @@ if uploaded_files:
         if is_merged:
             st.success(f"📊 Создана единая сводная база данных! Файлов: {len(uploaded_files)}. Строк: {main_df.shape[0]}, Колонок: {main_df.shape[1]}")
         else:
-            st.warning("⚠️ Файлы имеют разную структуру. Сводная таблица создана по первому файлу.")
+            st.warning(f"⚠️ Файлы имеют разную структуру (колонки не совпадают на 100%). Сводная таблица объединена по всем доступным столбцам. Строк: {main_df.shape[0]}, Колонок: {main_df.shape[1]}")
             
         st.markdown("### 📋 Структура сводной таблицы (Заголовки и первые 5 строк):")
-        st.dataframe(main_df.head(5), use_container_width=True)
         
-        # ИСПРАВЛЕНИЕ: Используем стандартный движок openpyxl, который всегда есть в системе
+        # ГАРАНТИРОВАННОЕ ИСПРАВЛЕНИЕ ОШИБКИ ТИПОВ: Принудительно приводим превью к строкам для st.dataframe
+        try:
+            preview_df = main_df.head(5).copy()
+            for col in preview_df.columns:
+                preview_df[col] = preview_df[col].astype(str).fillna("Пусто")
+            st.dataframe(preview_df, use_container_width=True)
+        except Exception as table_err:
+            st.error(f"Не удалось отобразить превью таблицы: {table_err}")
+        
+        # Скачивание сводного файла Excel через стандартный openpyxl
         try:
             buffer = io.BytesIO()
             with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
