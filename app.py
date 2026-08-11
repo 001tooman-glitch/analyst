@@ -6,6 +6,12 @@ import re
 st.set_page_config(page_title="Enterprise BI Конструктор", layout="wide")
 st.title("🚀 Модуль Предобработки & Импорта Данных")
 
+# ПРИНУДИТЕЛЬНОЕ АКТИВИРОВАНИЕ МНОГОСТРАНИЧНОГО МЕНЮ В БОКОВОЙ ПАНЕЛИ
+st.sidebar.markdown("### 🗺️ Навигация по BI-платформе")
+st.sidebar.page_link("app.py", label="🗂️ 1. Загрузка и очистка данных", icon="📁")
+st.sidebar.page_link("pages/charts.py", label="📊 2. Конструктор диаграмм", icon="📈")
+st.sidebar.markdown("---")
+
 if "manual_charts" not in st.session_state:
     st.session_state.manual_charts = 1
 if "manual_cards" not in st.session_state:
@@ -102,7 +108,7 @@ if uploaded_files:
     main_df, dataframes_dict, is_merged = load_clean_and_merge_files(uploaded_files)
 
     if not main_df.empty:
-        # Сохраняем сводную базу в общую оперативную память сессии для других страниц
+        # Сохраняем сводную базу в общую память сессии для графической страницы
         st.session_state.main_df = main_df
         
         if is_merged:
@@ -143,7 +149,7 @@ if uploaded_files:
 
         st.sidebar.success("🟢 Интерактивный BI-движок активен!")
         if st.session_state.active_filter_val is not None:
-            st.sidebar.markdown(f"**Active фильтр:**\n`{st.session_state.active_filter_col}` = `{st.session_state.active_filter_val}`")
+            st.sidebar.markdown(f"**Активный фильтр:**\n`{st.session_state.active_filter_col}` = `{st.session_state.active_filter_val}`")
             if st.sidebar.button("🧹 Очистить все фильтры", type="primary", key="clear_filters_main_page"):
                 st.session_state.active_filter_val = None
                 st.session_state.active_filter_col = None
