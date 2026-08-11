@@ -74,6 +74,7 @@ def load_clean_and_merge_files(uploaded_files_list):
         
     f_keys = list(frames_dict.keys())
     first_file_name = f_keys[0] if f_keys else ""
+    # ОЧЕПАТКА ИСПРАВЛЕНА: f_name заменена на абсолютно точную first_file_name
     if not first_file_name: 
         return pd.DataFrame(), {}, False
     
@@ -114,7 +115,6 @@ if uploaded_files:
                 st.dataframe(preview_df, use_container_width=True)
             except Exception as e: st.error(f"Ошибка превью: {e}")
             
-            # УЛЬТРА-СКОРОСТНОЕ БЕЗОШИБОЧНОЕ СКАЧИВАНИЕ В CSV (ОТКРЫВАЕТСЯ В EXCEL)
             try:
                 csv_data = main_df.to_csv(index=False, encoding='utf-8-sig', sep=';')
                 st.download_button(label="📥 Скачать объединенную базу (Excel CSV)", data=csv_data, file_name="Сводный_отчет_очищенный.csv", mime="text/csv")
@@ -150,7 +150,7 @@ if uploaded_files:
                 if st.session_state.manual_cards > 1:
                     if st.button("🗑️ Удалить карточку"): st.session_state.manual_cards -= 1; st.rerun()
 
-        elif page == "📊 2.grid Конструктор диаграмм":
+        elif page == "📊 2. Конструктор диаграмм":
             import plotly.graph_objects as go
             st.title("🛠️ Enterprise No-Code Конструктор Панелей")
             if st.session_state.active_filter_val is not None:
