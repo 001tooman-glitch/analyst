@@ -3,6 +3,7 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import io
+import re
 
 st.set_page_config(page_title="Enterprise BI Конструктор", layout="wide")
 st.title("🚀 Enterprise BI Конструктор & Аналитическая Панель")
@@ -35,8 +36,8 @@ def load_clean_and_merge_files(uploaded_files_list):
                 if is_row1_text:
                     new_cols = []
                     for c0, c1 in zip(row0, row1):
-                        c0_c = "" if c0 in ['nan', 'None', 'Unnamed:'] else c0
-                        c1_c = "" if c1 in ['nan', 'None', 'Unnamed:'] else c1
+                        c0_c = "" if c0 in ['nan', 'None', 'Unnamed:'] or 'Unnamed' in c0 else c0
+                        c1_c = "" if c1 in ['nan', 'None', 'Unnamed:'] or 'Unnamed' in c1 else c1
                         combined_name = f"{c0_c} {c1_c}".strip()
                         new_cols.append(combined_name if combined_name else "Без названия")
                     df_i.columns = new_cols
@@ -45,10 +46,15 @@ def load_clean_and_merge_files(uploaded_files_list):
                     df_i.columns = row0
                     df_i = df_i.iloc[1:].reset_index(drop=True)
             
-            df_i.columns = df_i.columns.astype(str).str.replace(r'\s+', ' ', regex=True).str.strip()
+            # ГЛОБАЛЬНАЯ ЗАЩИТА: вырезаем мусорные текстовые артефакты nan, Unnamed и лишние пробелы из шапки
+            cleaned_cols = []
+            for col in df_i.columns:
+                c_str = str(col).replace('nan №', '').replace('№ nan', '').replace('nan', '').replace('Unnamed:', '').strip()
+                c_str = re.sub(r'\s+', ' ', c_str).strip()
+                cleaned_cols.append(c_str if c_str else "Без названия")
+                
+            df_i.columns = cleaned_cols
             df_i = df_i.loc[:, ~df_i.columns.str.contains('^Без названия|^Unnamed')]
-            
-            # Защита: удаляем дубликаты столбцов внутри одного файла, если они есть
             df_i = df_i.loc[:, ~df_i.columns.duplicated()]
             
             period_name = f.name.replace(".xlsx", "").replace(".xls", "").replace(".csv", "")
@@ -79,7 +85,6 @@ def load_clean_and_merge_files(uploaded_files_list):
         merged_df = merged_df.dropna(how='all')
         return merged_df, frames_dict, True
     else:
-        # Если структуры разные, сшиваем по совпадающим колонкам (outer join), не ломая базу
         merged_df = pd.concat(frames_dict.values(), ignore_index=True, join='outer')
         merged_df = merged_df.dropna(how='all')
         return merged_df, frames_dict, False
@@ -105,7 +110,6 @@ if uploaded_files:
             
         st.markdown("### 📋 Структура сводной таблицы (Заголовки и первые 5 строк):")
         
-        # ГАРАНТИРОВАННОЕ ИСПРАВЛЕНИЕ ОШИБКИ ТИПОВ: Принудительно приводим превью к строкам для st.dataframe
         try:
             preview_df = main_df.head(5).copy()
             for col in preview_df.columns:
@@ -114,15 +118,19 @@ if uploaded_files:
         except Exception as table_err:
             st.error(f"Не удалось отобразить превью таблицы: {table_err}")
         
-        # Скачивание сводного файла Excel через стандартный openpyxl
-        try:
-            buffer = io.BytesIO()
-            with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-                main_df.to_excel(writer, index=False, sheet_name='Сводные данные')
+        # СВЕРХБЫСТРЫЙ ОПТИМИЗИРОВАННЫЙ ЭКСПОРТ ДЛЯ СКАЧИВАНИЯ
+        @st.cache_data
+        def convert_df_to_excel(df):
+            output = io.BytesIO()
+            with pd.ExcelWriter(output, engine='openpyxl') as wr:
+                df.to_excel(wr, index=False, sheet_name='Сводные данные')
+            return output.getvalue()
             
+        try:
+            excel_data = convert_df_to_excel(main_df)
             st.download_button(
                 label="📥 Скачать объединенную сводную базу (Excel)",
-                data=buffer.getvalue(),
+                data=excel_data,
                 file_name="Сводный_отчет_очищенный.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
@@ -192,7 +200,7 @@ if uploaded_files:
             if st.session_state.manual_cards > 1:
                 if st.button("🗑️ Удалить последнюю карточку"):
                     st.session_state.manual_cards -= 1
-        # 3. ENTERPRISE NO-CODE КОНСТРУКТОР ДИАГРАММ
+        # ЧАСТЬ 2: ENTERPRISE NO-CODE КОНСТРУКТОР ДИАГРАММ
         st.markdown("---")
         st.subheader("🛠️ Enterprise No-Code Конструктор Панелей")
         
@@ -305,7 +313,7 @@ if uploaded_files:
                     event_data = st.plotly_chart(fig, use_container_width=True, key=f"plotly_manual_{i}", on_select="rerun")
                     
                     if event_data and "selection" in event_data and "points" in event_data["selection"] and len(event_data["selection"]["points"]) > 0:
-                        pt = event_data["selection"]["points"][0]
+                        pt = event_data["selection"]["points"]
                         val = None
                         
                         if "Donut" in chart_style and "pointNumber" in pt:
