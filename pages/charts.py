@@ -2,7 +2,14 @@ import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
 
+st.set_page_config(page_title="Enterprise BI Конструктор - Диаграммы", layout="wide")
 st.title("🛠️ Enterprise No-Code Конструктор Панелей")
+
+# ПРИНУДИТЕЛЬНОЕ АКТИВИРОВАНИЕ МНОГОСТРАНИЧНОГО МЕНЮ В БОКОВОЙ ПАНЕЛИ
+st.sidebar.markdown("### 🗺️ Навигация по BI-платформе")
+st.sidebar.page_link("app.py", label="🗂️ 1. Загрузка и очистка данных", icon="📁")
+st.sidebar.page_link("pages/charts.py", label="📊 2. Конструктор диаграмм", icon="📈")
+st.sidebar.markdown("---")
 
 # Достаем отфильтрованную и очищенную базу данных из общей памяти сессии первого файла
 if "main_df" in st.session_state and not st.session_state.main_df.empty:
@@ -164,4 +171,3 @@ if "main_df" in st.session_state and not st.session_state.main_df.empty:
                 st.rerun()
 else:
     st.info("💡 Пожалуйста, перейдите на главную страницу, загрузите ваши файлы Excel/CSV, чтобы активировать Конструктор панелей.")
-
