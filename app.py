@@ -43,11 +43,10 @@ def power_query_clean_engine(uploaded_files_list, skip_top, merge_headers, remov
             
             # 2. Шаг PQ: Продвинутое схлопывание объединенных многострочных заголовков (Fill Down логика)
             if merge_headers and len(df_raw) > 1:
-                # Извлекаем первую (верхнюю) и вторую строки заголовка
                 row0 = list(df_raw.iloc[0].astype(str).str.strip())
                 row1 = list(df_raw.iloc[1].astype(str).str.strip())
                 
-                # Имитируем Power Query "Fill Down" для первой строки (заполняем объединенные NaN)
+                # Имитируем Power Query "Fill Down" для первой строки (заполняем объединенные ячейки Excel)
                 current_parent = ""
                 for idx in range(len(row0)):
                     val0 = row0[idx]
@@ -98,7 +97,7 @@ def power_query_clean_engine(uploaded_files_list, skip_top, merge_headers, remov
             
     if not frames_dict: return pd.DataFrame(), False
     f_keys = list(frames_dict.keys())
-    first_file_name = f_keys if f_keys else ""
+    first_file_name = f_keys[0] if f_keys else ""
     if not first_file_name: return pd.DataFrame(), False
         
     merged_df = pd.concat(frames_dict.values(), ignore_index=True, join='outer')
@@ -140,15 +139,19 @@ if uploaded_files:
         st.session_state.main_df = main_df
         all_cols = ["-- Выберите заголовок --"] + list(main_df.columns)
 
+        # ---------------- ОТРИСОВКА РАЗДЕЛА 1 ----------------
         if page == "🗂️ 1. Загрузка и очистка данных":
             st.title("🚀 Модуль Предобработки & Импорта Данных")
-            st.success(f"📊 Идеальная сводная база сформирована! Файлов: {len(uploaded_files)}. Строк: {main_df.shape}, Колонок: {main_df.shape}")
-            st.markdown("### 📋 Результат очистки (Заголовки и первые 5 строк):")
+            st.success(f"📊 Идеальная сводная база сформирована! Файлов: {len(uploaded_files)}. Строк: {main_df.shape[0]}, Колонок: {main_df.shape[1]}")
+            
+            # ТРЕБОВАНИЕ: Вывод строго первых 10 строк внутрь контейнера с вертикальной прокруткой (height=350)
+            st.markdown("### 📋 Результат очистки (Заголовки и первые 10 строк):")
             try:
-                preview_df = main_df.head(5).copy()
+                preview_df = main_df.head(10).copy()
                 for c in preview_df.columns: preview_df[c] = preview_df[c].astype(str).fillna("Пусто")
-                st.dataframe(preview_df, use_container_width=True)
+                st.dataframe(preview_df, height=350, use_container_width=True)
             except Exception as e: st.error(f"Ошибка превью: {e}")
+            
             try:
                 csv_data = main_df.to_csv(index=False, encoding='utf-8-sig', sep=';')
                 st.download_button(label="📥 Скачать идеальную сводную (Excel CSV)", data=csv_data, file_name="Сводный_отчет_PowerQuery.csv", mime="text/csv")
@@ -189,7 +192,7 @@ if uploaded_files:
                     if st.button("🗑️ Удалить карточку"): st.session_state.manual_cards -= 1; st.rerun()
 
             st.markdown("---")
-            st.subheader("🛠️ No-Code Конструктор Графиков")
+            st.subheader("🛠️ No-Code Конструктор_Графиков")
             for i in range(st.session_state.manual_charts):
                 st.markdown(f"##### 📊 Настройка диаграммы № {i+1}")
                 c1, c2, c3, c4 = st.columns(4)
@@ -223,14 +226,18 @@ if uploaded_files:
                         else:
                             fig.add_trace(go.Bar(y=df_g[x_ax].astype(str) if horiz else df_g[y_ax], x=df_g[y_ax] if horiz else df_g[x_ax].astype(str), text=df_g[y_ax].map(lambda x: f"{x:,.0f}") if lbl else None, textposition="auto", orientation="h" if horiz else "v", marker_color=color))
                         fig.update_layout(xaxis=dict(tickangle=45 if not horiz else 0), uniformtext=dict(mode="hide", minsize=8), clickmode="event+select")
+                        
+                        # УЛЬТРА-БЕЗОПАСНЫЙ СЧИТЫВАТЕЛЬ КЛИКОВ ПО КАТЕГОРИЯМ
                         ev_i = st.plotly_chart(fig, use_container_width=True, key=f"p_{i}", on_select="rerun")
                         if ev_i and "selection" in ev_i and "points" in ev_i["selection"] and len(ev_i["selection"]["points"]) > 0:
                             pt_list = ev_i["selection"]["points"]
                             if isinstance(pt_list, list) and len(pt_list) > 0:
-                                val = pt_list.get('x', pt_list.get('label', pt_list.get('y')))
-                                if val is not None and str(val) != "ИТОГО": 
-                                    st.session_state.active_filter_val = val
-                                    st.session_state.active_filter_col = x_ax; st.rerun()
+                                first_pt = pt_list[0]
+                                if isinstance(first_pt, dict):
+                                    val = first_pt.get('x', first_pt.get('label', first_pt.get('y')))
+                                    if val is not None and str(val) != "ИТОГО": 
+                                        st.session_state.active_filter_val = val
+                                        st.session_state.active_filter_col = x_ax; st.rerun()
                     except Exception as ex: st.error(f"Ошибка: {ex}")
                 else: st.info("ℹ️ Выберите категории для построения графика")
                 st.markdown("<hr style='border:1px dashed #ddd'>", unsafe_allow_html=True)
