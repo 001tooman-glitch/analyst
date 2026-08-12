@@ -45,8 +45,8 @@ def power_query_clean_engine(uploaded_files_list, skip_top, merge_headers, remov
             
             # 2. Шаг PQ: Продвинутое схлопывание объединенных многострочных заголовков
             if merge_headers and len(df_raw) > 1:
-                row0 = list(df_raw.iloc[0].astype(str).str.strip())
-                row1 = list(df_raw.iloc[1].astype(str).str.strip())
+                row0 = list(df_raw.iloc.astype(str).str.strip())
+                row1 = list(df_raw.iloc.astype(str).str.strip())
                 
                 # Имитируем Power Query "Fill Down" логику
                 current_parent = ""
@@ -67,9 +67,10 @@ def power_query_clean_engine(uploaded_files_list, skip_top, merge_headers, remov
                 df_raw.columns = new_cols
                 df_raw = df_raw.iloc[2:].reset_index(drop=True)
             else:
-                df_raw.columns = df_raw.iloc[0].astype(str).str.strip()
+                df_raw.columns = df_raw.iloc.astype(str).str.strip()
                 df_raw = df_raw.iloc[1:].reset_index(drop=True)
                 
+            # 3. Шаг PQ: Очистка имен столбцов от мусорных артефактов Excel и пробелов
             cleaned_cols = []
             for idx, col in enumerate(df_raw.columns):
                 c_str = str(col).replace('nan №', '').replace('№ nan', '').replace('nan', '').replace('Unnamed:', '').strip()
@@ -80,6 +81,7 @@ def power_query_clean_engine(uploaded_files_list, skip_top, merge_headers, remov
             df_raw = df_raw.loc[:, ~df_raw.columns.str.contains('^Без названия|^Unnamed')]
             df_raw = df_raw.loc[:, ~df_raw.columns.duplicated()]
             
+            # 4. Шаг PQ: Удаление текстовых итоговых подвалов
             if remove_footer:
                 for text_col in df_raw.columns:
                     mask_footer = df_raw[text_col].astype(str).str.lower().str.contains('итого|всего|сумма|подпись|сдал|принял', na=False)
@@ -124,9 +126,8 @@ if uploaded_files:
         # ---------------- ОТРИСОВКА РАЗДЕЛА 1 ----------------
         if page == "🗂️ 1. Загрузка и очистка данных":
             st.title("🚀 Модуль Предобработки & Импорта Данных")
-            st.success(f"📊 Идеальная сводная база сформирована! Файлов: {len(uploaded_files)}. Строк: {main_df.shape[0]}, Колонок: {main_df.shape[1]}")
+            st.success(f"📊 Идеальная сводная база сформирована! Файлов: {len(uploaded_files)}. Строк: {main_df.shape}, Колонок: {main_df.shape}")
             
-            # ТРЕБОВАНИЕ ИСПРАВЛЕНО: Убрано ограничение .head(10). Передаем в контейнер ВСЮ базу, ограничивая высоту окна 450px
             st.markdown("### 📋 Результат очистки (Полный интерактивный просмотр всей сводной таблицы):")
             try:
                 full_view_df = main_df.copy()
@@ -134,19 +135,26 @@ if uploaded_files:
                 st.dataframe(full_view_df, height=450, use_container_width=True)
             except Exception as e: st.error(f"Ошибка превью: {e}")
             
+            # ТРЕБОВАНИЕ ИСПРАВЛЕНО: Выгружаем строго бинарный файл .XLSX через буфер, гарантируя монолитность ячеек
             try:
-                csv_buffer = io.StringIO()
-                main_df.to_csv(csv_buffer, index=False, sep=';')
-                csv_with_bom = "\ufeff" + csv_buffer.getvalue()
-                st.download_button(label="📥 Скачать идеальную сводную (Excel CSV)", data=csv_with_bom.encode('utf-8'), file_name="Сводный_отчет_PowerQuery.csv", mime="text/csv")
-            except Exception as de: st.error(f"Ошибка скачивания: {de}")
+                excel_buffer = io.BytesIO()
+                with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
+                    main_df.to_excel(writer, index=False, sheet_name='Сводные данные')
+                
+                st.download_button(
+                    label="📥 Скачать идеальную сводную базу (Excel .xlsx)", 
+                    data=excel_buffer.getvalue(), 
+                    file_name="Идеальная_сводная_база.xlsx", 
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                )
+            except Exception as de: st.error(f"Ошибка подготовки Excel-файла: {de}")
         # ---------------- ОТРИСОВКА РАЗДЕЛА 2 ----------------
         elif page == "📊 2. Конструктор диаграмм":
             import plotly.graph_objects as go
             st.title("📊 Интерактивная BI-Панель Показателей")
             st.sidebar.success("🟢 Интерактивный BI-движок активен!")
             if st.session_state.active_filter_val is not None:
-                st.sidebar.markdown(f"**Активный фильтр:**\n`{st.session_state.active_filter_col}` = `{st.session_state.active_filter_val}`")
+                st.sidebar.markdown(f"**Active фильтр:**\n`{st.session_state.active_filter_col}` = `{st.session_state.active_filter_val}`")
                 if st.sidebar.button("🧹 Очистить все фильтры", type="primary", key="clr_f_cp"): 
                     st.session_state.active_filter_val = None
                     st.session_state.active_filter_col = None; st.rerun()
@@ -212,17 +220,15 @@ if uploaded_files:
                             fig.add_trace(go.Bar(y=df_g[x_ax].astype(str) if horiz else df_g[y_ax], x=df_g[y_ax] if horiz else df_g[x_ax].astype(str), text=df_g[y_ax].map(lambda x: f"{x:,.0f}") if lbl else None, textposition="auto", orientation="h" if horiz else "v", marker_color=color))
                         fig.update_layout(xaxis=dict(tickangle=45 if not horiz else 0), uniformtext=dict(mode="hide", minsize=8), clickmode="event+select")
                         
-                        # БЕЗОПАСНЫЙ СЧИТЫВАТЕЛЬ СОБЫТИЙ PLOTLY
                         ev_i = st.plotly_chart(fig, use_container_width=True, key=f"p_{i}", on_select="rerun")
                         if ev_i and "selection" in ev_i and "points" in ev_i["selection"] and len(ev_i["selection"]["points"]) > 0:
                             pt_list = ev_i["selection"]["points"]
                             if isinstance(pt_list, list) and len(pt_list) > 0:
-                                d_pt = pt_list[0]
-                                if isinstance(d_pt, dict):
-                                    val = d_pt.get('x', d_pt.get('label', d_pt.get('y')))
-                                    if val is not None and str(val) != "ИТОГО": 
-                                        st.session_state.active_filter_val = val
-                                        st.session_state.active_filter_col = x_ax; st.rerun()
+                                # Универсальный перехватчик значенийPlotly без словарей
+                                val = pt_list.get('x', pt_list.get('label', pt_list.get('y')))
+                                if val is not None and str(val) != "ИТОГО": 
+                                    st.session_state.active_filter_val = val
+                                    st.session_state.active_filter_col = x_ax; st.rerun()
                     except Exception as ex: st.error(f"Ошибка: {ex}")
                 else: st.info("ℹ️ Выберите категории для построения графика")
                 st.markdown("<hr style='border:1px dashed #ddd'>", unsafe_allow_html=True)
