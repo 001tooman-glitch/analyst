@@ -5,7 +5,6 @@ import re
 
 st.set_page_config(page_title="Enterprise BI Конструктор (Power Query)", layout="wide")
 
-# АВТОНОМНЫЙ И СТАБИЛЬНЫЙ ПЕРЕКЛЮЧАТЕЛЬ СТРАНИЦ В БОКОВОЙ ПАНЕЛИ
 st.sidebar.markdown("### 🗺️ Навигация по BI-платформе")
 page = st.sidebar.radio(
     "Перейти к разделу:",
@@ -20,11 +19,10 @@ if "active_filter_col" not in st.session_state: st.session_state.active_filter_c
 if "main_df" not in st.session_state: st.session_state.main_df = pd.DataFrame()
 if "uploaded_backup" not in st.session_state: st.session_state.uploaded_backup = None
 
-# Параметры Power Query шагов очистки в сессии
+# Параметры Power Query
 if "pq_skip_top" not in st.session_state: st.session_state.pq_skip_top = 0
 if "pq_merge_headers" not in st.session_state: st.session_state.pq_merge_headers = False
 if "pq_remove_footer" not in st.session_state: st.session_state.pq_remove_footer = True
-# МОДЕРНИЗИРОВАННЫЙ ДВИЖОК POWER QUERY СО СКЛЕЙКОЙ СИНОНИМОВ СТОЛБЦОВ
 def power_query_clean_engine(uploaded_files_list, skip_top, merge_headers, remove_footer):
     frames_dict = {}
     if not uploaded_files_list:
@@ -37,18 +35,14 @@ def power_query_clean_engine(uploaded_files_list, skip_top, merge_headers, remov
             else:
                 df_raw = pd.read_excel(f, header=None, dtype=str)
             
-            # 1. Шаг PQ: Удалить верхние пустые строки (Skip Rows)
             if skip_top > 0 and skip_top < len(df_raw):
                 df_raw = df_raw.iloc[skip_top:].reset_index(drop=True)
                 
             if df_raw.empty: continue
             
-            # 2. Шаг PQ: Продвинутое схлопывание объединенных многострочных заголовков
             if merge_headers and len(df_raw) > 1:
                 row0 = list(df_raw.iloc[0].astype(str).str.strip())
                 row1 = list(df_raw.iloc[1].astype(str).str.strip())
-                
-                # Имитируем Power Query "Fill Down" логику
                 current_parent = ""
                 for idx in range(len(row0)):
                     val0 = row0[idx]
@@ -63,14 +57,12 @@ def power_query_clean_engine(uploaded_files_list, skip_top, merge_headers, remov
                     clean_c1 = "" if c1 in ['nan', 'None'] or c1.startswith('Unnamed:') else c1
                     combined = f"{clean_c0}_{clean_c1}".strip("_ ")
                     new_cols.append(combined if combined else f"Колонка_{idx+1}")
-                    
                 df_raw.columns = new_cols
                 df_raw = df_raw.iloc[2:].reset_index(drop=True)
             else:
                 df_raw.columns = df_raw.iloc[0].astype(str).str.strip()
                 df_raw = df_raw.iloc[1:].reset_index(drop=True)
                 
-            # 3. Шаг PQ: Финальная очистка шапки от мусорных артефактов Excel
             cleaned_cols = []
             for idx, col in enumerate(df_raw.columns):
                 c_str = str(col).replace('nan №', '').replace('№ nan', '').replace('nan', '').replace('Unnamed:', '').strip()
@@ -78,7 +70,6 @@ def power_query_clean_engine(uploaded_files_list, skip_top, merge_headers, remov
                 cleaned_cols.append(c_str if c_str else f"Столбец_{idx+1}")
             df_raw.columns = cleaned_cols
             
-            # ИНСТРУМЕНТ PQ MAPPING: Склеиваем разнородные названия колонок-синонимов в единый стандарт
             mapped_cols = []
             for col in df_raw.columns:
                 c_low = col.lower()
@@ -93,13 +84,11 @@ def power_query_clean_engine(uploaded_files_list, skip_top, merge_headers, remov
                 else:
                     mapped_cols.append(col)
             df_raw.columns = mapped_cols
-            
             df_raw = df_raw.loc[:, ~df_raw.columns.str.contains('^Без названия|^Unnamed')]
             df_raw = df_raw.loc[:, ~df_raw.columns.duplicated()]
             
-            # 4. Шаг PQ: Удаление текстовых итоговых подвалов
             if remove_footer:
-                for text_col in df_raw.columns:
+                for text_col in df_raw.select_dtypes(include=['object']).columns:
                     mask_footer = df_raw[text_col].astype(str).str.lower().str.contains('итого|всего|сумма|подпись|сдал|принял', na=False)
                     df_raw = df_raw[~mask_footer]
             
@@ -111,32 +100,27 @@ def power_query_clean_engine(uploaded_files_list, skip_top, merge_headers, remov
             pass
             
     if not frames_dict: return pd.DataFrame(), False
-    
-    # 5. Шаг PQ: Монолитное сшивание по выровненным заголовкам-синонимам
     merged_df = pd.concat(frames_dict.values(), ignore_index=True, join='outer')
     
-    # Очистка и зануление числовых типов данных
     for col in merged_df.columns:
         if col == 'Источник (Файл)': continue
         if col in ['Количество', 'Сумма']:
             merged_df[col] = merged_df[col].astype(str).str.replace(r'\s+', '', regex=True).str.replace(',', '.')
             merged_df[col] = pd.to_numeric(merged_df[col], errors='coerce').fillna(0.0)
         else:
-            merged_df[col] = merged_df[col].fillna("")
-            merged_df[col] = merged_df[col].astype(str).str.strip().replace(['nan', 'None', 'Не указано'], "")
+            merged_df[col] = merged_df[col].fillna("").astype(str).str.strip().replace(['nan', 'None', 'Не указано'], "")
             
     merged_df = merged_df.dropna(how='all')
-    
-    # Сортируем колонки так, чтобы главные бизнес-поля всегда шли первыми слева
     front_cols = [c for c in ['ОЗМ', 'Наименование материала', 'Количество', 'Сумма', 'Источник (Файл)'] if c in merged_df.columns]
     other_cols = [c for c in merged_df.columns if c not in front_cols]
     merged_df = merged_df[front_cols + other_cols]
-    
     return merged_df, True
 uploaded_files = st.file_uploader("Загрузите один или несколько любых файлов Excel/CSV:", type=["csv", "xlsx"], accept_multiple_files=True)
 
 if uploaded_files:
-    st.session_state.uploaded_backup = uploaded_files
+    if st.session_state.uploaded_backup != uploaded_files:
+        st.session_state.uploaded_backup = uploaded_files
+        st.session_state.main_df = pd.DataFrame() # Сбрасываем кэш при загрузке новых файлов
 elif st.session_state.uploaded_backup:
     uploaded_files = st.session_state.uploaded_backup
 
@@ -145,27 +129,39 @@ if uploaded_files:
         st.markdown("### 🛠️ Панель шагов трансформации (Аналог Power Query)")
         col_pq1, col_pq2, col_pq3 = st.columns(3)
         with col_pq1:
-            st.session_state.pq_skip_top = st.number_input("1. Пропустить верхние строки (строк):", min_value=0, max_value=20, value=st.session_state.pq_skip_top, step=1)
+            new_skip = st.number_input("1. Пропустить верхние строки (строк):", min_value=0, max_value=20, value=st.session_state.pq_skip_top, step=1)
+            if new_skip != st.session_state.pq_skip_top:
+                st.session_state.pq_skip_top = new_skip; st.session_state.main_df = pd.DataFrame()
         with col_pq2:
-            st.session_state.pq_merge_headers = st.checkbox("2. Схлопнуть составной заголовок (из 2-х строк)", value=st.session_state.pq_merge_headers)
+            new_merge = st.checkbox("2. Схлопнуть составной заголовок (из 2-х строк)", value=st.session_state.pq_merge_headers)
+            if new_merge != st.session_state.pq_merge_headers:
+                st.session_state.pq_merge_headers = new_merge; st.session_state.main_df = pd.DataFrame()
         with col_pq3:
-            st.session_state.pq_remove_footer = st.checkbox("3. Авто-очистка подвала (удалить Итоги и подписи)", value=st.session_state.pq_remove_footer)
+            new_foot = st.checkbox("3. Авто-очистка подвала (удалить Итоги и подписи)", value=st.session_state.pq_remove_footer)
+            if new_foot != st.session_state.pq_remove_footer:
+                st.session_state.pq_remove_footer = new_foot; st.session_state.main_df = pd.DataFrame()
         st.markdown("---")
 
-    main_df, is_merged = power_query_clean_engine(uploaded_files, st.session_state.pq_skip_top, st.session_state.pq_merge_headers, st.session_state.pq_remove_footer)
+    # УМНОЕ СЕССИОННОЕ КЭШИРОВАНИЕ: Расчет вызывается ЕДИНОЖДЫ, убирая тормоза
+    if st.session_state.main_df.empty:
+        with st.spinner("⏳ Идёт глубокая Power Query очистка данных... Пожалуйста, подождите."):
+            calculated_df, is_merged = power_query_clean_engine(
+                uploaded_files, st.session_state.pq_skip_top, st.session_state.pq_merge_headers, st.session_state.pq_remove_footer
+            )
+            if not calculated_df.empty:
+                st.session_state.main_df = calculated_df
+
+    main_df = st.session_state.main_df
     
     if not main_df.empty:
-        st.session_state.main_df = main_df
         all_cols = ["-- Выберите заголовок --"] + list(main_df.columns)
 
-        # ---------------- ОТРИСОВКА РАЗДЕЛА 1 ----------------
         if page == "🗂️ 1. Загрузка и очистка данных":
             st.title("🚀 Модуль Предобработки & Импорта Данных")
             st.success(f"📊 Идеальная сводная база сформирована! Файлов: {len(uploaded_files)}. Строк: {main_df.shape[0]:,}, Колонок: {main_df.shape[1]}")
-            
             st.markdown("### 📋 Результат очистки (Постраничный интерактивный просмотр сводной таблицы):")
             
-            rows_per_page = 50  # Браузер рендерит по 50 строк, скорость мгновенная
+            rows_per_page = 50
             total_rows = len(main_df)
             total_pages = (total_rows // rows_per_page) + (1 if total_rows % rows_per_page > 0 else 0)
             
@@ -193,7 +189,6 @@ if uploaded_files:
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 )
             except Exception as de: st.error(f"Ошибка подготовки Excel-файла: {de}")
-        # ---------------- ОТРИСОВКА РАЗДЕЛА 2 ----------------
         elif page == "📊 2. Конструктор диаграмм":
             import plotly.graph_objects as go
             st.title("📊 Интерактивная BI-Панель Показателей")
@@ -237,7 +232,7 @@ if uploaded_files:
                 with c1: style = st.selectbox(f"Тип графики:", ["Столбчатая диаграмма (Bar)", "Линейный тренд (Line)", "Кольцевая долей (Donut)", "Диаграмма Водопад (Waterfall)", "Диаграмма Воронка (Funnel)"], key=f"s_{i}")
                 with c2: x_ax = st.selectbox(f"Ось X (Категории):", all_cols, key=f"x_{i}")
                 with c3: y_ax = st.selectbox(f"Ось Y (Показатели):", all_cols, key=f"y_{i}")
-                with c4: color = st.color_picker(f"Цвет элементов:", "#1f77b4", key=f"col_{i}")
+                with c4: color = st.color_picker(f"Цвет elements:", "#1f77b4", key=f"col_{i}")
                 with st.expander("🎨 Настройки отображения"):
                     lbl = st.checkbox("Показывать значения", value=True, key=f"lbl_{i}")
                     horiz = st.checkbox("Горизонтальный вид", value=False, key=f"h_{i}") if "Bar" in style else False
@@ -265,7 +260,6 @@ if uploaded_files:
                             fig.add_trace(go.Bar(y=df_g[x_ax].astype(str) if horiz else df_g[y_ax], x=df_g[y_ax] if horiz else df_g[x_ax].astype(str), text=df_g[y_ax].map(lambda x: f"{x:,.0f}") if lbl else None, textposition="auto", orientation="h" if horiz else "v", marker_color=color))
                         fig.update_layout(xaxis=dict(tickangle=45 if not horiz else 0), uniformtext=dict(mode="hide", minsize=8), clickmode="event+select")
                         
-                        # 100% УЛЬТРА-БЕЗОПАСНЫЙ СЧИТЫВАТЕЛЬ КЛИКОВ (Убрана деструктивная логика)
                         ev_i = st.plotly_chart(fig, use_container_width=True, key=f"p_{i}", on_select="rerun")
                         if ev_i and "selection" in ev_i and "points" in ev_i["selection"] and len(ev_i["selection"]["points"]) > 0:
                             pt_list = ev_i["selection"]["points"]
