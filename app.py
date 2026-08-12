@@ -136,6 +136,54 @@ def power_query_clean_engine(uploaded_files_list, skip_top, merge_headers, remov
     merged_df = merged_df[front_cols + other_cols]
     
     return merged_df, True
+uploaded_files = st.file_uploader("Загрузите один или несколько любых файлов Excel/CSV:", type=["csv", "xlsx"], accept_multiple_files=True)
+
+if uploaded_files:
+    st.session_state.uploaded_backup = uploaded_files
+elif st.session_state.uploaded_backup:
+    uploaded_files = st.session_state.uploaded_backup
+
+if uploaded_files:
+    if page == "🗂️ 1. Загрузка и очистка данных":
+        st.markdown("### 🛠️ Панель шагов трансформации (Аналог Power Query)")
+        col_pq1, col_pq2, col_pq3 = st.columns(3)
+        with col_pq1:
+            st.session_state.pq_skip_top = st.number_input("1. Пропустить верхние строки (строк):", min_value=0, max_value=20, value=st.session_state.pq_skip_top, step=1)
+        with col_pq2:
+            st.session_state.pq_merge_headers = st.checkbox("2. Схлопнуть составной заголовок (из 2-х строк)", value=st.session_state.pq_merge_headers)
+        with col_pq3:
+            st.session_state.pq_remove_footer = st.checkbox("3. Авто-очистка подвала (удалить Итоги и подписи)", value=st.session_state.pq_remove_footer)
+        st.markdown("---")
+
+    main_df, is_merged = power_query_clean_engine(uploaded_files, st.session_state.pq_skip_top, st.session_state.pq_merge_headers, st.session_state.pq_remove_footer)
+    
+    if not main_df.empty:
+        st.session_state.main_df = main_df
+        all_cols = ["-- Выберите заголовок --"] + list(main_df.columns)
+
+        # ---------------- ОТРИСОВКА РАЗДЕЛА 1 ----------------
+        if page == "🗂️ 1. Загрузка и очистка данных":
+            st.title("🚀 Модуль Предобработки & Импорта Данных")
+            st.success(f"📊 Идеальная сводная база сформирована! Файлов: {len(uploaded_files)}. Строк: {main_df.shape[0]}, Колонок: {main_df.shape[1]}")
+            
+            st.markdown("### 📋 Результат очистки (Полный интерактивный просмотр всей сводной таблицы):")
+            try:
+                full_view_df = main_df.copy()
+                st.dataframe(full_view_df, height=450, use_container_width=True)
+            except Exception as e: st.error(f"Ошибка превью: {e}")
+            
+            try:
+                excel_buffer = io.BytesIO()
+                with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
+                    main_df.to_excel(writer, index=False, sheet_name='Сводные данные')
+                
+                st.download_button(
+                    label="📥 Скачать идеальную сводную базу (Excel .xlsx)", 
+                    data=excel_buffer.getvalue(), 
+                    file_name="Идеальная_сводная_база.xlsx", 
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                )
+            except Exception as de: st.error(f"Ошибка подготовки Excel-файла: {de}")
         # ---------------- ОТРИСОВКА РАЗДЕЛА 2 ----------------
         elif page == "📊 2. Конструктор диаграмм":
             import plotly.graph_objects as go
