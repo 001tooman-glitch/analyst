@@ -45,8 +45,8 @@ def power_query_clean_engine(uploaded_files_list, skip_top, merge_headers, remov
             
             # 2. Шаг PQ: Продвинутое схлопывание объединенных многострочных заголовков
             if merge_headers and len(df_raw) > 1:
-                row0 = list(df_raw.iloc.astype(str).str.strip())
-                row1 = list(df_raw.iloc.astype(str).str.strip())
+                row0 = list(df_raw.iloc[0].astype(str).str.strip())
+                row1 = list(df_raw.iloc[1].astype(str).str.strip())
                 
                 # Имитируем Power Query "Fill Down" логику
                 current_parent = ""
@@ -67,10 +67,9 @@ def power_query_clean_engine(uploaded_files_list, skip_top, merge_headers, remov
                 df_raw.columns = new_cols
                 df_raw = df_raw.iloc[2:].reset_index(drop=True)
             else:
-                df_raw.columns = df_raw.iloc.astype(str).str.strip()
+                df_raw.columns = df_raw.iloc[0].astype(str).str.strip()
                 df_raw = df_raw.iloc[1:].reset_index(drop=True)
                 
-            # 3. Шаг PQ: Очистка имен столбцов от мусорных артефактов Excel и пробелов
             cleaned_cols = []
             for idx, col in enumerate(df_raw.columns):
                 c_str = str(col).replace('nan №', '').replace('№ nan', '').replace('nan', '').replace('Unnamed:', '').strip()
@@ -81,7 +80,6 @@ def power_query_clean_engine(uploaded_files_list, skip_top, merge_headers, remov
             df_raw = df_raw.loc[:, ~df_raw.columns.str.contains('^Без названия|^Unnamed')]
             df_raw = df_raw.loc[:, ~df_raw.columns.duplicated()]
             
-            # 4. Шаг PQ: Удаление текстовых итоговых подвалов
             if remove_footer:
                 for text_col in df_raw.columns:
                     mask_footer = df_raw[text_col].astype(str).str.lower().str.contains('итого|всего|сумма|подпись|сдал|принял', na=False)
@@ -135,7 +133,6 @@ if uploaded_files:
                 st.dataframe(full_view_df, height=450, use_container_width=True)
             except Exception as e: st.error(f"Ошибка превью: {e}")
             
-            # ТРЕБОВАНИЕ ИСПРАВЛЕНО: Выгружаем строго бинарный файл .XLSX через буфер, гарантируя монолитность ячеек
             try:
                 excel_buffer = io.BytesIO()
                 with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
@@ -154,7 +151,7 @@ if uploaded_files:
             st.title("📊 Интерактивная BI-Панель Показателей")
             st.sidebar.success("🟢 Интерактивный BI-движок активен!")
             if st.session_state.active_filter_val is not None:
-                st.sidebar.markdown(f"**Active фильтр:**\n`{st.session_state.active_filter_col}` = `{st.session_state.active_filter_val}`")
+                st.sidebar.markdown(f"**Активный фильтр:**\n`{st.session_state.active_filter_col}` = `{st.session_state.active_filter_val}`")
                 if st.sidebar.button("🧹 Очистить все фильтры", type="primary", key="clr_f_cp"): 
                     st.session_state.active_filter_val = None
                     st.session_state.active_filter_col = None; st.rerun()
@@ -217,18 +214,21 @@ if uploaded_files:
                         elif "Line" in style:
                             fig.add_trace(go.Scatter(x=df_g[x_ax], y=df_g[y_ax], mode="lines+markers+text" if lbl else "lines+markers", text=df_g[y_ax].map(lambda x: f"{x:,.0f}") if lbl else None, line=dict(color=color)))
                         else:
-                            fig.add_trace(go.Bar(y=df_g[x_ax].astype(str) if horiz else df_g[y_ax], x=df_g[y_ax] if horiz else df_g[x_ax].astype(str), text=df_g[y_ax].map(lambda x: f"{x:,.0f}") if lbl else None, textposition="auto", orientation="h" if horiz else "v", marker_color=color))
+                            fig.add_trace(go.Bar(y=df_g[x_ax].astype(str) if horiz else df_g[y_g], x=df_g[y_ax] if horiz else df_g[x_ax].astype(str), text=df_g[y_ax].map(lambda x: f"{x:,.0f}") if lbl else None, textposition="auto", orientation="h" if horiz else "v", marker_color=color))
                         fig.update_layout(xaxis=dict(tickangle=45 if not horiz else 0), uniformtext=dict(mode="hide", minsize=8), clickmode="event+select")
                         
+                        # 100% БЕЗОПАСНАЯ ОБРАБОТКА ИЗВЛЕЧЕНИЯ СОБЫТИЙ: Защита от AttributeError
                         ev_i = st.plotly_chart(fig, use_container_width=True, key=f"p_{i}", on_select="rerun")
                         if ev_i and "selection" in ev_i and "points" in ev_i["selection"] and len(ev_i["selection"]["points"]) > 0:
-                            pt_list = ev_i["selection"]["points"]
-                            if isinstance(pt_list, list) and len(pt_list) > 0:
-                                # Универсальный перехватчик значенийPlotly без словарей
-                                val = pt_list.get('x', pt_list.get('label', pt_list.get('y')))
-                                if val is not None and str(val) != "ИТОГО": 
-                                    st.session_state.active_filter_val = val
-                                    st.session_state.active_filter_col = x_ax; st.rerun()
+                            p_data = ev_i["selection"]["points"]
+                            if isinstance(p_data, list) and len(p_data) > 0:
+                                first_pt = p_data[0]
+                                if isinstance(first_pt, dict):
+                                    val = first_pt.get('x', first_pt.get('label', first_pt.get('y')))
+                                    if val is not None and str(val) != "ИТОГО":
+                                        st.session_state.active_filter_val = val
+                                        st.session_state.active_filter_col = x_ax
+                                        st.rerun()
                     except Exception as ex: st.error(f"Ошибка: {ex}")
                 else: st.info("ℹ️ Выберите категории для построения графика")
                 st.markdown("<hr style='border:1px dashed #ddd'>", unsafe_allow_html=True)
