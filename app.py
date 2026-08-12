@@ -46,7 +46,7 @@ def power_query_clean_engine(uploaded_files_list, skip_top, merge_headers, remov
                 row0 = list(df_raw.iloc[0].astype(str).str.strip())
                 row1 = list(df_raw.iloc[1].astype(str).str.strip())
                 
-                # Имитируем Power Query "Fill Down" для первой строки (заполняем объединенные ячейки Excel)
+                # Имитируем Power Query "Fill Down" для первой строки
                 current_parent = ""
                 for idx in range(len(row0)):
                     val0 = row0[idx]
@@ -142,9 +142,8 @@ if uploaded_files:
         # ---------------- ОТРИСОВКА РАЗДЕЛА 1 ----------------
         if page == "🗂️ 1. Загрузка и очистка данных":
             st.title("🚀 Модуль Предобработки & Импорта Данных")
-            st.success(f"📊 Идеальная сводная база сформирована! Файлов: {len(uploaded_files)}. Строк: {main_df.shape[0]}, Колонок: {main_df.shape[1]}")
+            st.success(f"📊 Идеальная сводная база сформирована! Файлов: {len(uploaded_files)}. Строк: {main_df.shape}, Колонок: {main_df.shape}")
             
-            # ТРЕБОВАНИЕ: Вывод строго первых 10 строк внутрь контейнера с вертикальной прокруткой (height=350)
             st.markdown("### 📋 Результат очистки (Заголовки и первые 10 строк):")
             try:
                 preview_df = main_df.head(10).copy()
@@ -152,9 +151,18 @@ if uploaded_files:
                 st.dataframe(preview_df, height=350, use_container_width=True)
             except Exception as e: st.error(f"Ошибка превью: {e}")
             
+            # ТРЕБОВАНИЕ: Принудительно генерируем сигнатуру BOM (\ufeff), чтобы Excel открывал файл без кракозябр
             try:
-                csv_data = main_df.to_csv(index=False, encoding='utf-8-sig', sep=';')
-                st.download_button(label="📥 Скачать идеальную сводную (Excel CSV)", data=csv_data, file_name="Сводный_отчет_PowerQuery.csv", mime="text/csv")
+                csv_buffer = io.StringIO()
+                main_df.to_csv(csv_buffer, index=False, sep=';')
+                csv_with_bom = "\ufeff" + csv_buffer.getvalue()
+                
+                st.download_button(
+                    label="📥 Скачать идеальную сводную (Excel CSV)", 
+                    data=csv_with_bom.encode('utf-8'), 
+                    file_name="Сводный_отчет_PowerQuery.csv", 
+                    mime="text/csv"
+                )
             except Exception as de: st.error(f"Ошибка скачивания: {de}")
         elif page == "📊 2. Конструктор диаграмм":
             import plotly.graph_objects as go
@@ -192,7 +200,7 @@ if uploaded_files:
                     if st.button("🗑️ Удалить карточку"): st.session_state.manual_cards -= 1; st.rerun()
 
             st.markdown("---")
-            st.subheader("🛠️ No-Code Конструктор_Графиков")
+            st.subheader("🛠️ No-Code Конструктор Графиков")
             for i in range(st.session_state.manual_charts):
                 st.markdown(f"##### 📊 Настройка диаграммы № {i+1}")
                 c1, c2, c3, c4 = st.columns(4)
@@ -227,14 +235,13 @@ if uploaded_files:
                             fig.add_trace(go.Bar(y=df_g[x_ax].astype(str) if horiz else df_g[y_ax], x=df_g[y_ax] if horiz else df_g[x_ax].astype(str), text=df_g[y_ax].map(lambda x: f"{x:,.0f}") if lbl else None, textposition="auto", orientation="h" if horiz else "v", marker_color=color))
                         fig.update_layout(xaxis=dict(tickangle=45 if not horiz else 0), uniformtext=dict(mode="hide", minsize=8), clickmode="event+select")
                         
-                        # УЛЬТРА-БЕЗОПАСНЫЙ СЧИТЫВАТЕЛЬ КЛИКОВ ПО КАТЕГОРИЯМ
                         ev_i = st.plotly_chart(fig, use_container_width=True, key=f"p_{i}", on_select="rerun")
                         if ev_i and "selection" in ev_i and "points" in ev_i["selection"] and len(ev_i["selection"]["points"]) > 0:
                             pt_list = ev_i["selection"]["points"]
                             if isinstance(pt_list, list) and len(pt_list) > 0:
-                                first_pt = pt_list[0]
-                                if isinstance(first_pt, dict):
-                                    val = first_pt.get('x', first_pt.get('label', first_pt.get('y')))
+                                d_pt = pt_list[0] # Исправлено: жестко извлекаем первый элемент списка как словарь
+                                if isinstance(d_pt, dict):
+                                    val = d_pt.get('x', d_pt.get('label', d_pt.get('y')))
                                     if val is not None and str(val) != "ИТОГО": 
                                         st.session_state.active_filter_val = val
                                         st.session_state.active_filter_col = x_ax; st.rerun()
