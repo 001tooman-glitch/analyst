@@ -25,7 +25,7 @@ if "uploaded_backup" not in st.session_state: st.session_state.uploaded_backup =
 if "pq_skip_top" not in st.session_state: st.session_state.pq_skip_top = 0
 if "pq_merge_headers" not in st.session_state: st.session_state.pq_merge_headers = False
 if "pq_remove_footer" not in st.session_state: st.session_state.pq_remove_footer = True
-# МОДЕРНИЗИРОВАННЫЙ ДВИЖОК POWER QUERY ОЧИСТКИ ТАБЛИЦ
+# МОДЕРНИЗИРОВАННЫЙ ДВИЖОК POWER QUERY С ФУНКЦИЕЙ FILL DOWN ДЛЯ ОБЪЕДИНЕННЫХ ЯЧЕЕК
 def power_query_clean_engine(uploaded_files_list, skip_top, merge_headers, remove_footer):
     frames_dict = {}
     if not uploaded_files_list:
@@ -33,32 +33,46 @@ def power_query_clean_engine(uploaded_files_list, skip_top, merge_headers, remov
         
     for f in uploaded_files_list:
         try:
-            # Шаг 1: Первичное чтение без заголовков (header=None), чтобы контролировать строки
             df_raw = pd.read_csv(f, header=None) if f.name.endswith('.csv') else pd.read_excel(f, header=None)
             
-            # Шаг 2: PQ "Удалить верхние строки" (Skip Rows)
+            # 1. Шаг PQ: Удалить верхние пустые строки (Skip Rows)
             if skip_top > 0 and skip_top < len(df_raw):
                 df_raw = df_raw.iloc[skip_top:].reset_index(drop=True)
                 
             if df_raw.empty: continue
             
-            # Шаг 3: PQ "Умный заголовок" (Однострочный или Схлопывание двухстрочного)
+            # 2. Шаг PQ: Продвинутое схлопывание объединенных многострочных заголовков (Fill Down логика)
             if merge_headers and len(df_raw) > 1:
-                row0 = df_raw.iloc[0].astype(str).str.strip()
-                row1 = df_raw.iloc[1].astype(str).str.strip()
+                # Извлекаем первую (верхнюю) и вторую строки заголовка
+                row0 = list(df_raw.iloc[0].astype(str).str.strip())
+                row1 = list(df_raw.iloc[1].astype(str).str.strip())
+                
+                # Имитируем Power Query "Fill Down" для первой строки (заполняем объединенные NaN)
+                current_parent = ""
+                for idx in range(len(row0)):
+                    val0 = row0[idx]
+                    if val0 and val0 != 'nan' and val0 != 'None' and not val0.startswith('Unnamed:'):
+                        current_parent = val0
+                    else:
+                        row0[idx] = current_parent
+                
+                # Сшиваем верхний родительский заголовок со строкой ниже
                 new_cols = []
-                for c0, c1 in zip(row0, row1):
-                    c0_c = "" if c0 in ['nan', 'None', 'Unnamed:'] or 'Unnamed' in c0 else c0
-                    c1_c = "" if c1 in ['nan', 'None', 'Unnamed:'] or 'Unnamed' in c1 else c1
-                    combined = f"{c0_c}_{c1_c}".strip("_ ")
-                    new_cols.append(combined if combined else "Колонка")
+                for idx, (c0, c1) in enumerate(zip(row0, row1)):
+                    clean_c0 = "" if c0 in ['nan', 'None'] or c0.startswith('Unnamed:') else c0
+                    clean_c1 = "" if c1 in ['nan', 'None'] or c1.startswith('Unnamed:') else c1
+                    
+                    combined = f"{clean_c0}_{clean_c1}".strip("_ ")
+                    new_cols.append(combined if combined else f"Колонка_{idx+1}")
+                    
                 df_raw.columns = new_cols
                 df_raw = df_raw.iloc[2:].reset_index(drop=True)
             else:
+                # Стандартный автоматический подбор первой текстовой строки как шапки
                 df_raw.columns = df_raw.iloc[0].astype(str).str.strip()
                 df_raw = df_raw.iloc[1:].reset_index(drop=True)
                 
-            # Шаг 4: Очистка имен столбцов от мусорных артефактов Excel
+            # 3. Шаг PQ: Финальная очистка шапки от спецсимволов и дубликатов
             cleaned_cols = []
             for idx, col in enumerate(df_raw.columns):
                 c_str = str(col).replace('nan №', '').replace('№ nan', '').replace('nan', '').replace('Unnamed:', '').strip()
@@ -69,7 +83,7 @@ def power_query_clean_engine(uploaded_files_list, skip_top, merge_headers, remov
             df_raw = df_raw.loc[:, ~df_raw.columns.str.contains('^Без названия|^Unnamed')]
             df_raw = df_raw.loc[:, ~df_raw.columns.duplicated()]
             
-            # Шаг 5: PQ "Отрезать подвал таблицы" (Удаление Итогов и пустых строк снизу)
+            # 4. Шаг PQ: Удаление текстовых итоговых подвалов
             if remove_footer:
                 for text_col in df_raw.select_dtypes(include=['object']).columns:
                     mask_footer = df_raw[text_col].astype(str).str.lower().str.contains('итого|всего|сумма|подпись|сдал|принял', na=False)
@@ -84,10 +98,9 @@ def power_query_clean_engine(uploaded_files_list, skip_top, merge_headers, remov
             
     if not frames_dict: return pd.DataFrame(), False
     f_keys = list(frames_dict.keys())
-    first_file_name = f_keys[0] if f_keys else ""
+    first_file_name = f_keys if f_keys else ""
     if not first_file_name: return pd.DataFrame(), False
         
-    # Шаг 6: Гибкое объединение (Outer Join) таблиц с разным содержанием колонок
     merged_df = pd.concat(frames_dict.values(), ignore_index=True, join='outer')
     merged_df = merged_df.dropna(how='all')
     return merged_df, True
@@ -127,7 +140,6 @@ if uploaded_files:
         st.session_state.main_df = main_df
         all_cols = ["-- Выберите заголовок --"] + list(main_df.columns)
 
-        # ---------------- ОТРИСОВКА РАЗДЕЛА 1 ----------------
         if page == "🗂️ 1. Загрузка и очистка данных":
             st.title("🚀 Модуль Предобработки & Импорта Данных")
             st.success(f"📊 Идеальная сводная база сформирована! Файлов: {len(uploaded_files)}. Строк: {main_df.shape}, Колонок: {main_df.shape}")
@@ -141,7 +153,6 @@ if uploaded_files:
                 csv_data = main_df.to_csv(index=False, encoding='utf-8-sig', sep=';')
                 st.download_button(label="📥 Скачать идеальную сводную (Excel CSV)", data=csv_data, file_name="Сводный_отчет_PowerQuery.csv", mime="text/csv")
             except Exception as de: st.error(f"Ошибка скачивания: {de}")
-        # ---------------- ОТРИСОВКА РАЗДЕЛА 2 ----------------
         elif page == "📊 2. Конструктор диаграмм":
             import plotly.graph_objects as go
             st.title("📊 Интерактивная BI-Панель Показателей")
@@ -216,7 +227,7 @@ if uploaded_files:
                         if ev_i and "selection" in ev_i and "points" in ev_i["selection"] and len(ev_i["selection"]["points"]) > 0:
                             pt_list = ev_i["selection"]["points"]
                             if isinstance(pt_list, list) and len(pt_list) > 0:
-                                val = pt_list[0].get('x', pt_list[0].get('label', pt_list[0].get('y')))
+                                val = pt_list.get('x', pt_list.get('label', pt_list.get('y')))
                                 if val is not None and str(val) != "ИТОГО": 
                                     st.session_state.active_filter_val = val
                                     st.session_state.active_filter_col = x_ax; st.rerun()
