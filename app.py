@@ -108,7 +108,7 @@ if uploaded_files:
         st.markdown("### 🛠️ Панель шагов трансформации (Аналог Power Query)")
         col_pq1, col_pq2, col_pq3 = st.columns(3)
         with col_pq1:
-            st.session_state.pq_skip_top = st.number_input("1. Удалить верхние строки (пропустить строк):", min_value=0, max_value=20, value=st.session_state.pq_skip_top, step=1)
+            st.session_state.pq_skip_top = st.number_input("1. Пропустить верхние строки (строк):", min_value=0, max_value=20, value=st.session_state.pq_skip_top, step=1)
         with col_pq2:
             st.session_state.pq_merge_headers = st.checkbox("2. Схлопнуть составной заголовок (из 2-х строк)", value=st.session_state.pq_merge_headers)
         with col_pq3:
@@ -124,13 +124,16 @@ if uploaded_files:
         # ---------------- ОТРИСОВКА РАЗДЕЛА 1 ----------------
         if page == "🗂️ 1. Загрузка и очистка данных":
             st.title("🚀 Модуль Предобработки & Импорта Данных")
-            st.success(f"📊 Идеальная сводная база сформирована! Файлов: {len(uploaded_files)}. Строк: {main_df.shape}, Колонок: {main_df.shape}")
-            st.markdown("### 📋 Результат очистки (Заголовки и первые 10 строк):")
+            st.success(f"📊 Идеальная сводная база сформирована! Файлов: {len(uploaded_files)}. Строк: {main_df.shape[0]}, Колонок: {main_df.shape[1]}")
+            
+            # ТРЕБОВАНИЕ ИСПРАВЛЕНО: Убрано ограничение .head(10). Передаем в контейнер ВСЮ базу, ограничивая высоту окна 450px
+            st.markdown("### 📋 Результат очистки (Полный интерактивный просмотр всей сводной таблицы):")
             try:
-                preview_df = main_df.head(10).copy()
-                for c in preview_df.columns: preview_df[c] = preview_df[c].astype(str).fillna("Пусто")
-                st.dataframe(preview_df, height=350, use_container_width=True)
+                full_view_df = main_df.copy()
+                for c in full_view_df.columns: full_view_df[c] = full_view_df[c].astype(str).fillna("Пусто")
+                st.dataframe(full_view_df, height=450, use_container_width=True)
             except Exception as e: st.error(f"Ошибка превью: {e}")
+            
             try:
                 csv_buffer = io.StringIO()
                 main_df.to_csv(csv_buffer, index=False, sep=';')
@@ -209,14 +212,17 @@ if uploaded_files:
                             fig.add_trace(go.Bar(y=df_g[x_ax].astype(str) if horiz else df_g[y_ax], x=df_g[y_ax] if horiz else df_g[x_ax].astype(str), text=df_g[y_ax].map(lambda x: f"{x:,.0f}") if lbl else None, textposition="auto", orientation="h" if horiz else "v", marker_color=color))
                         fig.update_layout(xaxis=dict(tickangle=45 if not horiz else 0), uniformtext=dict(mode="hide", minsize=8), clickmode="event+select")
                         
-                        # БЕЗОПАСНЫЙ СЧИТЫВАТЕЛЬ КЛЮЧЕЙ СЕРВЕРА
+                        # БЕЗОПАСНЫЙ СЧИТЫВАТЕЛЬ СОБЫТИЙ PLOTLY
                         ev_i = st.plotly_chart(fig, use_container_width=True, key=f"p_{i}", on_select="rerun")
                         if ev_i and "selection" in ev_i and "points" in ev_i["selection"] and len(ev_i["selection"]["points"]) > 0:
-                            p_data = ev_i["selection"]["points"][0]
-                            val = p_data.get('x', p_data.get('label', p_data.get('y')))
-                            if val is not None and str(val) != "ИТОГО":
-                                st.session_state.active_filter_val = val
-                                st.session_state.active_filter_col = x_ax; st.rerun()
+                            pt_list = ev_i["selection"]["points"]
+                            if isinstance(pt_list, list) and len(pt_list) > 0:
+                                d_pt = pt_list[0]
+                                if isinstance(d_pt, dict):
+                                    val = d_pt.get('x', d_pt.get('label', d_pt.get('y')))
+                                    if val is not None and str(val) != "ИТОГО": 
+                                        st.session_state.active_filter_val = val
+                                        st.session_state.active_filter_col = x_ax; st.rerun()
                     except Exception as ex: st.error(f"Ошибка: {ex}")
                 else: st.info("ℹ️ Выберите категории для построения графика")
                 st.markdown("<hr style='border:1px dashed #ddd'>", unsafe_allow_html=True)
