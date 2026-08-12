@@ -251,17 +251,18 @@ if uploaded_files:
                             fig.add_trace(go.Bar(y=df_g[x_ax].astype(str) if horiz else df_g[y_ax], x=df_g[y_ax] if horiz else df_g[x_ax].astype(str), text=df_g[y_ax].map(lambda x: f"{x:,.0f}") if lbl else None, textposition="auto", orientation="h" if horiz else "v", marker_color=color))
                         fig.update_layout(xaxis=dict(tickangle=45 if not horiz else 0), uniformtext=dict(mode="hide", minsize=8), clickmode="event+select")
                         
-                        # БЕЗОПАСНАЯ ОБРАБОТКА ИЗВЛЕЧЕНИЯ КЛИКОВ (Массивы преобразуются без .get)
                         ev_i = st.plotly_chart(fig, use_container_width=True, key=f"p_{i}", on_select="rerun")
                         if ev_i and "selection" in ev_i and "points" in ev_i["selection"] and len(ev_i["selection"]["points"]) > 0:
                             pt_list = ev_i["selection"]["points"]
                             if isinstance(pt_list, list) and len(pt_list) > 0:
+                                # ИСПРАВЛЕНИЕ ОШИБКИ: Извлекаем первый элемент списка как словарь и безопасно забираем данные осей
                                 first_pt = pt_list[0]
                                 if isinstance(first_pt, dict):
                                     val = first_pt.get('x', first_pt.get('label', first_pt.get('y')))
                                     if val is not None and str(val) != "ИТОГО":
                                         st.session_state.active_filter_val = val
-                                        st.session_state.active_filter_col = x_ax; st.rerun()
+                                        st.session_state.active_filter_col = x_ax
+                                        st.rerun()
                     except Exception as ex: pass
                 else: st.info("ℹ️ Выберите категории для построения графика")
                 st.markdown("<hr style='border:1px dashed #ddd'>", unsafe_allow_html=True)
