@@ -23,7 +23,7 @@ if "uploaded_backup" not in st.session_state: st.session_state.uploaded_backup =
 if "pq_skip_top" not in st.session_state: st.session_state.pq_skip_top = 0
 if "pq_merge_headers" not in st.session_state: st.session_state.pq_merge_headers = False
 if "pq_remove_footer" not in st.session_state: st.session_state.pq_remove_footer = True
-# МОДЕРНИЗИРОВАННЫЙ ДВИЖОК POWER QUERY С ЗАЩИТОЙ ОТ СДВИГА СТРОК И РАЗРЯДОВ ЧИСЕЛ
+# МОДЕРНИЗИРОВАННЫЙ ДВИЖОК POWER QUERY С ФУНКЦИЕЙ ЗАПОЛНЕНИЯ ПРОПУСКОВ И ВЫРАВНИВАНИЯ
 def power_query_clean_engine(uploaded_files_list, skip_top, merge_headers, remove_footer):
     frames_dict = {}
     if not uploaded_files_list:
@@ -31,7 +31,6 @@ def power_query_clean_engine(uploaded_files_list, skip_top, merge_headers, remov
         
     for f in uploaded_files_list:
         try:
-            # Читаем файл принудительно как сырой текст, отключая умный сдвиг разрядов pandas
             if f.name.endswith('.csv'):
                 df_raw = pd.read_csv(f, header=None, dtype=str)
             else:
@@ -45,10 +44,9 @@ def power_query_clean_engine(uploaded_files_list, skip_top, merge_headers, remov
             
             # 2. Шаг PQ: Продвинутое схлопывание объединенных многострочных заголовков
             if merge_headers and len(df_raw) > 1:
-                row0 = list(df_raw.iloc[0].astype(str).str.strip())
-                row1 = list(df_raw.iloc[1].astype(str).str.strip())
+                row0 = list(df_raw.iloc.astype(str).str.strip())
+                row1 = list(df_raw.iloc.astype(str).str.strip())
                 
-                # Имитируем Power Query "Fill Down" логику
                 current_parent = ""
                 for idx in range(len(row0)):
                     val0 = row0[idx]
@@ -67,9 +65,10 @@ def power_query_clean_engine(uploaded_files_list, skip_top, merge_headers, remov
                 df_raw.columns = new_cols
                 df_raw = df_raw.iloc[2:].reset_index(drop=True)
             else:
-                df_raw.columns = df_raw.iloc[0].astype(str).str.strip()
+                df_raw.columns = df_raw.iloc.astype(str).str.strip()
                 df_raw = df_raw.iloc[1:].reset_index(drop=True)
                 
+            # 3. Шаг PQ: Очистка имен столбцов от мусорных артефактов Excel и пробелов
             cleaned_cols = []
             for idx, col in enumerate(df_raw.columns):
                 c_str = str(col).replace('nan №', '').replace('№ nan', '').replace('nan', '').replace('Unnamed:', '').strip()
@@ -80,6 +79,7 @@ def power_query_clean_engine(uploaded_files_list, skip_top, merge_headers, remov
             df_raw = df_raw.loc[:, ~df_raw.columns.str.contains('^Без названия|^Unnamed')]
             df_raw = df_raw.loc[:, ~df_raw.columns.duplicated()]
             
+            # 4. Шаг PQ: Удаление текстовых итоговых подвалов
             if remove_footer:
                 for text_col in df_raw.columns:
                     mask_footer = df_raw[text_col].astype(str).str.lower().str.contains('итого|всего|сумма|подпись|сдал|принял', na=False)
@@ -93,7 +93,26 @@ def power_query_clean_engine(uploaded_files_list, skip_top, merge_headers, remov
             pass
             
     if not frames_dict: return pd.DataFrame(), False
+    
+    # 5. Шаг PQ: Сшивание (Outer Join)
     merged_df = pd.concat(frames_dict.values(), ignore_index=True, join='outer')
+    
+    # 🛠️ НОВЫЙ ИНСТРУМЕНТ PQ: Авто-выравнивание типов ячеек и заполнение пустот
+    for col in merged_df.columns:
+        if col == 'Источник (Файл)': continue
+        # Проверяем, числовая ли это колонка по своей сути (Сумма, Количество, Стоимость)
+        col_clean_slug = col.lower()
+        is_numeric_col = any(w in col_clean_slug for w in ['сумма', 'количество', 'цена', 'стоимост', 'кол-во', 'цена'])
+        
+        if is_numeric_col:
+            # Очищаем числа от случайных пробелов разрядов и прочих артефактов текстового ввода
+            merged_df[col] = merged_df[col].astype(str).str.replace(r'\s+', '', regex=True).str.replace(',', '.')
+            merged_df[col] = pd.to_numeric(merged_df[col], errors='coerce').fillna(0.0)
+        else:
+            # Текстовые пустые ячейки, возникшие из-за несовпадения структур файлов, заполняем маркером
+            merged_df[col] = merged_df[col].fillna("Не указано").astype(str).str.strip()
+            merged_df[col] = merged_df[col].replace(['nan', 'None', '', 'Пусто'], "Не указано")
+            
     merged_df = merged_df.dropna(how='all')
     return merged_df, True
 uploaded_files = st.file_uploader("Загрузите один или несколько любых файлов Excel/CSV:", type=["csv", "xlsx"], accept_multiple_files=True)
@@ -124,12 +143,12 @@ if uploaded_files:
         # ---------------- ОТРИСОВКА РАЗДЕЛА 1 ----------------
         if page == "🗂️ 1. Загрузка и очистка данных":
             st.title("🚀 Модуль Предобработки & Импорта Данных")
-            st.success(f"📊 Идеальная сводная база сформирована! Файлов: {len(uploaded_files)}. Строк: {main_df.shape}, Колонок: {main_df.shape}")
+            st.success(f"📊 Идеальная сводная база сформирована! Файлов: {len(uploaded_files)}. Строк: {main_df.shape[0]}, Колонок: {main_df.shape[1]}")
             
             st.markdown("### 📋 Результат очистки (Полный интерактивный просмотр всей сводной таблицы):")
             try:
+                # Отображаем всю сшитую выровненную базу данных с вертикальным скроллбаром
                 full_view_df = main_df.copy()
-                for c in full_view_df.columns: full_view_df[c] = full_view_df[c].astype(str).fillna("Пусто")
                 st.dataframe(full_view_df, height=450, use_container_width=True)
             except Exception as e: st.error(f"Ошибка превью: {e}")
             
@@ -214,21 +233,19 @@ if uploaded_files:
                         elif "Line" in style:
                             fig.add_trace(go.Scatter(x=df_g[x_ax], y=df_g[y_ax], mode="lines+markers+text" if lbl else "lines+markers", text=df_g[y_ax].map(lambda x: f"{x:,.0f}") if lbl else None, line=dict(color=color)))
                         else:
-                            fig.add_trace(go.Bar(y=df_g[x_ax].astype(str) if horiz else df_g[y_g], x=df_g[y_ax] if horiz else df_g[x_ax].astype(str), text=df_g[y_ax].map(lambda x: f"{x:,.0f}") if lbl else None, textposition="auto", orientation="h" if horiz else "v", marker_color=color))
+                            fig.add_trace(go.Bar(y=df_g[x_ax].astype(str) if horiz else df_g[y_ax], x=df_g[y_ax] if horiz else df_g[x_ax].astype(str), text=df_g[y_ax].map(lambda x: f"{x:,.0f}") if lbl else None, textposition="auto", orientation="h" if horiz else "v", marker_color=color))
                         fig.update_layout(xaxis=dict(tickangle=45 if not horiz else 0), uniformtext=dict(mode="hide", minsize=8), clickmode="event+select")
                         
-                        # 100% БЕЗОПАСНАЯ ОБРАБОТКА ИЗВЛЕЧЕНИЯ СОБЫТИЙ: Защита от AttributeError
                         ev_i = st.plotly_chart(fig, use_container_width=True, key=f"p_{i}", on_select="rerun")
                         if ev_i and "selection" in ev_i and "points" in ev_i["selection"] and len(ev_i["selection"]["points"]) > 0:
-                            p_data = ev_i["selection"]["points"]
-                            if isinstance(p_data, list) and len(p_data) > 0:
-                                first_pt = p_data[0]
+                            pt_list = ev_i["selection"]["points"]
+                            if isinstance(pt_list, list) and len(pt_list) > 0:
+                                first_pt = pt_list[0]
                                 if isinstance(first_pt, dict):
                                     val = first_pt.get('x', first_pt.get('label', first_pt.get('y')))
-                                    if val is not None and str(val) != "ИТОГО":
+                                    if val is not None and str(val) != "ИТОГО": 
                                         st.session_state.active_filter_val = val
-                                        st.session_state.active_filter_col = x_ax
-                                        st.rerun()
+                                        st.session_state.active_filter_col = x_ax; st.rerun()
                     except Exception as ex: st.error(f"Ошибка: {ex}")
                 else: st.info("ℹ️ Выберите категории для построения графика")
                 st.markdown("<hr style='border:1px dashed #ddd'>", unsafe_allow_html=True)
