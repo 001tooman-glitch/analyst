@@ -48,6 +48,7 @@ def power_query_clean_engine(uploaded_files_list, skip_top, merge_headers, remov
                 row0 = list(df_raw.iloc.astype(str).str.strip())
                 row1 = list(df_raw.iloc.astype(str).str.strip())
                 
+                # Имитируем Power Query "Fill Down" логику
                 current_parent = ""
                 for idx in range(len(row0)):
                     val0 = row0[idx]
@@ -160,7 +161,7 @@ if uploaded_files:
         # ---------------- ОТРИСОВКА РАЗДЕЛА 1 ----------------
         if page == "🗂️ 1. Загрузка и очистка данных":
             st.title("🚀 Модуль Предобработки & Импорта Данных")
-            st.success(f"📊 Идеальная сводная база сформирована! Файлов: {len(uploaded_files)}. Строк: {main_df.shape}, Колонок: {main_df.shape}")
+            st.success(f"📊 Идеальная сводная база сформирована! Файлов: {len(uploaded_files)}. Строк: {main_df.shape[0]:,}, Колонок: {main_df.shape[1]}")
             
             # УЛЬТРА-СКОРОСТНАЯ ПАГИНАЦИЯ ДЛЯ МГНОВЕННОГО РЕНДЕРИНГА 200 000+ СТРОК
             st.markdown("### 📋 Результат очистки (Постраничный интерактивный просмотр сводной таблицы):")
@@ -169,17 +170,16 @@ if uploaded_files:
             total_rows = len(main_df)
             total_pages = (total_rows // rows_per_page) + (1 if total_rows % rows_per_page > 0 else 0)
             
-            # No-Code переключатель страниц
-            col_p1, col_p2 = st.columns([1, 4])
+            col_p1, col_p2 = st.columns(2)
             with col_p1:
                 current_page = st.number_input(f"Страница (из {total_pages}):", min_value=1, max_value=total_pages, value=1, step=1)
             with col_p2:
                 start_idx = (current_page - 1) * rows_per_page
                 end_idx = start_idx + rows_per_page
-                st.markdown(f"Показаны строки с **{start_idx + 1}** по **{min(end_idx, total_rows)}** из **{total_rows:,}** общих строк базы данных.")
+                st.markdown(f"Показаны строки с **{start_idx + 1}** по **{min(end_idx, total_rows)}** из **{total_rows:,}** общих строк.")
             
             try:
-                # На экран уходит только легкий срез в 50 строк, скорость рендеринга вырастает в 15 раз!
+                # Рендерим только легкий срез в 50 строк, скорость возрастает в 15 раз!
                 page_view_df = main_df.iloc[start_idx:end_idx].copy()
                 st.dataframe(page_view_df, height=350, use_container_width=True)
             except Exception as e: st.error(f"Ошибка превью: {e}")
@@ -188,7 +188,6 @@ if uploaded_files:
                 excel_buffer = io.BytesIO()
                 with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
                     main_df.to_excel(writer, index=False, sheet_name='Сводные данные')
-                
                 st.download_button(
                     label="📥 Скачать идеальную сводную базу (Excel .xlsx)", 
                     data=excel_buffer.getvalue(), 
@@ -197,7 +196,7 @@ if uploaded_files:
                 )
             except Exception as de: st.error(f"Ошибка подготовки Excel-файла: {de}")
         # ---------------- ОТРИСОВКА РАЗДЕЛА 2 ----------------
-        elif page == "📊 2. Конструктор диаграмм":
+        elif page == "📊 2.grid Конструктор диаграмм" or page == "📊 2. Конструктор диаграмм":
             import plotly.graph_objects as go
             st.title("📊 Интерактивная BI-Панель Показателей")
             st.sidebar.success("🟢 Интерактивный BI-движок активен!")
@@ -272,12 +271,14 @@ if uploaded_files:
                         if ev_i and "selection" in ev_i and "points" in ev_i["selection"] and len(ev_i["selection"]["points"]) > 0:
                             pt_list = ev_i["selection"]["points"]
                             if isinstance(pt_list, list) and len(pt_list) > 0:
-                                first_pt = pt_list
+                                # ИСПРАВЛЕНИЕ ОШИБКИ: Жестко берем нулевой элемент списка как словарь
+                                first_pt = pt_list[0]
                                 if isinstance(first_pt, dict):
                                     val = first_pt.get('x', first_pt.get('label', first_pt.get('y')))
                                     if val is not None and str(val) != "ИТОГО":
                                         st.session_state.active_filter_val = val
-                                        st.session_state.active_filter_col = x_ax; st.rerun()
+                                        st.session_state.active_filter_col = x_ax
+                                        st.rerun()
                     except Exception as ex: pass
                 else: st.info("ℹ️ Выберите категории для построения графика")
                 st.markdown("<hr style='border:1px dashed #ddd'>", unsafe_allow_html=True)
