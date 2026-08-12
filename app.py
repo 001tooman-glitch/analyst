@@ -3,7 +3,7 @@ import pandas as pd
 import io
 import re
 
-st.set_page_config(page_title="Enterprise BI Конструктор", layout="wide")
+st.set_page_config(page_title="Enterprise BI Конструктор (Power Query)", layout="wide")
 
 # АВТОНОМНЫЙ И СТАБИЛЬНЫЙ ПЕРЕКЛЮЧАТЕЛЬ СТРАНИЦ В БОКОВОЙ ПАНЕЛИ
 st.sidebar.markdown("### 🗺️ Навигация по BI-платформе")
@@ -13,67 +13,84 @@ page = st.sidebar.radio(
 )
 st.sidebar.markdown("---")
 
-if "manual_charts" not in st.session_state:
-    st.session_state.manual_charts = 1
-if "manual_cards" not in st.session_state:
-    st.session_state.manual_cards = 1
-if "active_filter_val" not in st.session_state:
-    st.session_state.active_filter_val = None
-if "active_filter_col" not in st.session_state:
-    st.session_state.active_filter_col = None
-if "main_df" not in st.session_state:
-    st.session_state.main_df = pd.DataFrame()
-if "uploaded_backup" not in st.session_state:
-    st.session_state.uploaded_backup = None
+# Инициализация всех системных переменных в сессии
+if "manual_charts" not in st.session_state: st.session_state.manual_charts = 1
+if "manual_cards" not in st.session_state: st.session_state.manual_cards = 1
+if "active_filter_val" not in st.session_state: st.session_state.active_filter_val = None
+if "active_filter_col" not in st.session_state: st.session_state.active_filter_col = None
+if "main_df" not in st.session_state: st.session_state.main_df = pd.DataFrame()
+if "uploaded_backup" not in st.session_state: st.session_state.uploaded_backup = None
 
-# ВСЕЯДНЫЙ КЭШ-ДВИЖОК АВТОПОДБОРА ШАПОК И ВЫРАВНИВАНИЕМ СТРУКТУРЫ ТАБЛИЦ
-@st.cache_data
-def load_clean_and_merge_files(uploaded_files_list):
+# Параметры Power Query шагов очистки в сессии
+if "pq_skip_top" not in st.session_state: st.session_state.pq_skip_top = 0
+if "pq_merge_headers" not in st.session_state: st.session_state.pq_merge_headers = False
+if "pq_remove_footer" not in st.session_state: st.session_state.pq_remove_footer = True
+# МОДЕРНИЗИРОВАННЫЙ ДВИЖОК POWER QUERY ОЧИСТКИ ТАБЛИЦ
+def power_query_clean_engine(uploaded_files_list, skip_top, merge_headers, remove_footer):
     frames_dict = {}
     if not uploaded_files_list:
-        return pd.DataFrame(), {}, False
+        return pd.DataFrame(), False
         
     for f in uploaded_files_list:
         try:
-            df_i = pd.read_csv(f) if f.name.endswith('.csv') else pd.read_excel(f, header=None)
+            # Шаг 1: Первичное чтение без заголовков (header=None), чтобы контролировать строки
+            df_raw = pd.read_csv(f, header=None) if f.name.endswith('.csv') else pd.read_excel(f, header=None)
             
-            header_row_idx = 0
-            for r_idx in range(min(5, len(df_i))):
-                row_str = df_i.iloc[r_idx].astype(str).str.lower().values
-                if any(w in "".join(row_str) for w in ['озм', 'материал', 'стоимост', 'сумма', 'количество', 'ед', 'цех', 'департамент']):
-                    header_row_idx = r_idx
-                    break
+            # Шаг 2: PQ "Удалить верхние строки" (Skip Rows)
+            if skip_top > 0 and skip_top < len(df_raw):
+                df_raw = df_raw.iloc[skip_top:].reset_index(drop=True)
+                
+            if df_raw.empty: continue
             
-            df_i.columns = df_i.iloc[header_row_idx].astype(str).str.strip()
-            df_i = df_i.iloc[header_row_idx + 1:].reset_index(drop=True)
-            
+            # Шаг 3: PQ "Умный заголовок" (Однострочный или Схлопывание двухстрочного)
+            if merge_headers and len(df_raw) > 1:
+                row0 = df_raw.iloc[0].astype(str).str.strip()
+                row1 = df_raw.iloc[1].astype(str).str.strip()
+                new_cols = []
+                for c0, c1 in zip(row0, row1):
+                    c0_c = "" if c0 in ['nan', 'None', 'Unnamed:'] or 'Unnamed' in c0 else c0
+                    c1_c = "" if c1 in ['nan', 'None', 'Unnamed:'] or 'Unnamed' in c1 else c1
+                    combined = f"{c0_c}_{c1_c}".strip("_ ")
+                    new_cols.append(combined if combined else "Колонка")
+                df_raw.columns = new_cols
+                df_raw = df_raw.iloc[2:].reset_index(drop=True)
+            else:
+                df_raw.columns = df_raw.iloc[0].astype(str).str.strip()
+                df_raw = df_raw.iloc[1:].reset_index(drop=True)
+                
+            # Шаг 4: Очистка имен столбцов от мусорных артефактов Excel
             cleaned_cols = []
-            for idx, col in enumerate(df_i.columns):
+            for idx, col in enumerate(df_raw.columns):
                 c_str = str(col).replace('nan №', '').replace('№ nan', '').replace('nan', '').replace('Unnamed:', '').strip()
                 c_str = re.sub(r'\s+', ' ', c_str).strip()
                 cleaned_cols.append(c_str if c_str else f"Столбец_{idx+1}")
-                
-            df_i.columns = cleaned_cols
-            df_i = df_i.loc[:, ~df_i.columns.str.contains('^Без названия|^Unnamed')]
-            df_i = df_i.loc[:, ~df_i.columns.duplicated()]
+            df_raw.columns = cleaned_cols
             
+            df_raw = df_raw.loc[:, ~df_raw.columns.str.contains('^Без названия|^Unnamed')]
+            df_raw = df_raw.loc[:, ~df_raw.columns.duplicated()]
+            
+            # Шаг 5: PQ "Отрезать подвал таблицы" (Удаление Итогов и пустых строк снизу)
+            if remove_footer:
+                for text_col in df_raw.select_dtypes(include=['object']).columns:
+                    mask_footer = df_raw[text_col].astype(str).str.lower().str.contains('итого|всего|сумма|подпись|сдал|принял', na=False)
+                    df_raw = df_raw[~mask_footer]
+            
+            df_raw = df_raw.dropna(how='all')
             period_name = f.name.replace(".xlsx", "").replace(".xls", "").replace(".csv", "")
-            df_i['Источник (Файл)'] = period_name
-            frames_dict[f.name] = df_i
+            df_raw['Источник (Файл)'] = period_name
+            frames_dict[f.name] = df_raw
         except:
             pass
             
-    if not frames_dict:
-        return pd.DataFrame(), {}, False
-        
+    if not frames_dict: return pd.DataFrame(), False
     f_keys = list(frames_dict.keys())
-    first_file_name = f_keys if f_keys else ""
-    if not first_file_name: 
-        return pd.DataFrame(), {}, False
-    
+    first_file_name = f_keys[0] if f_keys else ""
+    if not first_file_name: return pd.DataFrame(), False
+        
+    # Шаг 6: Гибкое объединение (Outer Join) таблиц с разным содержанием колонок
     merged_df = pd.concat(frames_dict.values(), ignore_index=True, join='outer')
     merged_df = merged_df.dropna(how='all')
-    return merged_df, frames_dict, True
+    return merged_df, True
 uploaded_files = st.file_uploader("Загрузите один или несколько любых файлов Excel/CSV:", type=["csv", "xlsx"], accept_multiple_files=True)
 
 if uploaded_files:
@@ -82,42 +99,59 @@ elif st.session_state.uploaded_backup:
     uploaded_files = st.session_state.uploaded_backup
 
 if uploaded_files:
-    main_df, dataframes_dict, is_merged = load_clean_and_merge_files(uploaded_files)
+    if page == "🗂️ 1. Загрузка и очистка данных":
+        st.markdown("### 🛠️ Панель шагов трансформации (Аналог Power Query)")
+        col_pq1, col_pq2, col_pq3 = st.columns(3)
+        with col_pq1:
+            st.session_state.pq_skip_top = st.number_input(
+                "1. Удалить верхние строки (пропустить строк):", 
+                min_value=0, max_value=20, value=st.session_state.pq_skip_top, step=1
+            )
+        with col_pq2:
+            st.session_state.pq_merge_headers = st.checkbox(
+                "2. Схлопнуть составной заголовок (из 2-х строк)", 
+                value=st.session_state.pq_merge_headers
+            )
+        with col_pq3:
+            st.session_state.pq_remove_footer = st.checkbox(
+                "3. Авто-очистка подвала (удалить Итоги и подписи)", 
+                value=st.session_state.pq_remove_footer
+            )
+        st.markdown("---")
+
+    main_df, is_merged = power_query_clean_engine(
+        uploaded_files, st.session_state.pq_skip_top, st.session_state.pq_merge_headers, st.session_state.pq_remove_footer
+    )
+    
     if not main_df.empty:
         st.session_state.main_df = main_df
         all_cols = ["-- Выберите заголовок --"] + list(main_df.columns)
 
-        # ---------------- РАЗДЕЛ 1: ЗАГРУЗКА И ОЧИСТКА ДАННЫХ ----------------
+        # ---------------- ОТРИСОВКА РАЗДЕЛА 1 ----------------
         if page == "🗂️ 1. Загрузка и очистка данных":
             st.title("🚀 Модуль Предобработки & Импорта Данных")
-            st.success(f"📊 База данных создана! Файлов: {len(uploaded_files)}. Строк: {main_df.shape}")
-                
-            st.markdown("### 📋 Структура сводной таблицы (Первые 5 строк):")
+            st.success(f"📊 Идеальная сводная база сформирована! Файлов: {len(uploaded_files)}. Строк: {main_df.shape}, Колонок: {main_df.shape}")
+            st.markdown("### 📋 Результат очистки (Заголовки и первые 5 строк):")
             try:
                 preview_df = main_df.head(5).copy()
                 for c in preview_df.columns: preview_df[c] = preview_df[c].astype(str).fillna("Пусто")
                 st.dataframe(preview_df, use_container_width=True)
             except Exception as e: st.error(f"Ошибка превью: {e}")
-            
             try:
                 csv_data = main_df.to_csv(index=False, encoding='utf-8-sig', sep=';')
-                st.download_button(label="📥 Скачать базу (Excel CSV)", data=csv_data, file_name="Сводный_отчет.csv", mime="text/csv")
+                st.download_button(label="📥 Скачать идеальную сводную (Excel CSV)", data=csv_data, file_name="Сводный_отчет_PowerQuery.csv", mime="text/csv")
             except Exception as de: st.error(f"Ошибка скачивания: {de}")
-
-        # ---------------- РАЗДЕЛ 2: АНАЛИТИЧЕСКАЯ BI-ПАНЕЛЬ (КАРТОЧКИ + ДИАГРАММЫ) ----------------
+        # ---------------- ОТРИСОВКА РАЗДЕЛА 2 ----------------
         elif page == "📊 2. Конструктор диаграмм":
             import plotly.graph_objects as go
             st.title("📊 Интерактивная BI-Панель Показателей")
-            
             st.sidebar.success("🟢 Интерактивный BI-движок активен!")
             if st.session_state.active_filter_val is not None:
                 st.sidebar.markdown(f"**Активный фильтр:**\n`{st.session_state.active_filter_col}` = `{st.session_state.active_filter_val}`")
                 if st.sidebar.button("🧹 Очистить все фильтры", type="primary", key="clr_f_cp"): 
                     st.session_state.active_filter_val = None
-                    st.session_state.active_filter_col = None
-                    st.toast("🔄 Фильтры сброшены к исходной базе!")
+                    st.session_state.active_filter_col = None; st.rerun()
 
-            # Глобальный фильтр по умолчанию для карточек KPI
             df_cards = main_df.copy()
             if st.session_state.active_filter_val is not None and st.session_state.active_filter_col in df_cards.columns:
                 df_cards = df_cards[df_cards[st.session_state.active_filter_col].astype(str) == str(st.session_state.active_filter_val)]
@@ -147,13 +181,11 @@ if uploaded_files:
             st.subheader("🛠️ No-Code Конструктор Графиков")
             for i in range(st.session_state.manual_charts):
                 st.markdown(f"##### 📊 Настройка диаграммы № {i+1}")
-                
                 c1, c2, c3, c4 = st.columns(4)
                 with c1: style = st.selectbox(f"Тип графики:", ["Столбчатая диаграмма (Bar)", "Линейный тренд (Line)", "Кольцевая долей (Donut)", "Диаграмма Водопад (Waterfall)", "Диаграмма Воронка (Funnel)"], key=f"s_{i}")
                 with c2: x_ax = st.selectbox(f"Ось X (Категории):", all_cols, key=f"x_{i}")
                 with c3: y_ax = st.selectbox(f"Ось Y (Показатели):", all_cols, key=f"y_{i}")
                 with c4: color = st.color_picker(f"Цвет элементов:", "#1f77b4", key=f"col_{i}")
-                
                 with st.expander("🎨 Настройки отображения"):
                     lbl = st.checkbox("Показывать значения", value=True, key=f"lbl_{i}")
                     horiz = st.checkbox("Горизонтальный вид", value=False, key=f"h_{i}") if "Bar" in style else False
@@ -161,18 +193,14 @@ if uploaded_files:
 
                 if x_ax != "-- Выберите заголовок --" and y_ax != "-- Выберите заголовок --":
                     try:
-                        # 🛠️ ИНТЕЛЛЕКТУАЛЬНЫЙ BI-ФИЛЬТР: График фильтруется только если кликнули по ДРУГОЙ категории.
-                        # Если активный фильтр совпадает с осью X этого графика — он отображает себя целиком (изоляция)
                         df_chart = main_df.copy()
                         if st.session_state.active_filter_val is not None and st.session_state.active_filter_col in df_chart.columns:
                             if st.session_state.active_filter_col != x_ax:
                                 df_chart = df_chart[df_chart[st.session_state.active_filter_col].astype(str) == str(st.session_state.active_filter_val)]
-                        
                         df_chart[y_ax] = pd.to_numeric(df_chart[y_ax], errors='coerce').fillna(0)
                         df_g = df_chart.groupby(x_ax, as_index=False)[y_ax].sum()
                         if not horiz: df_g = df_g.sort_values(by=y_ax, ascending=False)
                         fig = go.Figure()
-                        
                         if "Waterfall" in style:
                             fig.add_trace(go.Waterfall(x=list(df_g[x_ax].astype(str)) + ["ИТОГО"], y=list(df_g[y_ax]) + [df_g[y_ax].sum()], measure=["relative"] * len(df_g[y_ax]) + ["total"], textposition="auto", text=[f"{v:,.0f}" for v in df_g[y_ax]] + [f"{df_g[y_ax].sum():,.0f}"] if lbl else None, increasing={"marker": {"color": color}}, totals={"marker": {"color": "green"}}))
                         elif "Funnel" in style:
@@ -183,24 +211,18 @@ if uploaded_files:
                             fig.add_trace(go.Scatter(x=df_g[x_ax], y=df_g[y_ax], mode="lines+markers+text" if lbl else "lines+markers", text=df_g[y_ax].map(lambda x: f"{x:,.0f}") if lbl else None, line=dict(color=color)))
                         else:
                             fig.add_trace(go.Bar(y=df_g[x_ax].astype(str) if horiz else df_g[y_ax], x=df_g[y_ax] if horiz else df_g[x_ax].astype(str), text=df_g[y_ax].map(lambda x: f"{x:,.0f}") if lbl else None, textposition="auto", orientation="h" if horiz else "v", marker_color=color))
-                        
                         fig.update_layout(xaxis=dict(tickangle=45 if not horiz else 0), uniformtext=dict(mode="hide", minsize=8), clickmode="event+select")
-                        
                         ev_i = st.plotly_chart(fig, use_container_width=True, key=f"p_{i}", on_select="rerun")
-                        
                         if ev_i and "selection" in ev_i and "points" in ev_i["selection"] and len(ev_i["selection"]["points"]) > 0:
                             pt_list = ev_i["selection"]["points"]
                             if isinstance(pt_list, list) and len(pt_list) > 0:
-                                pt = pt_list[0]
-                                val = pt.get('x', pt.get('label', pt.get('y')))
+                                val = pt_list[0].get('x', pt_list[0].get('label', pt_list[0].get('y')))
                                 if val is not None and str(val) != "ИТОГО": 
                                     st.session_state.active_filter_val = val
-                                    st.session_state.active_filter_col = x_ax
-                                    st.rerun()
+                                    st.session_state.active_filter_col = x_ax; st.rerun()
                     except Exception as ex: st.error(f"Ошибка: {ex}")
                 else: st.info("ℹ️ Выберите категории для построения графика")
                 st.markdown("<hr style='border:1px dashed #ddd'>", unsafe_allow_html=True)
-                
             b1, b2 = st.columns(2)
             with b1:
                 if st.button("➕ Добавить диаграмму"): st.session_state.manual_charts += 1; st.rerun()
