@@ -45,8 +45,8 @@ def power_query_clean_engine(uploaded_files_list, skip_top, merge_headers, remov
             
             # 2. Шаг PQ: Продвинутое схлопывание объединенных многострочных заголовков
             if merge_headers and len(df_raw) > 1:
-                row0 = list(df_raw.iloc.astype(str).str.strip())
-                row1 = list(df_raw.iloc.astype(str).str.strip())
+                row0 = list(df_raw.iloc[0].astype(str).str.strip())
+                row1 = list(df_raw.iloc[1].astype(str).str.strip())
                 
                 # Имитируем Power Query "Fill Down" логику
                 current_parent = ""
@@ -67,7 +67,7 @@ def power_query_clean_engine(uploaded_files_list, skip_top, merge_headers, remov
                 df_raw.columns = new_cols
                 df_raw = df_raw.iloc[2:].reset_index(drop=True)
             else:
-                df_raw.columns = df_raw.iloc.astype(str).str.strip()
+                df_raw.columns = df_raw.iloc[0].astype(str).str.strip()
                 df_raw = df_raw.iloc[1:].reset_index(drop=True)
                 
             # 3. Шаг PQ: Финальная очистка шапки от мусорных артефактов Excel
@@ -163,10 +163,9 @@ if uploaded_files:
             st.title("🚀 Модуль Предобработки & Импорта Данных")
             st.success(f"📊 Идеальная сводная база сформирована! Файлов: {len(uploaded_files)}. Строк: {main_df.shape[0]:,}, Колонок: {main_df.shape[1]}")
             
-            # УЛЬТРА-СКОРОСТНАЯ ПАГИНАЦИЯ ДЛЯ МГНОВЕННОГО РЕНДЕРИНГА 200 000+ СТРОК
             st.markdown("### 📋 Результат очистки (Постраничный интерактивный просмотр сводной таблицы):")
             
-            rows_per_page = 50  # Выводим по 50 строк на экран для молниеносной работы браузера
+            rows_per_page = 50  # Браузер рендерит по 50 строк, скорость мгновенная
             total_rows = len(main_df)
             total_pages = (total_rows // rows_per_page) + (1 if total_rows % rows_per_page > 0 else 0)
             
@@ -179,7 +178,6 @@ if uploaded_files:
                 st.markdown(f"Показаны строки с **{start_idx + 1}** по **{min(end_idx, total_rows)}** из **{total_rows:,}** общих строк.")
             
             try:
-                # Рендерим только легкий срез в 50 строк, скорость возрастает в 15 раз!
                 page_view_df = main_df.iloc[start_idx:end_idx].copy()
                 st.dataframe(page_view_df, height=350, use_container_width=True)
             except Exception as e: st.error(f"Ошибка превью: {e}")
@@ -196,7 +194,7 @@ if uploaded_files:
                 )
             except Exception as de: st.error(f"Ошибка подготовки Excel-файла: {de}")
         # ---------------- ОТРИСОВКА РАЗДЕЛА 2 ----------------
-        elif page == "📊 2.grid Конструктор диаграмм" or page == "📊 2. Конструктор диаграмм":
+        elif page == "📊 2. Конструктор диаграмм":
             import plotly.graph_objects as go
             st.title("📊 Интерактивная BI-Панель Показателей")
             st.sidebar.success("🟢 Интерактивный BI-движок активен!")
@@ -267,11 +265,11 @@ if uploaded_files:
                             fig.add_trace(go.Bar(y=df_g[x_ax].astype(str) if horiz else df_g[y_ax], x=df_g[y_ax] if horiz else df_g[x_ax].astype(str), text=df_g[y_ax].map(lambda x: f"{x:,.0f}") if lbl else None, textposition="auto", orientation="h" if horiz else "v", marker_color=color))
                         fig.update_layout(xaxis=dict(tickangle=45 if not horiz else 0), uniformtext=dict(mode="hide", minsize=8), clickmode="event+select")
                         
+                        # 100% УЛЬТРА-БЕЗОПАСНЫЙ СЧИТЫВАТЕЛЬ КЛИКОВ (Убрана деструктивная логика)
                         ev_i = st.plotly_chart(fig, use_container_width=True, key=f"p_{i}", on_select="rerun")
                         if ev_i and "selection" in ev_i and "points" in ev_i["selection"] and len(ev_i["selection"]["points"]) > 0:
                             pt_list = ev_i["selection"]["points"]
                             if isinstance(pt_list, list) and len(pt_list) > 0:
-                                # ИСПРАВЛЕНИЕ ОШИБКИ: Жестко берем нулевой элемент списка как словарь
                                 first_pt = pt_list[0]
                                 if isinstance(first_pt, dict):
                                     val = first_pt.get('x', first_pt.get('label', first_pt.get('y')))
