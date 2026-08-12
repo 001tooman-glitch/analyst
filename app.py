@@ -76,20 +76,16 @@ def power_query_clean_engine(uploaded_files_list, skip_top, merge_headers, remov
                 cleaned_cols.append(c_str if c_str else f"Столбец_{idx+1}")
             df_raw.columns = cleaned_cols
             
-            # 🛠️ ИНСТРУМЕНТ PQ MAPPING: Склеиваем разнородные названия колонок-синонимов в единый стандарт
+            # ИНСТРУМЕНТ PQ MAPPING: Склеиваем разнородные названия колонок-синонимов в единый стандарт
             mapped_cols = []
             for col in df_raw.columns:
                 c_low = col.lower()
-                # Схлопываем ОЗМ
                 if any(w in c_low for w in ['озм', 'код материала', 'номенклатур']):
                     mapped_cols.append('ОЗМ')
-                # Схлопываем Наименование
                 elif any(w in c_low for w in ['наименование', 'материал']):
                     mapped_cols.append('Наименование материала')
-                # Схлопываем Количество
                 elif any(w in c_low for w in ['количество', 'кол-во', 'объем', 'открытой потребн']):
                     mapped_cols.append('Количество')
-                # Схлопываем Сумму и Стоимость
                 elif any(w in c_low for w in ['сумма', 'стоимость', 'цена', 'капитал']):
                     mapped_cols.append('Сумма')
                 else:
@@ -124,7 +120,6 @@ def power_query_clean_engine(uploaded_files_list, skip_top, merge_headers, remov
             merged_df[col] = merged_df[col].astype(str).str.replace(r'\s+', '', regex=True).str.replace(',', '.')
             merged_df[col] = pd.to_numeric(merged_df[col], errors='coerce').fillna(0.0)
         else:
-            # ТРЕБОВАНИЕ УЧТЕНО: Убираем надпись "Не указано". Заменяем на чистую пустую строку для Excel
             merged_df[col] = merged_df[col].fillna("")
             merged_df[col] = merged_df[col].astype(str).str.strip().replace(['nan', 'None', 'Не указано'], "")
             
@@ -164,7 +159,7 @@ if uploaded_files:
         # ---------------- ОТРИСОВКА РАЗДЕЛА 1 ----------------
         if page == "🗂️ 1. Загрузка и очистка данных":
             st.title("🚀 Модуль Предобработки & Импорта Данных")
-            st.success(f"📊 Идеальная сводная база сформирована! Файлов: {len(uploaded_files)}. Строк: {main_df.shape[0]}, Колонок: {main_df.shape[1]}")
+            st.success(f"📊 Идеальная сводная база сформирована! Файлов: {len(uploaded_files)}. Строк: {main_df.shape}, Колонок: {main_df.shape}")
             
             st.markdown("### 📋 Результат очистки (Полный интерактивный просмотр всей сводной таблицы):")
             try:
@@ -256,6 +251,7 @@ if uploaded_files:
                             fig.add_trace(go.Bar(y=df_g[x_ax].astype(str) if horiz else df_g[y_ax], x=df_g[y_ax] if horiz else df_g[x_ax].astype(str), text=df_g[y_ax].map(lambda x: f"{x:,.0f}") if lbl else None, textposition="auto", orientation="h" if horiz else "v", marker_color=color))
                         fig.update_layout(xaxis=dict(tickangle=45 if not horiz else 0), uniformtext=dict(mode="hide", minsize=8), clickmode="event+select")
                         
+                        # БЕЗОПАСНАЯ ОБРАБОТКА ИЗВЛЕЧЕНИЯ КЛИКОВ (Массивы преобразуются без .get)
                         ev_i = st.plotly_chart(fig, use_container_width=True, key=f"p_{i}", on_select="rerun")
                         if ev_i and "selection" in ev_i and "points" in ev_i["selection"] and len(ev_i["selection"]["points"]) > 0:
                             pt_list = ev_i["selection"]["points"]
@@ -263,7 +259,7 @@ if uploaded_files:
                                 first_pt = pt_list[0]
                                 if isinstance(first_pt, dict):
                                     val = first_pt.get('x', first_pt.get('label', first_pt.get('y')))
-                                    if val is not None and str(val) != "ИТОГО": 
+                                    if val is not None and str(val) != "ИТОГО":
                                         st.session_state.active_filter_val = val
                                         st.session_state.active_filter_col = x_ax; st.rerun()
                     except Exception as ex: pass
