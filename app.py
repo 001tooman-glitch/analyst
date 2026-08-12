@@ -33,7 +33,7 @@ def power_query_clean_engine(uploaded_files_list, skip_top, merge_headers, remov
         
     for f in uploaded_files_list:
         try:
-            # ЗАЩИТА: Читаем файл принудительно как сырой текст, отключая умный сдвиг разрядов pandas
+            # Читаем файл принудительно как сырой текст, отключая умный сдвиг разрядов pandas
             if f.name.endswith('.csv'):
                 df_raw = pd.read_csv(f, header=None, dtype=str)
             else:
@@ -47,8 +47,8 @@ def power_query_clean_engine(uploaded_files_list, skip_top, merge_headers, remov
             
             # 2. Шаг PQ: Продвинутое схлопывание объединенных многострочных заголовков
             if merge_headers and len(df_raw) > 1:
-                row0 = list(df_raw.iloc[0].astype(str).str.strip())
-                row1 = list(df_raw.iloc[1].astype(str).str.strip())
+                row0 = list(df_raw.iloc.astype(str).str.strip())
+                row1 = list(df_raw.iloc.astype(str).str.strip())
                 
                 # Имитируем Power Query "Fill Down" логику
                 current_parent = ""
@@ -70,7 +70,7 @@ def power_query_clean_engine(uploaded_files_list, skip_top, merge_headers, remov
                 df_raw.columns = new_cols
                 df_raw = df_raw.iloc[2:].reset_index(drop=True)
             else:
-                df_raw.columns = df_raw.iloc[0].astype(str).str.strip()
+                df_raw.columns = df_raw.iloc.astype(str).str.strip()
                 df_raw = df_raw.iloc[1:].reset_index(drop=True)
                 
             # 3. Шаг PQ: Очистка имен столбцов от мусорных артефактов Excel и пробелов
@@ -98,7 +98,10 @@ def power_query_clean_engine(uploaded_files_list, skip_top, merge_headers, remov
             pass
             
     if not frames_dict: return pd.DataFrame(), False
-    
+    f_keys = list(frames_dict.keys())
+    first_file_name = f_keys if f_keys else ""
+    if not first_file_name: return pd.DataFrame(), False
+        
     # Сшиваем все файлы по именам колонок (Outer Join), сохраняя геометрию строк
     merged_df = pd.concat(frames_dict.values(), ignore_index=True, join='outer')
     merged_df = merged_df.dropna(how='all')
@@ -141,7 +144,7 @@ if uploaded_files:
 
         # ---------------- ОТРИСОВКА РАЗДЕЛА 1 ----------------
         if page == "🗂️ 1. Загрузка и очистка данных":
-            st.title("🚀 Модуль Предобработки & Импорта Данных")
+            st.title("🚀 Модуль Предобработки & Impоrta Данных")
             st.success(f"📊 Идеальная сводная база сформирована! Файлов: {len(uploaded_files)}. Строк: {main_df.shape}, Колонок: {main_df.shape}")
             
             st.markdown("### 📋 Результат очистки (Заголовки и первые 10 строк):")
@@ -163,8 +166,9 @@ if uploaded_files:
                     mime="text/csv"
                 )
             except Exception as de: st.error(f"Ошибка скачивания: {de}")
+        # ---------------- ОТРИСОВКА РАЗДЕЛА 2 ----------------
         elif page == "📊 2. Конструктор диаграмм":
-            import plotly.graph_objects go
+            import plotly.graph_objects as go
             st.title("📊 Интерактивная BI-Панель Показателей")
             st.sidebar.success("🟢 Интерактивный BI-движок активен!")
             if st.session_state.active_filter_val is not None:
@@ -238,10 +242,10 @@ if uploaded_files:
                         if ev_i and "selection" in ev_i and "points" in ev_i["selection"] and len(ev_i["selection"]["points"]) > 0:
                             pt_list = ev_i["selection"]["points"]
                             if isinstance(pt_list, list) and len(pt_list) > 0:
-                                # КОРРЕКТНЫЙ ИЗВЛЕКАТЕЛЬ КАТЕГОРИЙ: работа со структурой списков Plotly
-                                d_pt = pt_list[0]
-                                if isinstance(d_pt, dict):
-                                    val = d_pt.get('x', d_pt.get('label', d_pt.get('y')))
+                                # НАДЁЖНЫЙ ИЗВЛЕКАТЕЛЬ КЛЮЧЕЙ: Безопасное чтение значений осей
+                                first_pt = pt_list[0]
+                                if isinstance(first_pt, dict):
+                                    val = first_pt.get('x', first_pt.get('label', first_pt.get('y')))
                                     if val is not None and str(val) != "ИТОГО": 
                                         st.session_state.active_filter_val = val
                                         st.session_state.active_filter_col = x_ax; st.rerun()
