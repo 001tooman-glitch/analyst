@@ -23,6 +23,7 @@ if "uploaded_backup" not in st.session_state: st.session_state.uploaded_backup =
 if "pq_skip_top" not in st.session_state: st.session_state.pq_skip_top = 0
 if "pq_merge_headers" not in st.session_state: st.session_state.pq_merge_headers = False
 if "pq_remove_footer" not in st.session_state: st.session_state.pq_remove_footer = True
+# МОДЕРНИЗИРОВАННЫЙ ДВИЖОК POWER QUERY СО СКЛЕЙКОЙ СИНОНИМОВ СТОЛБЦОВ
 def power_query_clean_engine(uploaded_files_list, skip_top, merge_headers, remove_footer):
     frames_dict = {}
     if not uploaded_files_list:
@@ -35,14 +36,16 @@ def power_query_clean_engine(uploaded_files_list, skip_top, merge_headers, remov
             else:
                 df_raw = pd.read_excel(f, header=None, dtype=str)
             
+            # 1. Шаг PQ: Удалить верхние пустые строки (Skip Rows)
             if skip_top > 0 and skip_top < len(df_raw):
                 df_raw = df_raw.iloc[skip_top:].reset_index(drop=True)
                 
             if df_raw.empty: continue
             
+            # 2. Шаг PQ: Продвинутое схлопывание объединенных многострочных заголовков
             if merge_headers and len(df_raw) > 1:
-                row0 = list(df_raw.iloc[0].astype(str).str.strip())
-                row1 = list(df_raw.iloc[1].astype(str).str.strip())
+                row0 = list(df_raw.iloc.astype(str).str.strip())
+                row1 = list(df_raw.iloc.astype(str).str.strip())
                 current_parent = ""
                 for idx in range(len(row0)):
                     val0 = row0[idx]
@@ -60,9 +63,10 @@ def power_query_clean_engine(uploaded_files_list, skip_top, merge_headers, remov
                 df_raw.columns = new_cols
                 df_raw = df_raw.iloc[2:].reset_index(drop=True)
             else:
-                df_raw.columns = df_raw.iloc[0].astype(str).str.strip()
+                df_raw.columns = df_raw.iloc.astype(str).str.strip()
                 df_raw = df_raw.iloc[1:].reset_index(drop=True)
                 
+            # 3. Шаг PQ: Финальная очистка шапки от мусорных артефактов Excel
             cleaned_cols = []
             for idx, col in enumerate(df_raw.columns):
                 c_str = str(col).replace('nan №', '').replace('№ nan', '').replace('nan', '').replace('Unnamed:', '').strip()
@@ -70,6 +74,7 @@ def power_query_clean_engine(uploaded_files_list, skip_top, merge_headers, remov
                 cleaned_cols.append(c_str if c_str else f"Столбец_{idx+1}")
             df_raw.columns = cleaned_cols
             
+            # ИНСТРУМЕНТ PQ MAPPING: Склеиваем разнородные названия колонок-синонимов в единый стандарт
             mapped_cols = []
             for col in df_raw.columns:
                 c_low = col.lower()
@@ -120,7 +125,7 @@ uploaded_files = st.file_uploader("Загрузите один или неско
 if uploaded_files:
     if st.session_state.uploaded_backup != uploaded_files:
         st.session_state.uploaded_backup = uploaded_files
-        st.session_state.main_df = pd.DataFrame() # Сбрасываем кэш при загрузке новых файлов
+        st.session_state.main_df = pd.DataFrame() 
 elif st.session_state.uploaded_backup:
     uploaded_files = st.session_state.uploaded_backup
 
@@ -142,7 +147,6 @@ if uploaded_files:
                 st.session_state.pq_remove_footer = new_foot; st.session_state.main_df = pd.DataFrame()
         st.markdown("---")
 
-    # УМНОЕ СЕССИОННОЕ КЭШИРОВАНИЕ: Расчет вызывается ЕДИНОЖДЫ, убирая тормоза
     if st.session_state.main_df.empty:
         with st.spinner("⏳ Идёт глубокая Power Query очистка данных... Пожалуйста, подождите."):
             calculated_df, is_merged = power_query_clean_engine(
@@ -158,7 +162,7 @@ if uploaded_files:
 
         if page == "🗂️ 1. Загрузка и очистка данных":
             st.title("🚀 Модуль Предобработки & Импорта Данных")
-            st.success(f"📊 Идеальная сводная база сформирована! Файлов: {len(uploaded_files)}. Строк: {main_df.shape[0]:,}, Колонок: {main_df.shape[1]}")
+            st.success(f"📊 Идеальная сводная база сформирована! Файлов: {len(uploaded_files)}. Строк: {main_df.shape:,}, Колонок: {main_df.shape}")
             st.markdown("### 📋 Результат очистки (Постраничный интерактивный просмотр сводной таблицы):")
             
             rows_per_page = 50
@@ -195,9 +199,11 @@ if uploaded_files:
             st.sidebar.success("🟢 Интерактивный BI-движок активен!")
             if st.session_state.active_filter_val is not None:
                 st.sidebar.markdown(f"**Активный фильтр:**\n`{st.session_state.active_filter_col}` = `{st.session_state.active_filter_val}`")
+                # ИСПРАВЛЕНИЕ: Мягкий сброс без деструктивного st.rerun(). Виджеты сохраняют выбранные оси на экране!
                 if st.sidebar.button("🧹 Очистить все фильтры", type="primary", key="clr_f_cp"): 
                     st.session_state.active_filter_val = None
-                    st.session_state.active_filter_col = None; st.rerun()
+                    st.session_state.active_filter_col = None
+                    st.toast("🔄 Фильтры сброшены!")
 
             df_cards = main_df.copy()
             if st.session_state.active_filter_val is not None and st.session_state.active_filter_col in df_cards.columns:
@@ -224,7 +230,6 @@ if uploaded_files:
                 if st.session_state.manual_cards > 1:
                     if st.button("🗑️ Удалить карточку"): st.session_state.manual_cards -= 1; st.rerun()
 
-            st.markdown("---")
             st.subheader("🛠️ No-Code Конструктор Графиков")
             for i in range(st.session_state.manual_charts):
                 st.markdown(f"##### 📊 Настройка диаграммы № {i+1}")
@@ -232,7 +237,7 @@ if uploaded_files:
                 with c1: style = st.selectbox(f"Тип графики:", ["Столбчатая диаграмма (Bar)", "Линейный тренд (Line)", "Кольцевая долей (Donut)", "Диаграмма Водопад (Waterfall)", "Диаграмма Воронка (Funnel)"], key=f"s_{i}")
                 with c2: x_ax = st.selectbox(f"Ось X (Категории):", all_cols, key=f"x_{i}")
                 with c3: y_ax = st.selectbox(f"Ось Y (Показатели):", all_cols, key=f"y_{i}")
-                with c4: color = st.color_picker(f"Цвет elements:", "#1f77b4", key=f"col_{i}")
+                with c4: color = st.color_picker(f"Цвет элементов:", "#1f77b4", key=f"col_{i}")
                 with st.expander("🎨 Настройки отображения"):
                     lbl = st.checkbox("Показывать значения", value=True, key=f"lbl_{i}")
                     horiz = st.checkbox("Горизонтальный вид", value=False, key=f"h_{i}") if "Bar" in style else False
@@ -264,6 +269,7 @@ if uploaded_files:
                         if ev_i and "selection" in ev_i and "points" in ev_i["selection"] and len(ev_i["selection"]["points"]) > 0:
                             pt_list = ev_i["selection"]["points"]
                             if isinstance(pt_list, list) and len(pt_list) > 0:
+                                # ИСПРАВЛЕНИЕ ОШИБКИ ТИПОВ: Прямое безопасное извлечение категорий Plotly
                                 first_pt = pt_list[0]
                                 if isinstance(first_pt, dict):
                                     val = first_pt.get('x', first_pt.get('label', first_pt.get('y')))
