@@ -5,6 +5,7 @@ import re
 
 st.set_page_config(page_title="Enterprise BI Конструктор (Power Query)", layout="wide")
 
+# АВТОНОМНЫЙ И СТАБИЛЬНЫЙ ПЕРЕКЛЮЧАТЕЛЬ СТРАНИЦ В БОКОВОЙ ПАНЕЛИ
 st.sidebar.markdown("### 🗺️ Навигация по BI-платформе")
 page = st.sidebar.radio(
     "Перейти к разделу:",
@@ -167,15 +168,13 @@ if uploaded_files:
 
         if page == "🗂️ 1. Загрузка и очистка данных":
             st.title("🚀 Модуль Предобработки & Импорта Данных")
-            # ГАРАНТИРОВАННОЕ ИСПРАВЛЕНИЕ СИНТАКСИСА: Разделили строки и колонки отдельно, убрав TypeError
-            tot_r = main_df.shape[0]
-            tot_c = main_df.shape[1]
-            st.success(f"📊 Идеальная сводная база сформирована! Файлов: {len(uploaded_files)}. Строк: {tot_r:,}, Колонок: {tot_c}")
-            
+            tot_rows = len(main_df)
+            tot_cols = len(main_df.columns)
+            st.success(f"📊 Идеальная сводная база сформирована! Файлов: {len(uploaded_files)}. Строк: {tot_rows:,}, Колонок: {tot_cols}")
             st.markdown("### 📋 Результат очистки (Постраничный интерактивный просмотр сводной таблицы):")
             
             rows_per_page = 50
-            total_pages = (tot_r // rows_per_page) + (1 if tot_r % rows_per_page > 0 else 0)
+            total_pages = (tot_rows // rows_per_page) + (1 if tot_rows % rows_per_page > 0 else 0)
             
             col_p1, col_p2 = st.columns(2)
             with col_p1:
@@ -183,7 +182,7 @@ if uploaded_files:
             with col_p2:
                 start_idx = (current_page - 1) * rows_per_page
                 end_idx = start_idx + rows_per_page
-                st.markdown(f"Показаны строки с **{start_idx + 1}** по **{min(end_idx, tot_r)}** из **{tot_r:,}** общих строк.")
+                st.markdown(f"Показаны строки с **{start_idx + 1}** по **{min(end_idx, tot_rows)}** из **{tot_rows:,}** общих строк.")
             
             try:
                 page_view_df = main_df.iloc[start_idx:end_idx].copy()
@@ -209,7 +208,7 @@ if uploaded_files:
                 st.sidebar.markdown(f"**Активный фильтр:**\n`{st.session_state.active_filter_col}` = `{st.session_state.active_filter_val}`")
                 if st.sidebar.button("🧹 Очистить все фильтры", type="primary", key="clr_f_cp"): 
                     st.session_state.active_filter_val = None
-                    st.session_state.active_filter_col = None
+                    st.session_state.active_filter_col = None; st.rerun()
 
             df_cards = main_df.copy()
             if st.session_state.active_filter_val is not None and st.session_state.active_filter_col in df_cards.columns:
@@ -241,7 +240,7 @@ if uploaded_files:
             for i in range(st.session_state.manual_charts):
                 st.markdown(f"##### 📊 Настройка диаграммы № {i+1}")
                 c1, c2, c3, c4 = st.columns(4)
-                with c1: style = st.selectbox(f"Тип графики:", ["Столбчатая диаграмма (Bar)", "Линейный trend (Line)", "Кольцевая долей (Donut)", "Диаграмма Водопад (Waterfall)", "Диаграмма Воронка (Funnel)"], key=f"s_{i}")
+                with c1: style = st.selectbox(f"Тип графики:", ["Столбчатая диаграмма (Bar)", "Линейный тренд (Line)", "Кольцевая долей (Donut)", "Диаграмма Водопад (Waterfall)", "Диаграмма Воронка (Funnel)"], key=f"s_{i}")
                 with c2: x_ax = st.selectbox(f"Ось X (Категории):", all_cols, key=f"x_{i}")
                 with c3: y_ax = st.selectbox(f"Ось Y (Показатели):", all_cols, key=f"y_{i}")
                 with c4: color = st.color_picker(f"Цвет элементов:", "#1f77b4", key=f"col_{i}")
@@ -272,16 +271,18 @@ if uploaded_files:
                             fig.add_trace(go.Bar(y=df_g[x_ax].astype(str) if horiz else df_g[y_ax], x=df_g[y_ax] if horiz else df_g[x_ax].astype(str), text=df_g[y_ax].map(lambda x: f"{x:,.0f}") if lbl else None, textposition="auto", orientation="h" if horiz else "v", marker_color=color))
                         fig.update_layout(xaxis=dict(tickangle=45 if not horiz else 0), uniformtext=dict(mode="hide", minsize=8), clickmode="event+select")
                         
+                        # ГАРАНТИРОВАННОЕ ИСПРАВЛЕНИЕ: Индекс [0] добавлен. Массивы Plotly читаются без ошибок!
                         ev_i = st.plotly_chart(fig, use_container_width=True, key=f"p_{i}", on_select="rerun")
                         if ev_i and "selection" in ev_i and "points" in ev_i["selection"] and len(ev_i["selection"]["points"]) > 0:
                             pt_list = ev_i["selection"]["points"]
                             if isinstance(pt_list, list) and len(pt_list) > 0:
-                                first_pt = pt_list
-                                val = first_pt['x'] if 'x' in first_pt else (first_pt['label'] if 'label' in first_pt else first_pt['y'])
-                                if val is not None and str(val) != "ИТОГО":
-                                    st.session_state.active_filter_val = val
-                                    st.session_state.active_filter_col = x_ax
-                                    st.rerun()
+                                first_pt = pt_list[0]
+                                if isinstance(first_pt, dict):
+                                    val = first_pt.get('x', first_pt.get('label', first_pt.get('y')))
+                                    if val is not None and str(val) != "ИТОГО":
+                                        st.session_state.active_filter_val = val
+                                        st.session_state.active_filter_col = x_ax
+                                        st.rerun()
                     except Exception as ex: pass
                 else: st.info("ℹ️ Выберите категории для построения графика")
                 st.markdown("<hr style='border:1px dashed #ddd'>", unsafe_allow_html=True)
