@@ -5,7 +5,6 @@ import re
 
 st.set_page_config(page_title="Enterprise BI Конструктор (Power Query)", layout="wide")
 
-# АВТОНОМНЫЙ И СТАБИЛЬНЫЙ ПЕРЕКЛЮЧАТЕЛЬ СТРАНИЦ В БОКОВОЙ ПАНЕЛИ
 st.sidebar.markdown("### 🗺️ Навигация по BI-платформе")
 page = st.sidebar.radio(
     "Перейти к разделу:",
@@ -45,8 +44,8 @@ def power_query_clean_engine(uploaded_files_list, skip_top, merge_headers, remov
             
             # 2. Шаг PQ: Продвинутое схлопывание объединенных многострочных заголовков
             if merge_headers and len(df_raw) > 1:
-                row0 = list(df_raw.iloc.astype(str).str.strip())
-                row1 = list(df_raw.iloc.astype(str).str.strip())
+                row0 = list(df_raw.iloc[0].astype(str).str.strip())
+                row1 = list(df_raw.iloc[1].astype(str).str.strip())
                 current_parent = ""
                 for idx in range(len(row0)):
                     val0 = row0[idx]
@@ -64,7 +63,7 @@ def power_query_clean_engine(uploaded_files_list, skip_top, merge_headers, remov
                 df_raw.columns = new_cols
                 df_raw = df_raw.iloc[2:].reset_index(drop=True)
             else:
-                df_raw.columns = df_raw.iloc.astype(str).str.strip()
+                df_raw.columns = df_raw.iloc[0].astype(str).str.strip()
                 df_raw = df_raw.iloc[1:].reset_index(drop=True)
                 
             # 3. Шаг PQ: Финальная очистка шапки от мусорных артефактов Excel
@@ -203,12 +202,23 @@ if uploaded_files:
         elif page == "📊 2. Конструктор диаграмм":
             import plotly.graph_objects as go
             st.title("📊 Интерактивная BI-Панель Показателей")
-            st.sidebar.success("🟢 Интерактивный BI-движок активен!")
-            if st.session_state.active_filter_val is not None:
-                st.sidebar.markdown(f"**Активный фильтр:**\n`{st.session_state.active_filter_col}` = `{st.session_state.active_filter_val}`")
-                if st.sidebar.button("🧹 Очистить все фильтры", type="primary", key="clr_f_cp"): 
+            
+            st.sidebar.subheader("🎚️ Панель Фильтрации Дашборда")
+            # СТАБИЛЬНЫЙ ВАРИАНТ ФИЛЬТРАЦИИ: Через No-Code меню без рисков падения кода
+            filter_col_target = st.sidebar.selectbox("Шаг 1. Выберите поле фильтрации:", all_cols, key="fl_col_bi")
+            
+            if filter_col_target != "-- Выберите заголовок --":
+                unique_vals = ["-- Все значения --"] + list(main_df[filter_col_target].astype(str).unique())
+                filter_val_target = st.sidebar.selectbox("Шаг 2. Выберите значение среза:", unique_vals, key="fl_val_bi")
+                if filter_val_target != "-- Все значения --":
+                    st.session_state.active_filter_col = filter_col_target
+                    st.session_state.active_filter_val = filter_val_target
+                else:
+                    st.session_state.active_filter_col = None
                     st.session_state.active_filter_val = None
-                    st.session_state.active_filter_col = None; st.rerun()
+            else:
+                st.session_state.active_filter_col = None
+                st.session_state.active_filter_val = None
 
             df_cards = main_df.copy()
             if st.session_state.active_filter_val is not None and st.session_state.active_filter_col in df_cards.columns:
@@ -269,20 +279,10 @@ if uploaded_files:
                             fig.add_trace(go.Scatter(x=df_g[x_ax], y=df_g[y_ax], mode="lines+markers+text" if lbl else "lines+markers", text=df_g[y_ax].map(lambda x: f"{x:,.0f}") if lbl else None, line=dict(color=color)))
                         else:
                             fig.add_trace(go.Bar(y=df_g[x_ax].astype(str) if horiz else df_g[y_ax], x=df_g[y_ax] if horiz else df_g[x_ax].astype(str), text=df_g[y_ax].map(lambda x: f"{x:,.0f}") if lbl else None, textposition="auto", orientation="h" if horiz else "v", marker_color=color))
-                        fig.update_layout(xaxis=dict(tickangle=45 if not horiz else 0), uniformtext=dict(mode="hide", minsize=8), clickmode="event+select")
+                        fig.update_layout(xaxis=dict(tickangle=45 if not horiz else 0), uniformtext=dict(mode="hide", minsize=8))
                         
-                        # ГАРАНТИРОВАННОЕ ИСПРАВЛЕНИЕ: Индекс [0] добавлен. Массивы Plotly читаются без ошибок!
-                        ev_i = st.plotly_chart(fig, use_container_width=True, key=f"p_{i}", on_select="rerun")
-                        if ev_i and "selection" in ev_i and "points" in ev_i["selection"] and len(ev_i["selection"]["points"]) > 0:
-                            pt_list = ev_i["selection"]["points"]
-                            if isinstance(pt_list, list) and len(pt_list) > 0:
-                                first_pt = pt_list[0]
-                                if isinstance(first_pt, dict):
-                                    val = first_pt.get('x', first_pt.get('label', first_pt.get('y')))
-                                    if val is not None and str(val) != "ИТОГО":
-                                        st.session_state.active_filter_val = val
-                                        st.session_state.active_filter_col = x_ax
-                                        st.rerun()
+                        # БЕЗОПАСНАЯ СТАБИЛЬНАЯ ОТРИСОВКА: Убрана деструктивная логика кликов по графику
+                        st.plotly_chart(fig, use_container_width=True, key=f"p_{i}")
                     except Exception as ex: pass
                 else: st.info("ℹ️ Выберите категории для построения графика")
                 st.markdown("<hr style='border:1px dashed #ddd'>", unsafe_allow_html=True)
