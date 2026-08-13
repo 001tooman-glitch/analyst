@@ -44,8 +44,8 @@ def power_query_clean_engine(uploaded_files_list, skip_top, merge_headers, remov
             
             # 2. Шаг PQ: Продвинутое схлопывание объединенных многострочных заголовков
             if merge_headers and len(df_raw) > 1:
-                row0 = list(df_raw.iloc.astype(str).str.strip())
-                row1 = list(df_raw.iloc.astype(str).str.strip())
+                row0 = list(df_raw.iloc[0].astype(str).str.strip())
+                row1 = list(df_raw.iloc[1].astype(str).str.strip())
                 current_parent = ""
                 for idx in range(len(row0)):
                     val0 = row0[idx]
@@ -63,7 +63,7 @@ def power_query_clean_engine(uploaded_files_list, skip_top, merge_headers, remov
                 df_raw.columns = new_cols
                 df_raw = df_raw.iloc[2:].reset_index(drop=True)
             else:
-                df_raw.columns = df_raw.iloc.astype(str).str.strip()
+                df_raw.columns = df_raw.iloc[0].astype(str).str.strip()
                 df_raw = df_raw.iloc[1:].reset_index(drop=True)
                 
             # 3. Шаг PQ: Финальная очистка шапки от мусорных артефактов Excel
@@ -83,9 +83,9 @@ def power_query_clean_engine(uploaded_files_list, skip_top, merge_headers, remov
                 elif any(w in c_low for w in ['наименование', 'материал']):
                     mapped_cols.append('Наименование материала')
                 elif any(w in c_low for w in ['количество', 'кол-во', 'объем', 'открытой потребн']):
-                    mapped_cols.append('Количество')
+                    mapped_cols.append('Quantity')
                 elif any(w in c_low for w in ['сумма', 'стоимость', 'цена', 'капитал']):
-                    mapped_cols.append('Сумма')
+                    mapped_cols.append('Amount')
                 else:
                     mapped_cols.append(col)
             df_raw.columns = mapped_cols
@@ -109,13 +109,18 @@ def power_query_clean_engine(uploaded_files_list, skip_top, merge_headers, remov
     
     for col in merged_df.columns:
         if col == 'Источник (Файл)': continue
-        if col in ['Количество', 'Сумма']:
+        if col in ['Quantity', 'Amount']:
             merged_df[col] = merged_df[col].astype(str).str.replace(r'\s+', '', regex=True).str.replace(',', '.')
             merged_df[col] = pd.to_numeric(merged_df[col], errors='coerce').fillna(0.0)
         else:
             merged_df[col] = merged_df[col].fillna("").astype(str).str.strip().replace(['nan', 'None', 'Не указано'], "")
             
     merged_df = merged_df.dropna(how='all')
+    
+    # Возвращаем русские красивые бизнес-имена
+    if 'Quantity' in merged_df.columns: merged_df.rename(columns={'Quantity': 'Количество'}, inplace=True)
+    if 'Amount' in merged_df.columns: merged_df.rename(columns={'Amount': 'Сумма'}, inplace=True)
+    
     front_cols = [c for c in ['ОЗМ', 'Наименование материала', 'Количество', 'Сумма', 'Источник (Файл)'] if c in merged_df.columns]
     other_cols = [c for c in merged_df.columns if c not in front_cols]
     merged_df = merged_df[front_cols + other_cols]
@@ -199,11 +204,9 @@ if uploaded_files:
             st.sidebar.success("🟢 Интерактивный BI-движок активен!")
             if st.session_state.active_filter_val is not None:
                 st.sidebar.markdown(f"**Активный фильтр:**\n`{st.session_state.active_filter_col}` = `{st.session_state.active_filter_val}`")
-                # ИСПРАВЛЕНИЕ: Мягкий сброс без деструктивного st.rerun(). Виджеты сохраняют выбранные оси на экране!
                 if st.sidebar.button("🧹 Очистить все фильтры", type="primary", key="clr_f_cp"): 
                     st.session_state.active_filter_val = None
                     st.session_state.active_filter_col = None
-                    st.toast("🔄 Фильтры сброшены!")
 
             df_cards = main_df.copy()
             if st.session_state.active_filter_val is not None and st.session_state.active_filter_col in df_cards.columns:
@@ -230,6 +233,7 @@ if uploaded_files:
                 if st.session_state.manual_cards > 1:
                     if st.button("🗑️ Удалить карточку"): st.session_state.manual_cards -= 1; st.rerun()
 
+            st.markdown("---")
             st.subheader("🛠️ No-Code Конструктор Графиков")
             for i in range(st.session_state.manual_charts):
                 st.markdown(f"##### 📊 Настройка диаграммы № {i+1}")
@@ -265,18 +269,17 @@ if uploaded_files:
                             fig.add_trace(go.Bar(y=df_g[x_ax].astype(str) if horiz else df_g[y_ax], x=df_g[y_ax] if horiz else df_g[x_ax].astype(str), text=df_g[y_ax].map(lambda x: f"{x:,.0f}") if lbl else None, textposition="auto", orientation="h" if horiz else "v", marker_color=color))
                         fig.update_layout(xaxis=dict(tickangle=45 if not horiz else 0), uniformtext=dict(mode="hide", minsize=8), clickmode="event+select")
                         
+                        # 100% БЕЗОПАСНЫЙ СЧИТЫВАТЕЛЬ СОБЫТИЙ: Чтение структуры клика без использования словаря .get()
                         ev_i = st.plotly_chart(fig, use_container_width=True, key=f"p_{i}", on_select="rerun")
                         if ev_i and "selection" in ev_i and "points" in ev_i["selection"] and len(ev_i["selection"]["points"]) > 0:
                             pt_list = ev_i["selection"]["points"]
                             if isinstance(pt_list, list) and len(pt_list) > 0:
-                                # ИСПРАВЛЕНИЕ ОШИБКИ ТИПОВ: Прямое безопасное извлечение категорий Plotly
                                 first_pt = pt_list[0]
-                                if isinstance(first_pt, dict):
-                                    val = first_pt.get('x', first_pt.get('label', first_pt.get('y')))
-                                    if val is not None and str(val) != "ИТОГО":
-                                        st.session_state.active_filter_val = val
-                                        st.session_state.active_filter_col = x_ax
-                                        st.rerun()
+                                val = first_pt['x'] if 'x' in first_pt else (first_pt['label'] if 'label' in first_pt else first_pt['y'])
+                                if val is not None and str(val) != "ИТОГО":
+                                    st.session_state.active_filter_val = val
+                                    st.session_state.active_filter_col = x_ax
+                                    st.rerun()
                     except Exception as ex: pass
                 else: st.info("ℹ️ Выберите категории для построения графика")
                 st.markdown("<hr style='border:1px dashed #ddd'>", unsafe_allow_html=True)
