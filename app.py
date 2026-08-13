@@ -3,12 +3,22 @@ import pandas as pd
 import io
 import re
 
+# Импортируем наши новые изолированные No-Code модули аналитики из корня проекта
+from abc_xyz import show_abc_xyz_page
+from rfm import show_rfm_page
+
 st.set_page_config(page_title="Enterprise BI Конструктор (Power Query)", layout="wide")
 
+# РАСШИРЕННЫЙ ПЕРЕКЛЮЧАТЕЛЬ СТРАНИЦ В БОКОВОЙ ПАНЕЛИ
 st.sidebar.markdown("### 🗺️ Навигация по BI-платформе")
 page = st.sidebar.radio(
     "Перейти к разделу:",
-    ["🗂️ 1. Загрузка и очистка данных", "📊 2. Конструктор диаграмм"]
+    [
+        "🗂️ 1. Загрузка и очистка данных", 
+        "📊 2. Конструктор диаграмм",
+        "🧮 3. ABC/XYZ-анализ ОЗМ",
+        "👥 4. RFM-сегментация"
+    ]
 )
 st.sidebar.markdown("---")
 
@@ -19,10 +29,11 @@ if "active_filter_col" not in st.session_state: st.session_state.active_filter_c
 if "main_df" not in st.session_state: st.session_state.main_df = pd.DataFrame()
 if "uploaded_backup" not in st.session_state: st.session_state.uploaded_backup = None
 
-# Параметры Power Query
+# Параметры Power Query шагов очистки в сессии
 if "pq_skip_top" not in st.session_state: st.session_state.pq_skip_top = 0
 if "pq_merge_headers" not in st.session_state: st.session_state.pq_merge_headers = False
 if "pq_remove_footer" not in st.session_state: st.session_state.pq_remove_footer = True
+
 # МОДЕРНИЗИРОВАННЫЙ ДВИЖОК POWER QUERY СО СКЛЕЙКОЙ СИНОНИМОВ СТОЛБЦОВ
 def power_query_clean_engine(uploaded_files_list, skip_top, merge_headers, remove_footer):
     frames_dict = {}
@@ -44,8 +55,8 @@ def power_query_clean_engine(uploaded_files_list, skip_top, merge_headers, remov
             
             # 2. Шаг PQ: Продвинутое схлопывание объединенных многострочных заголовков
             if merge_headers and len(df_raw) > 1:
-                row0 = list(df_raw.iloc[0].astype(str).str.strip())
-                row1 = list(df_raw.iloc[1].astype(str).str.strip())
+                row0 = list(df_raw.iloc.astype(str).str.strip())
+                row1 = list(df_raw.iloc.astype(str).str.strip())
                 current_parent = ""
                 for idx in range(len(row0)):
                     val0 = row0[idx]
@@ -63,7 +74,7 @@ def power_query_clean_engine(uploaded_files_list, skip_top, merge_headers, remov
                 df_raw.columns = new_cols
                 df_raw = df_raw.iloc[2:].reset_index(drop=True)
             else:
-                df_raw.columns = df_raw.iloc[0].astype(str).str.strip()
+                df_raw.columns = df_raw.iloc.astype(str).str.strip()
                 df_raw = df_raw.iloc[1:].reset_index(drop=True)
                 
             # 3. Шаг PQ: Финальная очистка шапки от мусорных артефактов Excel
@@ -117,7 +128,6 @@ def power_query_clean_engine(uploaded_files_list, skip_top, merge_headers, remov
             
     merged_df = merged_df.dropna(how='all')
     
-    # Возвращаем русские красивые бизнес-имена
     if 'Quantity' in merged_df.columns: merged_df.rename(columns={'Quantity': 'Количество'}, inplace=True)
     if 'Amount' in merged_df.columns: merged_df.rename(columns={'Amount': 'Сумма'}, inplace=True)
     
@@ -165,6 +175,7 @@ if uploaded_files:
     if not main_df.empty:
         all_cols = ["-- Выберите заголовок --"] + list(main_df.columns)
 
+        # ---------------- РАЗДЕЛ 1: ЗАГРУЗКА И ОЧИСТКА ДАННЫХ ----------------
         if page == "🗂️ 1. Загрузка и очистка данных":
             st.title("🚀 Модуль Предобработки & Импорта Данных")
             tot_rows = len(main_df)
@@ -199,10 +210,10 @@ if uploaded_files:
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 )
             except Exception as de: st.error(f"Ошибка подготовки Excel-файла: {de}")
+        # ---------------- РАЗДЕЛ 2: КАСКАДНЫЙ КОНСТРУКТОР BI ----------------
         elif page == "📊 2. Конструктор диаграмм":
             import plotly.graph_objects as go
             st.title("📊 Интерактивная BI-Панель Показателей")
-            
             st.sidebar.subheader("🎚️ Панель Многоуровневой Фильтрации")
             
             # --- УРОВЕНЬ ФИЛЬТРАЦИИ №1 ---
@@ -223,18 +234,16 @@ if uploaded_files:
                 st.session_state.active_filter_col = None
                 st.session_state.active_filter_val = None
 
-            # --- УРОВЕНЬ ФИЛЬТРАЦИИ №2 (КАСКАДНЫЙ СРЕЗ) ---
+            # --- УРОВЕНЬ ФИЛЬТРАЦИИ №2 (КАСКАДНЫЙ СРЕЗ ПОДДЕРЖКИ) ---
             st.sidebar.markdown("---")
-            filter_col_2 = st.sidebar.selectbox("Шаг 3. Добавить второй разрез (например, Фонд):", all_cols, key="fl_col_2_bi")
+            filter_col_2 = st.sidebar.selectbox("Шаг 3. Добавить второй разрез:", all_cols, key="fl_col_2_bi")
             
             if filter_col_2 != "-- Выберите заголовок --":
-                # Умный каскад: берем уникальные значения только из уже отфильтрованного на Шаге 2 массива данных
                 unique_vals_2 = ["-- Все значения --"] + list(active_df[filter_col_2].astype(str).unique())
                 filter_val_2 = st.sidebar.selectbox("Шаг 4. Выберите значение среза №2:", unique_vals_2, key="fl_val_2_bi")
                 if filter_val_2 != "-- Все значения --":
                     active_df = active_df[active_df[filter_col_2].astype(str) == str(filter_val_2)]
             
-            # База данных для KPI карточек полностью сформирована на основе двух уровней фильтров
             df_cards = active_df.copy()
 
             st.subheader("🎴 Панель Ключевых Показателей (KPI Карточки)")
@@ -274,11 +283,7 @@ if uploaded_files:
 
                 if x_ax != "-- Выберите заголовок --" and y_ax != "-- Выберите заголовок --":
                     try:
-                        # Фильтрация графиков: график изолирует себя только от срезов, сделанных по его собственной оси X
                         df_chart = active_df.copy()
-                        
-                        # Если на Шаге 1 или Шаге 3 выбран срез, совпадающий с осью X этого графика, 
-                        # мы берем для этого графика чуть более широкую выборку, чтобы он не исчезал
                         if filter_col_1 == x_ax and filter_val_1 != "-- Все значения --":
                             df_chart = main_df.copy()
                             if filter_col_2 != "-- Выберите заголовок --" and filter_val_2 != "-- Все значения --" and filter_col_2 != x_ax:
@@ -314,4 +319,11 @@ if uploaded_files:
             with b2:
                 if st.session_state.manual_charts > 1:
                     if st.button("🗑️ Удалить диаграмму"): st.session_state.manual_charts -= 1; st.rerun()
+
+        # ---------------- РАЗДЕЛЫ ДЛЯ НОВЫХ ИЗОЛИРОВАННЫХ СТРАНИЦ ----------------
+        elif page == "🗮️ 3. ABC/XYZ-анализ ОЗМ":
+            show_abc_xyz_page()
+
+        elif page == "👥 4. RFM-сегментация":
+            show_rfm_page()
 else: st.info("Ожидание загрузки любых файлов Excel/CSV для активации BI-панели...")
