@@ -203,16 +203,19 @@ if uploaded_files:
             import plotly.graph_objects as go
             st.title("📊 Интерактивная BI-Панель Показателей")
             
-            st.sidebar.subheader("🎚️ Панель Фильтрации Дашборда")
-            # СТАБИЛЬНЫЙ ВАРИАНТ ФИЛЬТРАЦИИ: Через No-Code меню без рисков падения кода
-            filter_col_target = st.sidebar.selectbox("Шаг 1. Выберите поле фильтрации:", all_cols, key="fl_col_bi")
+            st.sidebar.subheader("🎚️ Панель Многоуровневой Фильтрации")
             
-            if filter_col_target != "-- Выберите заголовок --":
-                unique_vals = ["-- Все значения --"] + list(main_df[filter_col_target].astype(str).unique())
-                filter_val_target = st.sidebar.selectbox("Шаг 2. Выберите значение среза:", unique_vals, key="fl_val_bi")
-                if filter_val_target != "-- Все значения --":
-                    st.session_state.active_filter_col = filter_col_target
-                    st.session_state.active_filter_val = filter_val_target
+            # --- УРОВЕНЬ ФИЛЬТРАЦИИ №1 ---
+            filter_col_1 = st.sidebar.selectbox("Шаг 1. Выберите первое поле:", all_cols, key="fl_col_1_bi")
+            active_df = main_df.copy()
+            
+            if filter_col_1 != "-- Выберите заголовок --":
+                unique_vals_1 = ["-- Все значения --"] + list(active_df[filter_col_1].astype(str).unique())
+                filter_val_1 = st.sidebar.selectbox("Шаг 2. Выберите значение среза №1:", unique_vals_1, key="fl_val_1_bi")
+                if filter_val_1 != "-- Все значения --":
+                    active_df = active_df[active_df[filter_col_1].astype(str) == str(filter_val_1)]
+                    st.session_state.active_filter_col = filter_col_1
+                    st.session_state.active_filter_val = filter_val_1
                 else:
                     st.session_state.active_filter_col = None
                     st.session_state.active_filter_val = None
@@ -220,9 +223,19 @@ if uploaded_files:
                 st.session_state.active_filter_col = None
                 st.session_state.active_filter_val = None
 
-            df_cards = main_df.copy()
-            if st.session_state.active_filter_val is not None and st.session_state.active_filter_col in df_cards.columns:
-                df_cards = df_cards[df_cards[st.session_state.active_filter_col].astype(str) == str(st.session_state.active_filter_val)]
+            # --- УРОВЕНЬ ФИЛЬТРАЦИИ №2 (КАСКАДНЫЙ СРЕЗ) ---
+            st.sidebar.markdown("---")
+            filter_col_2 = st.sidebar.selectbox("Шаг 3. Добавить второй разрез (например, Фонд):", all_cols, key="fl_col_2_bi")
+            
+            if filter_col_2 != "-- Выберите заголовок --":
+                # Умный каскад: берем уникальные значения только из уже отфильтрованного на Шаге 2 массива данных
+                unique_vals_2 = ["-- Все значения --"] + list(active_df[filter_col_2].astype(str).unique())
+                filter_val_2 = st.sidebar.selectbox("Шаг 4. Выберите значение среза №2:", unique_vals_2, key="fl_val_2_bi")
+                if filter_val_2 != "-- Все значения --":
+                    active_df = active_df[active_df[filter_col_2].astype(str) == str(filter_val_2)]
+            
+            # База данных для KPI карточек полностью сформирована на основе двух уровней фильтров
+            df_cards = active_df.copy()
 
             st.subheader("🎴 Панель Ключевых Показателей (KPI Карточки)")
             card_cols = st.columns(st.session_state.manual_cards)
@@ -261,10 +274,21 @@ if uploaded_files:
 
                 if x_ax != "-- Выберите заголовок --" and y_ax != "-- Выберите заголовок --":
                     try:
-                        df_chart = main_df.copy()
-                        if st.session_state.active_filter_val is not None and st.session_state.active_filter_col in df_chart.columns:
-                            if st.session_state.active_filter_col != x_ax:
-                                df_chart = df_chart[df_chart[st.session_state.active_filter_col].astype(str) == str(st.session_state.active_filter_val)]
+                        # Фильтрация графиков: график изолирует себя только от срезов, сделанных по его собственной оси X
+                        df_chart = active_df.copy()
+                        
+                        # Если на Шаге 1 или Шаге 3 выбран срез, совпадающий с осью X этого графика, 
+                        # мы берем для этого графика чуть более широкую выборку, чтобы он не исчезал
+                        if filter_col_1 == x_ax and filter_val_1 != "-- Все значения --":
+                            df_chart = main_df.copy()
+                            if filter_col_2 != "-- Выберите заголовок --" and filter_val_2 != "-- Все значения --" and filter_col_2 != x_ax:
+                                df_chart = df_chart[df_chart[filter_col_2].astype(str) == str(filter_val_2)]
+                                
+                        if filter_col_2 == x_ax and filter_val_2 != "-- Все значения --":
+                            df_chart = main_df.copy()
+                            if filter_col_1 != "-- Выберите заголовок --" and filter_val_1 != "-- Все значения --" and filter_col_1 != x_ax:
+                                df_chart = df_chart[df_chart[filter_col_1].astype(str) == str(filter_val_1)]
+
                         df_chart[y_ax] = pd.to_numeric(df_chart[y_ax], errors='coerce').fillna(0)
                         df_g = df_chart.groupby(x_ax, as_index=False)[y_ax].sum()
                         if not horiz: df_g = df_g.sort_values(by=y_ax, ascending=False)
@@ -280,8 +304,6 @@ if uploaded_files:
                         else:
                             fig.add_trace(go.Bar(y=df_g[x_ax].astype(str) if horiz else df_g[y_ax], x=df_g[y_ax] if horiz else df_g[x_ax].astype(str), text=df_g[y_ax].map(lambda x: f"{x:,.0f}") if lbl else None, textposition="auto", orientation="h" if horiz else "v", marker_color=color))
                         fig.update_layout(xaxis=dict(tickangle=45 if not horiz else 0), uniformtext=dict(mode="hide", minsize=8))
-                        
-                        # БЕЗОПАСНАЯ СТАБИЛЬНАЯ ОТРИСОВКА: Убрана деструктивная логика кликов по графику
                         st.plotly_chart(fig, use_container_width=True, key=f"p_{i}")
                     except Exception as ex: pass
                 else: st.info("ℹ️ Выберите категории для построения графика")
