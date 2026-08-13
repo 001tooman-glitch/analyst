@@ -9,7 +9,7 @@ from rfm import show_rfm_page
 
 st.set_page_config(page_title="Enterprise BI Конструктор (Power Query)", layout="wide")
 
-# РАСШИРЕННЫЙ ПЕРЕКЛЮЧАТЕЛЬ СТРАНИЦ В БОКОВОЙ ПАНЕЛИ
+# ГАРАНТИРОВАННОЕ ВЫРАВНИВАНИЕ: Символы меню синхронизированы с развилкой условий
 st.sidebar.markdown("### 🗺️ Навигация по BI-платформе")
 page = st.sidebar.radio(
     "Перейти к разделу:",
@@ -128,6 +128,7 @@ def power_query_clean_engine(uploaded_files_list, skip_top, merge_headers, remov
             
     merged_df = merged_df.dropna(how='all')
     
+    # Возвращаем русские красивые бизнес-имена колонок
     if 'Quantity' in merged_df.columns: merged_df.rename(columns={'Quantity': 'Количество'}, inplace=True)
     if 'Amount' in merged_df.columns: merged_df.rename(columns={'Amount': 'Сумма'}, inplace=True)
     
@@ -216,7 +217,6 @@ if uploaded_files:
             st.title("📊 Интерактивная BI-Панель Показателей")
             st.sidebar.subheader("🎚️ Панель Многоуровневой Фильтрации")
             
-            # --- УРОВЕНЬ ФИЛЬТРАЦИИ №1 ---
             filter_col_1 = st.sidebar.selectbox("Шаг 1. Выберите первое поле:", all_cols, key="fl_col_1_bi")
             active_df = main_df.copy()
             
@@ -234,7 +234,6 @@ if uploaded_files:
                 st.session_state.active_filter_col = None
                 st.session_state.active_filter_val = None
 
-            # --- УРОВЕНЬ ФИЛЬТРАЦИИ №2 (КАСКАДНЫЙ СРЕЗ ПОДДЕРЖКИ) ---
             st.sidebar.markdown("---")
             filter_col_2 = st.sidebar.selectbox("Шаг 3. Добавить второй разрез:", all_cols, key="fl_col_2_bi")
             
@@ -320,10 +319,10 @@ if uploaded_files:
                 if st.session_state.manual_charts > 1:
                     if st.button("🗑️ Удалить диаграмму"): st.session_state.manual_charts -= 1; st.rerun()
 
-        # ---------------- РАЗДЕЛЫ ДЛЯ НОВЫХ ИЗОЛИРОВАННЫХ СТРАНИЦ ----------------
-        elif page == "🗮️ 3. ABC/XYZ-анализ ОЗМ":
+        # ГАРАНТИРОВАННОЕ СОВПАДЕНИЕ СИМВОЛОВ С СИСТЕМНОЙ ШАПКОЙ
+        elif page == "贴 3. ABC/XYZ-анализ ОЗМ" or page == "🗂️ 3. ABC/XYZ-анализ ОЗМ" or "3. ABC/XYZ-анализ ОЗМ" in page:
             show_abc_xyz_page()
 
-        elif page == "👥 4. RFM-сегментация":
+        elif page == "👥 4. RFM-сегментация" or "4. RFM-сегментация" in page:
             show_rfm_page()
 else: st.info("Ожидание загрузки любых файлов Excel/CSV для активации BI-панели...")
