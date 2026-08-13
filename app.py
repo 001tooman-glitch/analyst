@@ -44,8 +44,8 @@ def power_query_clean_engine(uploaded_files_list, skip_top, merge_headers, remov
             
             # 2. Шаг PQ: Продвинутое схлопывание объединенных многострочных заголовков
             if merge_headers and len(df_raw) > 1:
-                row0 = list(df_raw.iloc[0].astype(str).str.strip())
-                row1 = list(df_raw.iloc[1].astype(str).str.strip())
+                row0 = list(df_raw.iloc.astype(str).str.strip())
+                row1 = list(df_raw.iloc.astype(str).str.strip())
                 current_parent = ""
                 for idx in range(len(row0)):
                     val0 = row0[idx]
@@ -63,7 +63,7 @@ def power_query_clean_engine(uploaded_files_list, skip_top, merge_headers, remov
                 df_raw.columns = new_cols
                 df_raw = df_raw.iloc[2:].reset_index(drop=True)
             else:
-                df_raw.columns = df_raw.iloc[0].astype(str).str.strip()
+                df_raw.columns = df_raw.iloc.astype(str).str.strip()
                 df_raw = df_raw.iloc[1:].reset_index(drop=True)
                 
             # 3. Шаг PQ: Финальная очистка шапки от мусорных артефактов Excel
@@ -167,12 +167,15 @@ if uploaded_files:
 
         if page == "🗂️ 1. Загрузка и очистка данных":
             st.title("🚀 Модуль Предобработки & Импорта Данных")
-            st.success(f"📊 Идеальная сводная база сформирована! Файлов: {len(uploaded_files)}. Строк: {main_df.shape:,}, Колонок: {main_df.shape}")
+            # ГАРАНТИРОВАННОЕ ИСПРАВЛЕНИЕ СИНТАКСИСА: Разделили строки и колонки отдельно, убрав TypeError
+            tot_r = main_df.shape[0]
+            tot_c = main_df.shape[1]
+            st.success(f"📊 Идеальная сводная база сформирована! Файлов: {len(uploaded_files)}. Строк: {tot_r:,}, Колонок: {tot_c}")
+            
             st.markdown("### 📋 Результат очистки (Постраничный интерактивный просмотр сводной таблицы):")
             
             rows_per_page = 50
-            total_rows = len(main_df)
-            total_pages = (total_rows // rows_per_page) + (1 if total_rows % rows_per_page > 0 else 0)
+            total_pages = (tot_r // rows_per_page) + (1 if tot_r % rows_per_page > 0 else 0)
             
             col_p1, col_p2 = st.columns(2)
             with col_p1:
@@ -180,7 +183,7 @@ if uploaded_files:
             with col_p2:
                 start_idx = (current_page - 1) * rows_per_page
                 end_idx = start_idx + rows_per_page
-                st.markdown(f"Показаны строки с **{start_idx + 1}** по **{min(end_idx, total_rows)}** из **{total_rows:,}** общих строк.")
+                st.markdown(f"Показаны строки с **{start_idx + 1}** по **{min(end_idx, tot_r)}** из **{tot_r:,}** общих строк.")
             
             try:
                 page_view_df = main_df.iloc[start_idx:end_idx].copy()
@@ -238,7 +241,7 @@ if uploaded_files:
             for i in range(st.session_state.manual_charts):
                 st.markdown(f"##### 📊 Настройка диаграммы № {i+1}")
                 c1, c2, c3, c4 = st.columns(4)
-                with c1: style = st.selectbox(f"Тип графики:", ["Столбчатая диаграмма (Bar)", "Линейный тренд (Line)", "Кольцевая долей (Donut)", "Диаграмма Водопад (Waterfall)", "Диаграмма Воронка (Funnel)"], key=f"s_{i}")
+                with c1: style = st.selectbox(f"Тип графики:", ["Столбчатая диаграмма (Bar)", "Линейный trend (Line)", "Кольцевая долей (Donut)", "Диаграмма Водопад (Waterfall)", "Диаграмма Воронка (Funnel)"], key=f"s_{i}")
                 with c2: x_ax = st.selectbox(f"Ось X (Категории):", all_cols, key=f"x_{i}")
                 with c3: y_ax = st.selectbox(f"Ось Y (Показатели):", all_cols, key=f"y_{i}")
                 with c4: color = st.color_picker(f"Цвет элементов:", "#1f77b4", key=f"col_{i}")
@@ -269,12 +272,11 @@ if uploaded_files:
                             fig.add_trace(go.Bar(y=df_g[x_ax].astype(str) if horiz else df_g[y_ax], x=df_g[y_ax] if horiz else df_g[x_ax].astype(str), text=df_g[y_ax].map(lambda x: f"{x:,.0f}") if lbl else None, textposition="auto", orientation="h" if horiz else "v", marker_color=color))
                         fig.update_layout(xaxis=dict(tickangle=45 if not horiz else 0), uniformtext=dict(mode="hide", minsize=8), clickmode="event+select")
                         
-                        # 100% БЕЗОПАСНЫЙ СЧИТЫВАТЕЛЬ СОБЫТИЙ: Чтение структуры клика без использования словаря .get()
                         ev_i = st.plotly_chart(fig, use_container_width=True, key=f"p_{i}", on_select="rerun")
                         if ev_i and "selection" in ev_i and "points" in ev_i["selection"] and len(ev_i["selection"]["points"]) > 0:
                             pt_list = ev_i["selection"]["points"]
                             if isinstance(pt_list, list) and len(pt_list) > 0:
-                                first_pt = pt_list[0]
+                                first_pt = pt_list
                                 val = first_pt['x'] if 'x' in first_pt else (first_pt['label'] if 'label' in first_pt else first_pt['y'])
                                 if val is not None and str(val) != "ИТОГО":
                                     st.session_state.active_filter_val = val
