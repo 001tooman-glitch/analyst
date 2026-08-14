@@ -3,16 +3,21 @@ import pandas as pd
 import io
 import re
 
-# ИЗОЛИРОВАННЫЙ МОДУЛЬ 1: ABC/XYZ Аналитика
-def internal_show_abc_xyz_page():
+# МОДУЛЬ 1 С УМНЫМ СРЕЗОМ: ABC/XYZ Аналитика мгновенно реагирует на выбранные каскадные фильтры
+def internal_show_abc_xyz_page(filtered_df):
     st.title("🧮 Модуль автоматического ABC/XYZ-анализа")
-    if "main_df" not in st.session_state or st.session_state.main_df.empty:
-        st.info("ℹ️ Пожалуйста, сначала загрузите файлы на первой странице.")
+    if filtered_df.empty:
+        st.info("ℹ️ Пожалуйста, загрузите файлы и проверьте фильтры. Текущая выборка пуста.")
         return
-    df = st.session_state.main_df.copy()
+    df = filtered_df.copy()
     if 'ОЗМ' not in df.columns or 'Сумма' not in df.columns:
-        st.error("❌ В данных отсутствуют обязательные столбцы 'ОЗМ' и 'Сумма' для проведения анализа.")
+        st.error("❌ В данных отсутствуют обязательные столбцы 'ОЗМ' и 'Сумма'.")
         return
+        
+    # Выводим информацию о том, какой срез сейчас анализируется
+    if st.session_state.active_filter_col and st.session_state.active_filter_val:
+        st.success(f"🎯 Анализ запущен по активному срезу: `{st.session_state.active_filter_col}` = `{st.session_state.active_filter_val}`")
+        
     st.markdown("### 📊 Настройка параметров классификации")
     col1, col2 = st.columns(2)
     with col1: a_limit = st.slider("Граница группы A (по умолчанию 80% выручки):", 50, 90, 80, key="abc_sl_1")
@@ -22,7 +27,7 @@ def internal_show_abc_xyz_page():
     df_abc = df_abc.sort_values(by='Сумма', ascending=False).reset_index(drop=True)
     total_sum = df_abc['Сумма'].sum()
     if total_sum == 0:
-        st.warning("⚠️ Общая сумма всех позиций равна нулю. Анализ невозможен.")
+        st.warning("⚠️ Общая сумма выбранных позиций равна нулю. Анализ невозможен.")
         return
     df_abc['Доля'] = df_abc['Сумма'] / total_sum
     df_abc['Кумулятивная доля'] = df_abc['Доля'].cumsum() * 100
@@ -34,16 +39,20 @@ def internal_show_abc_xyz_page():
     import plotly.express as px
     fig = px.pie(abc_summary, values='Общая_Сумма', names='Класс ABC', title='Доля стоимости по классам ABC')
     st.plotly_chart(fig, use_container_width=True)
-# ИЗОЛИРОВАННЫЙ МОДУЛЬ 2: RFM Сегментация
-def internal_show_rfm_page():
+# МОДУЛЬ 2 С УМНЫМ СРЕЗОМ: RFM Сегментация мгновенно реагирует на выбранные каскадные фильтры
+def internal_show_rfm_page(filtered_df):
     st.title("👥 Модуль RFM-сегментации номенклатуры")
-    if "main_df" not in st.session_state or st.session_state.main_df.empty:
-        st.info("ℹ️ Пожалуйста, сначала загрузите файлы на первой странице.")
+    if filtered_df.empty:
+        st.info("ℹ️ Пожалуйста, загрузите файлы и проверьте фильтры. Текущая выборка пуста.")
         return
-    df = st.session_state.main_df.copy()
+    df = filtered_df.copy()
     if not all(col in df.columns for col in ['ОЗМ', 'Сумма', 'Источник (Файл)']):
-        st.error("❌ Для RFM-анализаруют столбцы 'ОЗМ', 'Сумма' и 'Источник (Файл)'.")
+        st.error("❌ Для RFM-анализа требуются столбцы 'ОЗМ', 'Сумма' и 'Источник (Файл)'.")
         return
+        
+    if st.session_state.active_filter_col and st.session_state.active_filter_val:
+        st.success(f"🎯 Сегментация запущена по активному срезу: `{st.session_state.active_filter_col}` = `{st.session_state.active_filter_val}`")
+        
     st.markdown("### 📊 Распределение ОЗМ по RFM-сегментам")
     rfm_df = df.groupby('ОЗМ').agg(Frequency=('Источник (Файл)', 'count'), Monetary=('Сумма', 'sum')).reset_index()
     if len(rfm_df) >= 3:
@@ -91,8 +100,8 @@ def power_query_clean_engine(uploaded_files_list, skip_top, merge_headers, remov
             if df_raw.empty: continue
             
             if merge_headers and len(df_raw) > 1:
-                row0 = list(df_raw.iloc[0].fillna("").astype(str).str.strip())
-                row1 = list(df_raw.iloc[1].fillna("").astype(str).str.strip())
+                row0 = list(df_raw.iloc.fillna("").astype(str).str.strip())
+                row1 = list(df_raw.iloc.fillna("").astype(str).str.strip())
                 current_parent = ""
                 for idx in range(len(row0)):
                     val0 = row0[idx]
@@ -106,7 +115,7 @@ def power_query_clean_engine(uploaded_files_list, skip_top, merge_headers, remov
                     new_cols.append(combined if combined else f"Колонка_{idx+1}")
                 df_raw.columns = new_cols; df_raw = df_raw.iloc[2:].reset_index(drop=True)
             else:
-                df_raw.columns = df_raw.iloc[0].fillna("").astype(str).str.strip()
+                df_raw.columns = df_raw.iloc.fillna("").astype(str).str.strip()
                 df_raw = df_raw.iloc[1:].reset_index(drop=True)
                 
             cleaned_cols = []
@@ -180,7 +189,7 @@ if uploaded_files:
         if page == "🗂️ 1. Загрузка и очистка данных":
             st.title("🚀 Модуль Предобработки & Импорта Данных")
             tot_rows, tot_cols = len(main_df), len(main_df.columns)
-            st.success(f"📊 Идеальная сводная база сформирована! Строк: {tot_rows:,}, Колонок: {tot_cols}")
+            st.success(f"📊 Идеальная сводная база сформирована! Строк: {tot_rows:,},  Колонок: {tot_cols}")
             rows_per_page = 50
             total_pages = (tot_rows // rows_per_page) + (1 if tot_rows % rows_per_page > 0 else 0)
             col_p1, col_p2 = st.columns(2)
@@ -207,14 +216,20 @@ if uploaded_files:
             if filter_col_1 != "-- Выберите заголовок --":
                 unique_vals_1 = ["-- Все значения --"] + list(active_df[filter_col_1].astype(str).unique())
                 filter_val_1 = st.sidebar.selectbox("Шаг 2. Выберите значение среза №1:", unique_vals_1, key="fl_val_1_bi")
-                if filter_val_1 != "-- Все значения --": active_df = active_df[active_df[filter_col_1].astype(str) == str(filter_val_1)]
+                if filter_val_1 != "-- Все значения --": 
+                    active_df = active_df[active_df[filter_col_1].astype(str) == str(filter_val_1)]
+                    st.session_state.active_filter_col = filter_col_1
+                    st.session_state.active_filter_val = filter_val_1
             
             st.sidebar.markdown("---")
             filter_col_2 = st.sidebar.selectbox("Шаг 3. Добавить второй разрез:", all_cols, key="fl_col_2_bi")
             if filter_col_2 != "-- Выберите заголовок --":
                 unique_vals_2 = ["-- Все значения --"] + list(active_df[filter_col_2].astype(str).unique())
                 filter_val_2 = st.sidebar.selectbox("Шаг 4. Выберите значение среза №2:", unique_vals_2, key="fl_val_2_bi")
-                if filter_val_2 != "-- Все значения --": active_df = active_df[active_df[filter_col_2].astype(str) == str(filter_val_2)]
+                if filter_val_2 != "-- Все значения --": 
+                    active_df = active_df[active_df[filter_col_2].astype(str) == str(filter_val_2)]
+                    st.session_state.active_filter_col = filter_col_2
+                    st.session_state.active_filter_val = filter_val_2
             
             df_cards = active_df.copy()
             st.subheader("🎴 Панель Ключевых Показателей (KPI Карточки)")
@@ -276,6 +291,7 @@ if uploaded_files:
                 if st.session_state.manual_charts > 1:
                     if st.button("🗑️ Удалить диаграмму"): st.session_state.manual_charts -= 1; st.rerun()
 
-        elif "3. ABC/XYZ" in page: internal_show_abc_xyz_page()
-        elif "4. RFM" in page: internal_show_rfm_page()
+        # ТРЕБОВАНИЕ ВЫПОЛНЕНО: Передаем в аналитические модули динамический массив со сквозным срезом active_df
+        elif "3. ABC/XYZ" in page: internal_show_abc_xyz_page(active_df)
+        elif "4. RFM" in page: internal_show_rfm_page(active_df)
 else: st.info("Ожидание загрузки любых файлов Excel/CSV для активации BI-панели...")
