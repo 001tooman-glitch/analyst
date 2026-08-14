@@ -3,7 +3,7 @@ import pandas as pd
 import io
 import re
 
-# МОДУЛЬ 1: ABC/XYZ Аналитика
+# МОДУЛЬ 1: ABC/XYZ Аналитика (Сквозная фильтрация)
 def internal_show_abc_xyz_page(filtered_df):
     st.title("🧮 Модуль автоматического ABC/XYZ-анализа")
     if filtered_df.empty:
@@ -15,7 +15,7 @@ def internal_show_abc_xyz_page(filtered_df):
         return
         
     if st.session_state.get("active_filter_col") and st.session_state.get("active_filter_val"):
-        st.success(f"🎯 Анализ запущен по активному глобальному срезу: `{st.session_state.active_filter_col}` = `{st.session_state.active_filter_val}`")
+        st.success(f"🎯 Анализ запущен по активному срезу: `{st.session_state.active_filter_col}` = `{st.session_state.active_filter_val}`")
         
     st.markdown("### 📊 Настройка параметров классификации")
     col1, col2 = st.columns(2)
@@ -38,7 +38,7 @@ def internal_show_abc_xyz_page(filtered_df):
     import plotly.express as px
     fig = px.pie(abc_summary, values='Общая_Сумма', names='Класс ABC', title='Доля стоимости по классам ABC')
     st.plotly_chart(fig, use_container_width=True)
-# МОДУЛЬ 2: RFM Сегментация
+# МОДУЛЬ 2: RFM Сегментация (Сквозная фильтрация)
 def internal_show_rfm_page(filtered_df):
     st.title("👥 Модуль RFM-сегментации номенклатуры")
     if filtered_df.empty:
@@ -50,7 +50,7 @@ def internal_show_rfm_page(filtered_df):
         return
         
     if st.session_state.get("active_filter_col") and st.session_state.get("active_filter_val"):
-        st.success(f"🎯 Сегментация запущена по активному глобальному срезу: `{st.session_state.active_filter_col}` = `{st.session_state.active_filter_val}`")
+        st.success(f"🎯 Сегментация запущена по активному срезу: `{st.session_state.active_filter_col}` = `{st.session_state.active_filter_val}`")
         
     st.markdown("### 📊 Распределение ОЗМ по RFM-сегментам")
     rfm_df = df.groupby('ОЗМ').agg(Frequency=('Источник (Файл)', 'count'), Monetary=('Сумма', 'sum')).reset_index()
@@ -76,73 +76,60 @@ if "uploaded_backup" not in st.session_state: st.session_state.uploaded_backup =
 if "pq_skip_top" not in st.session_state: st.session_state.pq_skip_top = 0
 if "pq_merge_headers" not in st.session_state: st.session_state.pq_merge_headers = False
 if "pq_remove_footer" not in st.session_state: st.session_state.pq_remove_footer = True
+# ЧИСТЫЙ И СТАБИЛЬНЫЙ ДВИЖОК ОЧИСТКИ ЗАКУПОЧНЫХ БАЗ
 def power_query_clean_engine(uploaded_files_list, skip_top, merge_headers, remove_footer):
     frames_dict = {}
     if not uploaded_files_list: return pd.DataFrame(), False
     for f in uploaded_files_list:
         try:
-            df_raw = pd.read_csv(f, header=None, dtype=str) if f.name.endswith('.csv') else pd.read_excel(f, header=None, dtype=str)
+            if f.name.endswith('.csv'):
+                df_raw = pd.read_csv(f, dtype=str)
+            else:
+                df_raw = pd.read_excel(f, dtype=str)
+                
             if df_raw.empty: continue
             
             if skip_top > 0 and skip_top < len(df_raw):
                 df_raw = df_raw.iloc[skip_top:].reset_index(drop=True)
             if df_raw.empty: continue
             
-            if merge_headers and len(df_raw) > 1:
-                row0 = [str(x).strip() for x in df_raw.iloc.fillna("").tolist()]
-                row1 = [str(x).strip() for x in df_raw.iloc.fillna("").tolist()]
-                current_parent = ""
-                for idx in range(len(row0)):
-                    val0 = row0[idx]
-                    if val0 and val0 != 'nan' and val0 != 'None' and not val0.startswith('Unnamed:'): current_parent = val0
-                    else: row0[idx] = current_parent
-                new_cols = []
-                for idx, (c0, c1) in enumerate(zip(row0, row1)):
-                    clean_c0 = "" if c0 in ['nan', 'None'] or c0.startswith('Unnamed:') else c0
-                    clean_c1 = "" if c1 in ['nan', 'None'] or c1.startswith('Unnamed:') else c1
-                    combined = f"{clean_c0}_{clean_c1}".strip("_ ")
-                    new_cols.append(combined if combined else f"Колонка_{idx+1}")
-                df_raw.columns = new_cols; df_raw = df_raw.iloc[2:].reset_index(drop=True)
-            else:
-                df_raw.columns = [str(x).strip() for x in df_raw.iloc.fillna("").tolist()]
-                df_raw = df_raw.iloc[1:].reset_index(drop=True)
-                
-            cleaned_cols = []
-            for idx, col in enumerate(df_raw.columns):
-                c_str = str(col).replace('nan №', '').replace('№ nan', '').replace('nan', '').replace('Unnamed:', '').strip()
-                c_str = re.sub(r'\s+', ' ', c_str).strip()
-                cleaned_cols.append(c_str if c_str else f"Столбец_{idx+1}")
-            df_raw.columns = cleaned_cols
+            df_raw.columns = [str(c).strip() for c in df_raw.columns]
             
             mapped_cols = []
             for col in df_raw.columns:
                 c_low = col.lower()
                 if any(w in c_low for w in ['озм', 'код материала', 'номенклатур']): mapped_cols.append('ОЗМ')
                 elif any(w in c_low for w in ['наименование', 'материал']): mapped_cols.append('Наименование материала')
-                elif any(w in c_low for w in ['количество', 'кол-во', 'объем', 'открытой потребн']): mapped_cols.append('Quantity')
-                elif any(w in c_low for w in ['сумма', 'стоимость', 'цена', 'капитал']): mapped_cols.append('Amount')
+                elif any(w in c_low for w in ['количество', 'кол-во', 'объем', 'открытой потребн']): mapped_cols.append('Количество')
+                elif any(w in c_low for w in ['сумма', 'стоимость', 'цена', 'капитал']): mapped_cols.append('Сумма')
                 else: mapped_cols.append(col)
-            df_raw.columns = mapped_cols; df_raw = df_raw.loc[:, ~df_raw.columns.str.contains('^Без названия|^Unnamed')]; df_raw = df_raw.loc[:, ~df_raw.columns.duplicated()]
+            df_raw.columns = mapped_cols
+            
+            df_raw = df_raw.loc[:, ~df_raw.columns.str.contains('^Без названия|^Unnamed|^Unnamed:')]
+            df_raw = df_raw.loc[:, ~df_raw.columns.duplicated()]
             
             if remove_footer:
-                for text_col in df_raw.columns:
-                    mask_footer = df_raw[text_col].astype(str).str.lower().str.contains('итого|всего|сумма|подпись|сдал|принял', na=False)
+                for text_col in df_raw.select_dtypes(include=['object']).columns:
+                    mask_footer = df_raw[text_col].astype(str).str.lower().str.contains('итого|всего|сумма|подпись', na=False)
                     df_raw = df_raw[~mask_footer]
+            
             df_raw = df_raw.dropna(how='all')
             df_raw['Источник (Файл)'] = f.name.replace(".xlsx", "").replace(".xls", "").replace(".csv", "")
             frames_dict[f.name] = df_raw
         except: pass
+        
     if not frames_dict: return pd.DataFrame(), False
     merged_df = pd.concat(frames_dict.values(), ignore_index=True, join='outer')
+    
     for col in merged_df.columns:
         if col == 'Источник (Файл)': continue
-        if col in ['Quantity', 'Amount']:
+        if col in ['Количество', 'Сумма']:
             merged_df[col] = merged_df[col].astype(str).str.replace(r'\s+', '', regex=True).str.replace(',', '.')
             merged_df[col] = pd.to_numeric(merged_df[col], errors='coerce').fillna(0.0)
-        else: merged_df[col] = merged_df[col].fillna("").astype(str).str.strip().replace(['nan', 'None', 'Не указано'], "")
+        else:
+            merged_df[col] = merged_df[col].fillna("").astype(str).str.strip().replace(['nan', 'None', 'Не указано'], "")
+            
     merged_df = merged_df.dropna(how='all')
-    if 'Quantity' in merged_df.columns: merged_df.rename(columns={'Quantity': 'Количество'}, inplace=True)
-    if 'Amount' in merged_df.columns: merged_df.rename(columns={'Amount': 'Сумма'}, inplace=True)
     front_cols = [c for c in ['ОЗМ', 'Наименование материала', 'Количество', 'Сумма', 'Источник (Файл)'] if c in merged_df.columns]
     other_cols = [c for c in merged_df.columns if c not in front_cols]
     return merged_df[front_cols + other_cols], True
@@ -151,10 +138,9 @@ uploaded_files = st.file_uploader("Загрузите один или неско
 if uploaded_files:
     if st.session_state.uploaded_backup != uploaded_files: st.session_state.uploaded_backup = uploaded_files; st.session_state.main_df = pd.DataFrame() 
 elif st.session_state.uploaded_backup: uploaded_files = st.session_state.uploaded_backup
-# ИСПРАВЛЕНИЕ: Интерфейс и Панель Глобальной Фильтрации отрисовываются ТОЛЬКО после успешной отработки Power Query
 if uploaded_files:
     if st.session_state.main_df.empty:
-        with st.spinner("⏳ Идёт глубокая Power Query очистка данных..."):
+        with st.spinner("⏳ Идёт глубокая Power Query очистка данных... Пожалуйста, подождите."):
             calculated_df, is_merged = power_query_clean_engine(uploaded_files, st.session_state.pq_skip_top, st.session_state.pq_merge_headers, st.session_state.pq_remove_footer)
             if not calculated_df.empty: st.session_state.main_df = calculated_df
 
@@ -162,6 +148,7 @@ if uploaded_files:
     if not main_df.empty:
         all_cols = ["-- Выберите заголовок --"] + list(main_df.columns)
 
+        # СБОРКА БЕЗ СБОЕВ: Панель фильтров отрисовывается строго по готовому all_cols
         st.sidebar.markdown("---")
         st.sidebar.subheader("🎚️ Глобальные Фильтры BI-платформы")
         filter_col_1 = st.sidebar.selectbox("Шаг 1. Первое поле среза:", all_cols, key="fl_col_1_global")
@@ -182,13 +169,10 @@ if uploaded_files:
             filter_val_2 = st.sidebar.selectbox("Шаг 4. Значение среза №2:", unique_vals_2, key="fl_val_2_global")
             if filter_val_2 != "-- Все значения --":
                 active_df_global = active_df_global[active_df_global[filter_col_2].astype(str) == str(filter_val_2)]
-                st.session_state.active_filter_col = filter_col_2
-                st.session_state.active_filter_val = filter_val_2
 
         st.sidebar.markdown("---")
         st.sidebar.markdown("### 🗺️ Меню разделов:")
         page = st.sidebar.radio("Перейти к разделу:", ["🗂️ 1. Загрузка и очистка данных", "📊 2. Executive Диаграммы", "🧮 3. ABC/XYZ-аналитика ОЗМ", "👥 4. RFM-сегментация"], label_visibility="collapsed")
-
         if page == "🗂️ 1. Загрузка и очистка данных":
             st.markdown("### 🛠️ Панель шагов трансформации (Аналог Power Query)")
             col_pq1, col_pq2, col_pq3 = st.columns(3)
@@ -196,10 +180,10 @@ if uploaded_files:
                 new_skip = st.number_input("1. Пропустить верхние строки (строк):", min_value=0, max_value=20, value=st.session_state.pq_skip_top, step=1)
                 if new_skip != st.session_state.pq_skip_top: st.session_state.pq_skip_top = new_skip; st.session_state.main_df = pd.DataFrame()
             with col_pq2:
-                new_merge = st.checkbox("2. Схлопнуть составной заголовок (из 2-х строк)", value=st.session_state.pq_merge_headers)
+                new_merge = st.checkbox("2. Схлопнуть заголовок из 2-х строк", value=st.session_state.pq_merge_headers)
                 if new_merge != st.session_state.pq_merge_headers: st.session_state.pq_merge_headers = new_merge; st.session_state.main_df = pd.DataFrame()
             with col_pq3:
-                new_foot = st.checkbox("3. Авто-очистка подвала (удалить Итоги и подписи)", value=st.session_state.pq_remove_footer)
+                new_foot = st.checkbox("3. Авто-очистка подвала", value=st.session_state.pq_remove_footer)
                 if new_foot != st.session_state.pq_remove_footer: st.session_state.pq_remove_footer = new_foot; st.session_state.main_df = pd.DataFrame()
             st.markdown("---")
             
@@ -222,6 +206,7 @@ if uploaded_files:
                 with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer: main_df.to_excel(writer, index=False, sheet_name='Сводные данные')
                 st.download_button(label="📥 Скачать идеальную сводную базу (Excel .xlsx)", data=excel_buffer.getvalue(), file_name="Идеальная_сводная_база.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
             except Exception as de: st.error(f"Ошибка Excel: {de}")
+
         elif page == "📊 2. Executive Диаграммы":
             import plotly.graph_objects as go
             st.title("📊 Интерактивная BI-Панель Показателей")
@@ -232,7 +217,6 @@ if uploaded_files:
             for j in range(st.session_state.manual_cards):
                 with card_cols[j % len(card_cols)]:
                     st.markdown(f"**📌 Карточка № {j+1}**")
-                    
                     t_idx = 0
                     if f"cached_c_t_{j}" in st.session_state and st.session_state[f"cached_c_t_{j}"] in all_cols:
                         t_idx = all_cols.index(st.session_state[f"cached_c_t_{j}"])
@@ -253,34 +237,28 @@ if uploaded_files:
             with cc2:
                 if st.session_state.manual_cards > 1:
                     if st.button("🗑️ Удалить карточку"): st.session_state.manual_cards -= 1; st.rerun()
-
             st.markdown("---")
             st.subheader("🛠️ No-Code Конструктор Графиков")
             for i in range(st.session_state.manual_charts):
                 st.markdown(f"##### 📊 Настройка диаграммы № {i+1}")
                 c1, c2, c3, c4 = st.columns(4)
                 with c1: style = st.selectbox(f"Тип графики:", ["Столбчатая диаграмма (Bar)", "Линейный тренд (Line)", "Кольцевая долей (Donut)", "Диаграмма Водопад (Waterfall)"], key=f"s_{i}")
-                
                 with c2:
                     x_idx = 0
-                    if f"cached_x_{i}" in st.session_state and st.session_state[f"cached_x_{i}"] in all_cols:
-                        x_idx = all_cols.index(st.session_state[f"cached_x_{i}"])
+                    if f"cached_x_{i}" in st.session_state and st.session_state[f"cached_x_{i}"] in all_cols: x_idx = all_cols.index(st.session_state[f"cached_x_{i}"])
                     x_ax = st.selectbox(f"Ось X (Категории):", all_cols, index=x_idx, key=f"x_{i}")
                     st.session_state[f"cached_x_{i}"] = x_ax
-                    
                 with c3:
                     y_idx = 0
-                    if f"cached_y_{i}" in st.session_state and st.session_state[f"cached_y_{i}"] in all_cols:
-                        y_idx = all_cols.index(st.session_state[f"cached_y_{i}"])
+                    if f"cached_y_{i}" in st.session_state and st.session_state[f"cached_y_{i}"] in all_cols: y_idx = all_cols.index(st.session_state[f"cached_y_{i}"])
                     y_ax = st.selectbox(f"Ось Y (Показатели):", all_cols, index=y_idx, key=f"y_{i}")
                     st.session_state[f"cached_y_{i}"] = y_ax
-                    
                 with c4: color = st.color_picker(f"Цвет элементов:", "#1f77b4", key=f"col_{i}")
                 
                 with st.expander("🎨 Настройки отображения"):
                     lbl = st.checkbox("Показывать значения на графике", value=True, key=f"lbl_{i}")
                     horiz = st.checkbox("Горизонтальный вид столбцов", value=False, key=f"h_{i}") if "Bar" in style else False
-                    rot = st.slider("🔄 Поворот кольца (градусы):", 0, 360, 0, step=15, key=f"rot_{i}") if "Donut" in style else 0
+                    rot = st.slider("🔄 Поворот кольца:", 0, 360, 0, step=15, key=f"rot_{i}") if "Donut" in style else 0
 
                 if x_ax != "-- Выберите заголовок --" and y_ax != "-- Выберите заголовок --":
                     try:
