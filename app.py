@@ -3,7 +3,7 @@ import pandas as pd
 import io
 import re
 
-# МОДУЛЬ 1: ABC/XYZ Аналитика (Сквозная фильтрация из сессионного кэша)
+# МОДУЛЬ 1: ABC/XYZ Аналитика
 def internal_show_abc_xyz_page(filtered_df):
     st.title("🧮 Модуль автоматического ABC/XYZ-анализа")
     if filtered_df.empty:
@@ -15,7 +15,7 @@ def internal_show_abc_xyz_page(filtered_df):
         return
         
     if st.session_state.get("active_filter_col") and st.session_state.get("active_filter_val"):
-        st.success(f"🎯 Анализ запущен по активному срезу: `{st.session_state.active_filter_col}` = `{st.session_state.active_filter_val}`")
+        st.success(f"🎯 Анализ запущен по активному глобальному срезу: `{st.session_state.active_filter_col}` = `{st.session_state.active_filter_val}`")
         
     st.markdown("### 📊 Настройка параметров классификации")
     col1, col2 = st.columns(2)
@@ -38,7 +38,7 @@ def internal_show_abc_xyz_page(filtered_df):
     import plotly.express as px
     fig = px.pie(abc_summary, values='Общая_Сумма', names='Класс ABC', title='Доля стоимости по классам ABC')
     st.plotly_chart(fig, use_container_width=True)
-# МОДУЛЬ 2: RFM Сегментация (Сквозная фильтрация из сессионного кэша)
+# МОДУЛЬ 2: RFM Сегментация
 def internal_show_rfm_page(filtered_df):
     st.title("👥 Модуль RFM-сегментации номенклатуры")
     if filtered_df.empty:
@@ -50,7 +50,7 @@ def internal_show_rfm_page(filtered_df):
         return
         
     if st.session_state.get("active_filter_col") and st.session_state.get("active_filter_val"):
-        st.success(f"🎯 Сегментация запущена по активному срезу: `{st.session_state.active_filter_col}` = `{st.session_state.active_filter_val}`")
+        st.success(f"🎯 Сегментация запущена по активному глобальному срезу: `{st.session_state.active_filter_col}` = `{st.session_state.active_filter_val}`")
         
     st.markdown("### 📊 Распределение ОЗМ по RFM-сегментам")
     rfm_df = df.groupby('ОЗМ').agg(Frequency=('Источник (Файл)', 'count'), Monetary=('Сумма', 'sum')).reset_index()
@@ -65,19 +65,6 @@ def internal_show_rfm_page(filtered_df):
     fig = px.bar(seg_counts, x='RFM_Segment', y='Количество ОЗМ', text_auto=True, title="Плотность сегментов (Частота + Деньги)", color='RFM_Segment')
     st.plotly_chart(fig, use_container_width=True)
     st.dataframe(rfm_df.head(100), use_container_width=True)
-
-# НАДЁЖНЫЙ ТУМБЛЕР СТРАНИЦ В БОКОВОЙ ПАНЕЛИ
-st.sidebar.markdown("### 🗺️ Навигация по BI-платформе")
-page = st.sidebar.radio(
-    "Перейти к разделу:",
-    [
-        "🗂️ 1. Загрузка и очистка данных", 
-        "📊 2. Executive Диаграммы",
-        "🧮 3. ABC/XYZ-аналитика ОЗМ",
-        "👥 4. RFM-сегментация"
-    ]
-)
-st.sidebar.markdown("---")
 
 if "manual_charts" not in st.session_state: st.session_state.manual_charts = 1
 if "manual_cards" not in st.session_state: st.session_state.manual_cards = 1
@@ -165,20 +152,6 @@ if uploaded_files:
     if st.session_state.uploaded_backup != uploaded_files: st.session_state.uploaded_backup = uploaded_files; st.session_state.main_df = pd.DataFrame() 
 elif st.session_state.uploaded_backup: uploaded_files = st.session_state.uploaded_backup
 if uploaded_files:
-    if page == "🗂️ 1. Загрузка и очистка данных":
-        st.markdown("### 🛠️ Панель шагов трансформации (Аналог Power Query)")
-        col_pq1, col_pq2, col_pq3 = st.columns(3)
-        with col_pq1:
-            new_skip = st.number_input("1. Пропустить верхние строки (строк):", min_value=0, max_value=20, value=st.session_state.pq_skip_top, step=1)
-            if new_skip != st.session_state.pq_skip_top: st.session_state.pq_skip_top = new_skip; st.session_state.main_df = pd.DataFrame()
-        with col_pq2:
-            new_merge = st.checkbox("2. Схлопнуть составной заголовок (из 2-х строк)", value=st.session_state.pq_merge_headers)
-            if new_merge != st.session_state.pq_merge_headers: st.session_state.pq_merge_headers = new_merge; st.session_state.main_df = pd.DataFrame()
-        with col_pq3:
-            new_foot = st.checkbox("3. Авто-очистка подвала (удалить Итоги и подписи)", value=st.session_state.pq_remove_footer)
-            if new_foot != st.session_state.pq_remove_footer: st.session_state.pq_remove_footer = new_foot; st.session_state.main_df = pd.DataFrame()
-        st.markdown("---")
-
     if st.session_state.main_df.empty:
         with st.spinner("⏳ Идёт глубокая Power Query очистка данных..."):
             calculated_df, is_merged = power_query_clean_engine(uploaded_files, st.session_state.pq_skip_top, st.session_state.pq_merge_headers, st.session_state.pq_remove_footer)
@@ -188,12 +161,49 @@ if uploaded_files:
     if not main_df.empty:
         all_cols = ["-- Выберите заголовок --"] + list(main_df.columns)
 
-        # ТРЕБОВАНИЕ ВЫПОЛНЕНО: Глобальный каскадный срез создаётся в корне для защиты от NameError
+        # ТРЕБОВАНИЕ ВЫПОЛНЕНО: Выносим No-Code Панель Навигации и ГЛОБАЛЬНУЮ Фильтрацию в корень сайдбара
+        st.sidebar.markdown("---")
+        st.sidebar.subheader("🎚️ Глобальные Фильтры BI-платформы")
+        filter_col_1 = st.sidebar.selectbox("Шаг 1. Первое поле среза:", all_cols, key="fl_col_1_global")
         active_df_global = main_df.copy()
-        if st.session_state.get("active_filter_col") and st.session_state.get("active_filter_val") and st.session_state.active_filter_col in active_df_global.columns:
-            active_df_global = active_df_global[active_df_global[st.session_state.active_filter_col].astype(str) == str(st.session_state.active_filter_val)]
+        
+        if filter_col_1 != "-- Выберите заголовок --":
+            unique_vals_1 = ["-- Все значения --"] + list(active_df_global[filter_col_1].astype(str).unique())
+            filter_val_1 = st.sidebar.selectbox("Шаг 2. Значение среза №1:", unique_vals_1, key="fl_val_1_global")
+            if filter_val_1 != "-- Все значения --":
+                active_df_global = active_df_global[active_df_global[filter_col_1].astype(str) == str(filter_val_1)]
+                st.session_state.active_filter_col = filter_col_1
+                st.session_state.active_filter_val = filter_val_1
+        
+        st.sidebar.markdown("---")
+        filter_col_2 = st.sidebar.selectbox("Шаг 3. Второе поле среза:", all_cols, key="fl_col_2_global")
+        if filter_col_2 != "-- Выберите заголовок --":
+            unique_vals_2 = ["-- Все значения --"] + list(active_df_global[filter_col_2].astype(str).unique())
+            filter_val_2 = st.sidebar.selectbox("Шаг 4. Значение среза №2:", unique_vals_2, key="fl_val_2_global")
+            if filter_val_2 != "-- Все значения --":
+                active_df_global = active_df_global[active_df_global[filter_col_2].astype(str) == str(filter_val_2)]
+                st.session_state.active_filter_col = filter_col_2
+                st.session_state.active_filter_val = filter_val_2
+
+        # НАДЁЖНЫЙ ТУМБЛЕР СТРАНИЦ В БОКОВОЙ ПАНЕЛИ
+        st.sidebar.markdown("---")
+        st.sidebar.markdown("### 🗺️ Меню разделов:")
+        page = st.sidebar.radio("Перейти к разделу:", ["🗂️ 1. Загрузка и очистка данных", "📊 2. Executive Диаграммы", "🧮 3. ABC/XYZ-аналитика ОЗМ", "👥 4. RFM-сегментация"], label_visibility="collapsed")
 
         if page == "🗂️ 1. Загрузка и очистка данных":
+            st.markdown("### 🛠️ Панель шагов трансформации (Аналог Power Query)")
+            col_pq1, col_pq2, col_pq3 = st.columns(3)
+            with col_pq1:
+                new_skip = st.number_input("1. Пропустить верхние строки (строк):", min_value=0, max_value=20, value=st.session_state.pq_skip_top, step=1)
+                if new_skip != st.session_state.pq_skip_top: st.session_state.pq_skip_top = new_skip; st.session_state.main_df = pd.DataFrame()
+            with col_pq2:
+                new_merge = st.checkbox("2. Схлопнуть составной заголовок (из 2-х строк)", value=st.session_state.pq_merge_headers)
+                if new_merge != st.session_state.pq_merge_headers: st.session_state.pq_merge_headers = new_merge; st.session_state.main_df = pd.DataFrame()
+            with col_pq3:
+                new_foot = st.checkbox("3. Авто-очистка подвала (удалить Итоги и подписи)", value=st.session_state.pq_remove_footer)
+                if new_foot != st.session_state.pq_remove_footer: st.session_state.pq_remove_footer = new_foot; st.session_state.main_df = pd.DataFrame()
+            st.markdown("---")
+            
             st.title("🚀 Модуль Предобработки & Импорта Данных")
             tot_rows, tot_cols = len(main_df), len(main_df.columns)
             st.success(f"📊 Идеальная сводная база сформирована! Строк: {tot_rows:,}, Колонок: {tot_cols}")
@@ -206,8 +216,7 @@ if uploaded_files:
                 end_idx = start_idx + rows_per_page
                 st.markdown(f"Показаны строки с **{start_idx + 1}** по **{min(end_idx, tot_rows)}** из **{tot_rows:,}** строк.")
             try:
-                page_view_df = main_df.iloc[start_idx:end_idx].copy()
-                st.dataframe(page_view_df, height=350, use_container_width=True)
+                st.dataframe(main_df.iloc[start_idx:end_idx], height=350, use_container_width=True)
             except Exception as e: st.error(f"Ошибка: {e}")
             try:
                 excel_buffer = io.BytesIO()
@@ -217,28 +226,9 @@ if uploaded_files:
         elif page == "📊 2. Executive Диаграммы":
             import plotly.graph_objects as go
             st.title("📊 Интерактивная BI-Панель Показателей")
-            st.sidebar.subheader("🎚️ Панель Многоуровневой Фильтрации")
-            filter_col_1 = st.sidebar.selectbox("Шаг 1. Выберите первое поле:", all_cols, key="fl_col_1_bi")
-            active_df = main_df.copy()
-            if filter_col_1 != "-- Выберите заголовок --":
-                unique_vals_1 = ["-- Все значения --"] + list(active_df[filter_col_1].astype(str).unique())
-                filter_val_1 = st.sidebar.selectbox("Шаг 2. Выберите значение среза №1:", unique_vals_1, key="fl_val_1_bi")
-                if filter_val_1 != "-- Все значения --": 
-                    active_df = active_df[active_df[filter_col_1].astype(str) == str(filter_val_1)]
-                    st.session_state.active_filter_col = filter_col_1
-                    st.session_state.active_filter_val = filter_val_1
             
-            st.sidebar.markdown("---")
-            filter_col_2 = st.sidebar.selectbox("Шаг 3. Добавить второй разрез:", all_cols, key="fl_col_2_bi")
-            if filter_col_2 != "-- Выберите заголовок --":
-                unique_vals_2 = ["-- Все значения --"] + list(active_df[filter_col_2].astype(str).unique())
-                filter_val_2 = st.sidebar.selectbox("Шаг 4. Выберите значение среза №2:", unique_vals_2, key="fl_val_2_bi")
-                if filter_val_2 != "-- Все значения --": 
-                    active_df = active_df[active_df[filter_col_2].astype(str) == str(filter_val_2)]
-                    st.session_state.active_filter_col = filter_col_2
-                    st.session_state.active_filter_val = filter_val_2
-            
-            df_cards = active_df.copy()
+            # База данных для KPI и графиков использует глобально отфильтрованный на Шаге 1-4 массив
+            df_cards = active_df_global.copy()
             st.subheader("🎴 Панель Ключевых Показателей (KPI Карточки)")
             card_cols = st.columns(st.session_state.manual_cards)
             for j in range(st.session_state.manual_cards):
@@ -277,7 +267,7 @@ if uploaded_files:
 
                 if x_ax != "-- Выберите заголовок --" and y_ax != "-- Выберите заголовок --":
                     try:
-                        df_chart = active_df.copy()
+                        df_chart = active_df_global.copy()
                         df_chart[y_ax] = pd.to_numeric(df_chart[y_ax], errors='coerce').fillna(0)
                         df_g = df_chart.groupby(x_ax, as_index=False)[y_ax].sum()
                         if not horiz: df_g = df_g.sort_values(by=y_ax, ascending=False)
@@ -298,7 +288,6 @@ if uploaded_files:
                 if st.session_state.manual_charts > 1:
                     if st.button("🗑️ Удалить диаграмму"): st.session_state.manual_charts -= 1; st.rerun()
 
-        # ИСПРАВЛЕНО: Роутинг переведен на глобальный защищенный массив active_df_global
         elif "3. ABC/XYZ" in page: internal_show_abc_xyz_page(active_df_global)
         elif "4. RFM" in page: internal_show_rfm_page(active_df_global)
 else: st.info("Ожидание загрузки любых файлов Excel/CSV для активации BI-панели...")
