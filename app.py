@@ -89,8 +89,8 @@ def power_query_clean_engine(uploaded_files_list, skip_top, merge_headers, remov
             if df_raw.empty: continue
             
             if merge_headers and len(df_raw) > 1:
-                row0 = [str(x).strip() for x in df_raw.iloc[0].fillna("").tolist()]
-                row1 = [str(x).strip() for x in df_raw.iloc[1].fillna("").tolist()]
+                row0 = [str(x).strip() for x in df_raw.iloc.fillna("").tolist()]
+                row1 = [str(x).strip() for x in df_raw.iloc.fillna("").tolist()]
                 current_parent = ""
                 for idx in range(len(row0)):
                     val0 = row0[idx]
@@ -104,7 +104,7 @@ def power_query_clean_engine(uploaded_files_list, skip_top, merge_headers, remov
                     new_cols.append(combined if combined else f"Колонка_{idx+1}")
                 df_raw.columns = new_cols; df_raw = df_raw.iloc[2:].reset_index(drop=True)
             else:
-                df_raw.columns = [str(x).strip() for x in df_raw.iloc[0].fillna("").tolist()]
+                df_raw.columns = [str(x).strip() for x in df_raw.iloc.fillna("").tolist()]
                 df_raw = df_raw.iloc[1:].reset_index(drop=True)
                 
             cleaned_cols = []
@@ -161,7 +161,6 @@ if uploaded_files:
     if not main_df.empty:
         all_cols = ["-- Выберите заголовок --"] + list(main_df.columns)
 
-        # ТРЕБОВАНИЕ ВЫПОЛНЕНО: Выносим No-Code Панель Навигации и ГЛОБАЛЬНУЮ Фильтрацию в корень сайдбара
         st.sidebar.markdown("---")
         st.sidebar.subheader("🎚️ Глобальные Фильтры BI-платформы")
         filter_col_1 = st.sidebar.selectbox("Шаг 1. Первое поле среза:", all_cols, key="fl_col_1_global")
@@ -185,7 +184,6 @@ if uploaded_files:
                 st.session_state.active_filter_col = filter_col_2
                 st.session_state.active_filter_val = filter_val_2
 
-        # НАДЁЖНЫЙ ТУМБЛЕР СТРАНИЦ В БОКОВОЙ ПАНЕЛИ
         st.sidebar.markdown("---")
         st.sidebar.markdown("### 🗺️ Меню разделов:")
         page = st.sidebar.radio("Перейти к разделу:", ["🗂️ 1. Загрузка и очистка данных", "📊 2. Executive Диаграммы", "🧮 3. ABC/XYZ-аналитика ОЗМ", "👥 4. RFM-сегментация"], label_visibility="collapsed")
@@ -227,14 +225,20 @@ if uploaded_files:
             import plotly.graph_objects as go
             st.title("📊 Интерактивная BI-Панель Показателей")
             
-            # База данных для KPI и графиков использует глобально отфильтрованный на Шаге 1-4 массив
             df_cards = active_df_global.copy()
             st.subheader("🎴 Панель Ключевых Показателей (KPI Карточки)")
             card_cols = st.columns(st.session_state.manual_cards)
             for j in range(st.session_state.manual_cards):
                 with card_cols[j % len(card_cols)]:
                     st.markdown(f"**📌 Карточка № {j+1}**")
-                    t_col = st.selectbox(f"Заголовок:", all_cols, key=f"c_t_{j}")
+                    
+                    # ЖЕЛЕЗОБЕТОННАЯ ПРИВЯЗКА К СЕССИОННОМУ КЭШУ: Заменяем дефолты на сохраненное состояние осей
+                    t_idx = 0
+                    if f"cached_c_t_{j}" in st.session_state and st.session_state[f"cached_c_t_{j}"] in all_cols:
+                        t_idx = all_cols.index(st.session_state[f"cached_c_t_{j}"])
+                    t_col = st.selectbox(f"Заголовок:", all_cols, index=t_idx, key=f"c_t_{j}")
+                    st.session_state[f"cached_c_t_{j}"] = t_col
+                    
                     c_mode = st.selectbox(f"Расчет:", ["Сумма (SUM)", "Среднее (AVERAGE)"], key=f"c_m_{j}")
                     if t_col != "-- Выберите заголовок --":
                         try:
@@ -256,8 +260,21 @@ if uploaded_files:
                 st.markdown(f"##### 📊 Настройка диаграммы № {i+1}")
                 c1, c2, c3, c4 = st.columns(4)
                 with c1: style = st.selectbox(f"Тип графики:", ["Столбчатая диаграмма (Bar)", "Линейный тренд (Line)", "Кольцевая долей (Donut)", "Диаграмма Водопад (Waterfall)"], key=f"s_{i}")
-                with c2: x_ax = st.selectbox(f"Ось X (Категории):", all_cols, key=f"x_{i}")
-                with c3: y_ax = st.selectbox(f"Ось Y (Показатели):", all_cols, key=f"y_{i}")
+                
+                with c2:
+                    x_idx = 0
+                    if f"cached_x_{i}" in st.session_state and st.session_state[f"cached_x_{i}"] in all_cols:
+                        x_idx = all_cols.index(st.session_state[f"cached_x_{i}"])
+                    x_ax = st.selectbox(f"Ось X (Категории):", all_cols, index=x_idx, key=f"x_{i}")
+                    st.session_state[f"cached_x_{i}"] = x_ax
+                    
+                with c3:
+                    y_idx = 0
+                    if f"cached_y_{i}" in st.session_state and st.session_state[f"cached_y_{i}"] in all_cols:
+                        y_idx = all_cols.index(st.session_state[f"cached_y_{i}"])
+                    y_ax = st.selectbox(f"Ось Y (Показатели):", all_cols, index=y_idx, key=f"y_{i}")
+                    st.session_state[f"cached_y_{i}"] = y_ax
+                    
                 with c4: color = st.color_picker(f"Цвет элементов:", "#1f77b4", key=f"col_{i}")
                 
                 with st.expander("🎨 Настройки отображения"):
@@ -276,7 +293,7 @@ if uploaded_files:
                         if "Waterfall" in style: fig.add_trace(go.Waterfall(x=list(df_g[x_ax].astype(str)) + ["ИТОГО"], y=list(df_g[y_ax]) + [df_g[y_ax].sum()], text=[f"{v:,.0f}" for v in df_g[y_ax]] + [f"{df_g[y_ax].sum():,.0f}"] if lbl else None, textposition="auto", measure=["relative"] * len(df_g[y_ax]) + ["total"], increasing={"marker": {"color": color}}))
                         elif "Donut" in style: fig.add_trace(go.Pie(labels=df_g[x_ax], values=df_g[y_ax], hole=0.4, rotation=rot, textinfo="label+value" if lbl else "none"))
                         elif "Line" in style: fig.add_trace(go.Scatter(x=df_g[x_ax], y=df_g[y_ax], mode="lines+markers+text" if lbl else "lines+markers", text=df_g[y_ax].map(lambda x: f"{x:,.0f}") if lbl else None, textposition="top center", line=dict(color=color, width=3)))
-                        else: fig.add_trace(go.Bar(y=df_g[x_ax].astype(str) if horiz else df_g[y_ax], x=df_g[y_ax] if horiz else df_g[x_ax].astype(str), text=df_g[y_ax].map(lambda x: f"{x:,.0f}") if lbl else None, textposition="auto", orientation="h" if horiz else "v", marker_color=color))
+                        else: fig.add_trace(go.Bar(y=df_g[x_ax].astype(str) if horiz else df_g[y_ax], x=df_g[y_g] if horiz else df_g[x_ax].astype(str), text=df_g[y_ax].map(lambda x: f"{x:,.0f}") if lbl else None, textposition="auto", orientation="h" if horiz else "v", marker_color=color))
                         fig.update_layout(xaxis=dict(tickangle=45 if not horiz else 0), uniformtext=dict(mode="hide", minsize=8))
                         st.plotly_chart(fig, use_container_width=True, key=f"p_{i}")
                     except: pass
