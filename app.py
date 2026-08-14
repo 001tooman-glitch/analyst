@@ -169,7 +169,7 @@ if uploaded_files:
         if filter_col_1 != "-- Выберите заголовок --":
             unique_vals_1 = ["-- Все значения --"] + list(active_df_global[filter_col_1].astype(str).unique())
             filter_val_1 = st.sidebar.selectbox("Шаг 2. Значение среза №1:", unique_vals_1, key="fl_val_1_global")
-            if filter_val_1 != "-- Все значения --":
+            if filter_val_1 != "-- Все values --" and filter_val_1 != "-- Все значения --":
                 active_df_global = active_df_global[active_df_global[filter_col_1].astype(str) == str(filter_val_1)]
                 st.session_state.active_filter_col = filter_col_1
                 st.session_state.active_filter_val = filter_val_1
@@ -232,7 +232,6 @@ if uploaded_files:
                 with card_cols[j % len(card_cols)]:
                     st.markdown(f"**📌 Карточка № {j+1}**")
                     
-                    # ЖЕЛЕЗОБЕТОННАЯ ПРИВЯЗКА К СЕССИОННОМУ КЭШУ: Заменяем дефолты на сохраненное состояние осей
                     t_idx = 0
                     if f"cached_c_t_{j}" in st.session_state and st.session_state[f"cached_c_t_{j}"] in all_cols:
                         t_idx = all_cols.index(st.session_state[f"cached_c_t_{j}"])
@@ -292,8 +291,9 @@ if uploaded_files:
                         fig = go.Figure()
                         if "Waterfall" in style: fig.add_trace(go.Waterfall(x=list(df_g[x_ax].astype(str)) + ["ИТОГО"], y=list(df_g[y_ax]) + [df_g[y_ax].sum()], text=[f"{v:,.0f}" for v in df_g[y_ax]] + [f"{df_g[y_ax].sum():,.0f}"] if lbl else None, textposition="auto", measure=["relative"] * len(df_g[y_ax]) + ["total"], increasing={"marker": {"color": color}}))
                         elif "Donut" in style: fig.add_trace(go.Pie(labels=df_g[x_ax], values=df_g[y_ax], hole=0.4, rotation=rot, textinfo="label+value" if lbl else "none"))
+                        # ИСПРАВЛЕНИЕ: Переменная y_g заменена на верную y_ax, NameError ликвидирована!
                         elif "Line" in style: fig.add_trace(go.Scatter(x=df_g[x_ax], y=df_g[y_ax], mode="lines+markers+text" if lbl else "lines+markers", text=df_g[y_ax].map(lambda x: f"{x:,.0f}") if lbl else None, textposition="top center", line=dict(color=color, width=3)))
-                        else: fig.add_trace(go.Bar(y=df_g[x_ax].astype(str) if horiz else df_g[y_ax], x=df_g[y_g] if horiz else df_g[x_ax].astype(str), text=df_g[y_ax].map(lambda x: f"{x:,.0f}") if lbl else None, textposition="auto", orientation="h" if horiz else "v", marker_color=color))
+                        else: fig.add_trace(go.Bar(y=df_g[x_ax].astype(str) if horiz else df_g[y_ax], x=df_g[y_ax] if horiz else df_g[x_ax].astype(str), text=df_g[y_ax].map(lambda x: f"{x:,.0f}") if lbl else None, textposition="auto", orientation="h" if horiz else "v", marker_color=color))
                         fig.update_layout(xaxis=dict(tickangle=45 if not horiz else 0), uniformtext=dict(mode="hide", minsize=8))
                         st.plotly_chart(fig, use_container_width=True, key=f"p_{i}")
                     except: pass
