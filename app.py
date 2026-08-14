@@ -3,10 +3,10 @@ import pandas as pd
 import io
 import re
 
-# ИЗОЛИРОВАННЫЙ МОДУЛЬ 1: ABC/XYZ Аналитика (Перенесена внутрь для стабильности)
+# ИЗОЛИРОВАННЫЙ МОДУЛЬ 1: ABC/XYZ Аналитика
 def internal_show_abc_xyz_page():
     st.title("🧮 Модуль автоматического ABC/XYZ-анализа")
-    if st.session_state.main_df.empty:
+    if "main_df" not in st.session_state or st.session_state.main_df.empty:
         st.info("ℹ️ Пожалуйста, сначала загрузите файлы на первой странице.")
         return
     df = st.session_state.main_df.copy()
@@ -15,8 +15,8 @@ def internal_show_abc_xyz_page():
         return
     st.markdown("### 📊 Настройка параметров классификации")
     col1, col2 = st.columns(2)
-    with col1: a_limit = st.slider("Граница группы A (по умолчанию 80% выручки):", 50, 90, 80)
-    with col2: b_limit = st.slider("Граница группы B (по умолчанию следующие 15%):", 5, 25, 15)
+    with col1: a_limit = st.slider("Граница группы A (по умолчанию 80% выручки):", 50, 90, 80, key="abc_sl_1")
+    with col2: b_limit = st.slider("Граница группы B (по умолчанию следующие 15%):", 5, 25, 15, key="abc_sl_2")
 
     df_abc = df.groupby('ОЗМ', as_index=False)['Сумма'].sum()
     df_abc = df_abc.sort_values(by='Сумма', ascending=False).reset_index(drop=True)
@@ -32,13 +32,13 @@ def internal_show_abc_xyz_page():
     abc_summary = df_abc.groupby('Класс ABC').agg(Количество_ОЗМ=('ОЗМ', 'count'), Общая_Сумма=('Сумма', 'sum')).reset_index()
     st.dataframe(abc_summary, use_container_width=True)
     import plotly.express as px
-    fig = px.pie(abc_summary, values='Общая_Сумма', names='Класс ABC', title='Доля стоимости по классам ABC', color_discrete_sequence=px.colors.qualitative.Pastel)
+    fig = px.pie(abc_summary, values='Общая_Сумма', names='Класс ABC', title='Доля стоимости по классам ABC')
     st.plotly_chart(fig, use_container_width=True)
 
-# ИЗОЛИРОВАННЫЙ МОДУЛЬ 2: RFM Сегментация (Перенесена внутрь для стабильности)
+# ИЗОЛИРОВАННЫЙ МОДУЛЬ 2: RFM Сегментация
 def internal_show_rfm_page():
     st.title("👥 Модуль RFM-сегментации номенклатуры")
-    if st.session_state.main_df.empty:
+    if "main_df" not in st.session_state or st.session_state.main_df.empty:
         st.info("ℹ️ Пожалуйста, сначала загрузите файлы на первой странице.")
         return
     df = st.session_state.main_df.copy()
@@ -58,8 +58,6 @@ def internal_show_rfm_page():
     fig = px.bar(seg_counts, x='RFM_Segment', y='Количество ОЗМ', text_auto=True, title="Плотность сегментов (Частота + Деньги)", color='RFM_Segment')
     st.plotly_chart(fig, use_container_width=True)
     st.dataframe(rfm_df.head(100), use_container_width=True)
-st.set_page_config(page_title="Enterprise BI Конструктор (Power Query)", layout="wide")
-
 # НАДЁЖНЫЙ ЧИСТЫЙ ТУМБЛЕР СТРАНИЦ В БОКОВОЙ ПАНЕЛИ
 st.sidebar.markdown("### 🗺️ Навигация по BI-платформе")
 page = st.sidebar.radio(
@@ -95,7 +93,9 @@ def power_query_clean_engine(uploaded_files_list, skip_top, merge_headers, remov
             if df_raw.empty: continue
             
             if merge_headers and len(df_raw) > 1:
-                row0, row1 = list(df_raw.iloc.astype(str).str.strip()), list(df_raw.iloc.astype(str).str.strip())
+                # ГАРАНТИРОВАННОЕ ИСПРАВЛЕНИЕ СИНТАКСИСА ИНДЕКСА СТРОК EXCEL
+                row0 = list(df_raw.iloc[0].fillna("").astype(str).str.strip())
+                row1 = list(df_raw.iloc[1].fillna("").astype(str).str.strip())
                 current_parent = ""
                 for idx in range(len(row0)):
                     val0 = row0[idx]
@@ -109,7 +109,7 @@ def power_query_clean_engine(uploaded_files_list, skip_top, merge_headers, remov
                     new_cols.append(combined if combined else f"Колонка_{idx+1}")
                 df_raw.columns = new_cols; df_raw = df_raw.iloc[2:].reset_index(drop=True)
             else:
-                df_raw.columns = df_raw.iloc.astype(str).str.strip()
+                df_raw.columns = df_raw.iloc[0].fillna("").astype(str).str.strip()
                 df_raw = df_raw.iloc[1:].reset_index(drop=True)
                 
             cleaned_cols = []
@@ -186,12 +186,12 @@ if uploaded_files:
         if page == "🗂️ 1. Загрузка и очистка данных":
             st.title("🚀 Модуль Предобработки & Импорта Данных")
             tot_rows, tot_cols = len(main_df), len(main_df.columns)
-            st.success(f"📊 Идеальная сводная база сформирована! Строк: {tot_rows:,}, Колонок: {tot_cols}")
+            st.success(f"📊 Идеальная сводная база сформирована! Строк: {tot_rows:,},  Колонок: {tot_cols}")
             
             rows_per_page = 50
             total_pages = (tot_rows // rows_per_page) + (1 if tot_rows % rows_per_page > 0 else 0)
             col_p1, col_p2 = st.columns(2)
-            with col_p1: current_page = st.number_input(f"Страница (из {total_pages}):", min_value=1, max_value=total_pages, value=1, step=1)
+            with col_p1: current_page = st.number_input(f"Страница (из {total_pages}):", min_value=1, max_value=total_pages, value=1, step=1, key="nav_pg_idx")
             with col_p2:
                 start_idx = (current_page - 1) * rows_per_page
                 end_idx = start_idx + rows_per_page
@@ -205,8 +205,9 @@ if uploaded_files:
                 with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer: main_df.to_excel(writer, index=False, sheet_name='Сводные данные')
                 st.download_button(label="📥 Скачать идеальную сводную базу (Excel .xlsx)", data=excel_buffer.getvalue(), file_name="Идеальная_сводная_база.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
             except Exception as de: st.error(f"Ошибка Excel: {de}")
-        # ---------------- РАЗДЕЛ 2: КАСКАДНЫЙ КОНСТРУКТОР BI ----------------
+
         elif page == "📊 2. Executive Диаграммы":
+            import plotly.graph_objects as go
             st.title("📊 Интерактивная BI-Панель Показателей")
             st.sidebar.subheader("🎚️ Панель Многоуровневой Фильтрации")
             filter_col_1 = st.sidebar.selectbox("Шаг 1. Выберите первое поле:", all_cols, key="fl_col_1_bi")
@@ -275,9 +276,8 @@ if uploaded_files:
                 if st.session_state.manual_charts > 1:
                     if st.button("🗑️ Удалить диаграмму"): st.session_state.manual_charts -= 1; st.rerun()
 
-        # --- РОУТИНГ ДЛЯ ВСТРОЕННЫХ СТРАНИЦ АНАЛИТИКИ ---
-        elif page == "🗮️ 3. ABC/XYZ-аналитика ОЗМ" or "3. ABC/XYZ" in page:
+        elif "3. ABC/XYZ-аналитика ОЗМ" in page:
             internal_show_abc_xyz_page()
-        elif page == "👥 4. RFM-сегментация" or "4. RFM" in page:
+        elif "4. RFM-сегментация" in page:
             internal_show_rfm_page()
 else: st.info("Ожидание загрузки любых файлов Excel/CSV для активации BI-панели...")
