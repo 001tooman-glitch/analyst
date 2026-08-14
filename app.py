@@ -34,7 +34,6 @@ def internal_show_abc_xyz_page():
     import plotly.express as px
     fig = px.pie(abc_summary, values='Общая_Сумма', names='Класс ABC', title='Доля стоимости по классам ABC')
     st.plotly_chart(fig, use_container_width=True)
-
 # ИЗОЛИРОВАННЫЙ МОДУЛЬ 2: RFM Сегментация
 def internal_show_rfm_page():
     st.title("👥 Модуль RFM-сегментации номенклатуры")
@@ -43,7 +42,7 @@ def internal_show_rfm_page():
         return
     df = st.session_state.main_df.copy()
     if not all(col in df.columns for col in ['ОЗМ', 'Сумма', 'Источник (Файл)']):
-        st.error("❌ Для RFM-анализа требуются столбцы 'ОЗМ', 'Сумма' и 'Источник (Файл)'.")
+        st.error("❌ Для RFM-анализаруют столбцы 'ОЗМ', 'Сумма' и 'Источник (Файл)'.")
         return
     st.markdown("### 📊 Распределение ОЗМ по RFM-сегментам")
     rfm_df = df.groupby('ОЗМ').agg(Frequency=('Источник (Файл)', 'count'), Monetary=('Сумма', 'sum')).reset_index()
@@ -58,7 +57,8 @@ def internal_show_rfm_page():
     fig = px.bar(seg_counts, x='RFM_Segment', y='Количество ОЗМ', text_auto=True, title="Плотность сегментов (Частота + Деньги)", color='RFM_Segment')
     st.plotly_chart(fig, use_container_width=True)
     st.dataframe(rfm_df.head(100), use_container_width=True)
-# НАДЁЖНЫЙ ЧИСТЫЙ ТУМБЛЕР СТРАНИЦ В БОКОВОЙ ПАНЕЛИ
+
+# НАДЁЖНЫЙ ТУМБЛЕР СТРАНИЦ В БОКОВОЙ ПАНЕЛИ
 st.sidebar.markdown("### 🗺️ Навигация по BI-платформе")
 page = st.sidebar.radio(
     "Перейти к разделу:",
@@ -81,19 +81,16 @@ if "uploaded_backup" not in st.session_state: st.session_state.uploaded_backup =
 if "pq_skip_top" not in st.session_state: st.session_state.pq_skip_top = 0
 if "pq_merge_headers" not in st.session_state: st.session_state.pq_merge_headers = False
 if "pq_remove_footer" not in st.session_state: st.session_state.pq_remove_footer = True
-
 def power_query_clean_engine(uploaded_files_list, skip_top, merge_headers, remove_footer):
     frames_dict = {}
     if not uploaded_files_list: return pd.DataFrame(), False
     for f in uploaded_files_list:
         try:
             df_raw = pd.read_csv(f, header=None, dtype=str) if f.name.endswith('.csv') else pd.read_excel(f, header=None, dtype=str)
-            if skip_top > 0 and skip_top < len(df_raw):
-                df_raw = df_raw.iloc[skip_top:].reset_index(drop=True)
+            if skip_top > 0 and skip_top < len(df_raw): df_raw = df_raw.iloc[skip_top:].reset_index(drop=True)
             if df_raw.empty: continue
             
             if merge_headers and len(df_raw) > 1:
-                # ГАРАНТИРОВАННОЕ ИСПРАВЛЕНИЕ СИНТАКСИСА ИНДЕКСА СТРОК EXCEL
                 row0 = list(df_raw.iloc[0].fillna("").astype(str).str.strip())
                 row1 = list(df_raw.iloc[1].fillna("").astype(str).str.strip())
                 current_parent = ""
@@ -127,9 +124,7 @@ def power_query_clean_engine(uploaded_files_list, skip_top, merge_headers, remov
                 elif any(w in c_low for w in ['количество', 'кол-во', 'объем', 'открытой потребн']): mapped_cols.append('Quantity')
                 elif any(w in c_low for w in ['сумма', 'стоимость', 'цена', 'капитал']): mapped_cols.append('Amount')
                 else: mapped_cols.append(col)
-            df_raw.columns = mapped_cols
-            df_raw = df_raw.loc[:, ~df_raw.columns.str.contains('^Без названия|^Unnamed')]
-            df_raw = df_raw.loc[:, ~df_raw.columns.duplicated()]
+            df_raw.columns = mapped_cols; df_raw = df_raw.loc[:, ~df_raw.columns.str.contains('^Без названия|^Unnamed')]; df_raw = df_raw.loc[:, ~df_raw.columns.duplicated()]
             
             if remove_footer:
                 for text_col in df_raw.columns:
@@ -153,10 +148,10 @@ def power_query_clean_engine(uploaded_files_list, skip_top, merge_headers, remov
     front_cols = [c for c in ['ОЗМ', 'Наименование материала', 'Количество', 'Сумма', 'Источник (Файл)'] if c in merged_df.columns]
     other_cols = [c for c in merged_df.columns if c not in front_cols]
     return merged_df[front_cols + other_cols], True
+
 uploaded_files = st.file_uploader("Загрузите один или несколько любых файлов Excel/CSV:", type=["csv", "xlsx"], accept_multiple_files=True)
 if uploaded_files:
-    if st.session_state.uploaded_backup != uploaded_files:
-        st.session_state.uploaded_backup = uploaded_files; st.session_state.main_df = pd.DataFrame() 
+    if st.session_state.uploaded_backup != uploaded_files: st.session_state.uploaded_backup = uploaded_files; st.session_state.main_df = pd.DataFrame() 
 elif st.session_state.uploaded_backup: uploaded_files = st.session_state.uploaded_backup
 
 if uploaded_files:
@@ -182,12 +177,10 @@ if uploaded_files:
     main_df = st.session_state.main_df
     if not main_df.empty:
         all_cols = ["-- Выберите заголовок --"] + list(main_df.columns)
-
         if page == "🗂️ 1. Загрузка и очистка данных":
             st.title("🚀 Модуль Предобработки & Импорта Данных")
             tot_rows, tot_cols = len(main_df), len(main_df.columns)
-            st.success(f"📊 Идеальная сводная база сформирована! Строк: {tot_rows:,},  Колонок: {tot_cols}")
-            
+            st.success(f"📊 Идеальная сводная база сформирована! Строк: {tot_rows:,}, Колонок: {tot_cols}")
             rows_per_page = 50
             total_pages = (tot_rows // rows_per_page) + (1 if tot_rows % rows_per_page > 0 else 0)
             col_p1, col_p2 = st.columns(2)
@@ -205,7 +198,6 @@ if uploaded_files:
                 with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer: main_df.to_excel(writer, index=False, sheet_name='Сводные данные')
                 st.download_button(label="📥 Скачать идеальную сводную базу (Excel .xlsx)", data=excel_buffer.getvalue(), file_name="Идеальная_сводная_база.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
             except Exception as de: st.error(f"Ошибка Excel: {de}")
-
         elif page == "📊 2. Executive Диаграммы":
             import plotly.graph_objects as go
             st.title("📊 Интерактивная BI-Панель Показателей")
@@ -255,17 +247,25 @@ if uploaded_files:
                 with c2: x_ax = st.selectbox(f"Ось X (Категории):", all_cols, key=f"x_{i}")
                 with c3: y_ax = st.selectbox(f"Ось Y (Показатели):", all_cols, key=f"y_{i}")
                 with c4: color = st.color_picker(f"Цвет элементов:", "#1f77b4", key=f"col_{i}")
+                
+                with st.expander("🎨 Настройки отображения"):
+                    lbl = st.checkbox("Показывать значения на графике", value=True, key=f"lbl_{i}")
+                    horiz = st.checkbox("Горизонтальный вид столбцов", value=False, key=f"h_{i}") if "Bar" in style else False
+                    rot = st.slider("🔄 Поворот кольца (градусы):", 0, 360, 0, step=15, key=f"rot_{i}") if "Donut" in style else 0
+
                 if x_ax != "-- Выберите заголовок --" and y_ax != "-- Выберите заголовок --":
                     try:
                         df_chart = active_df.copy()
                         df_chart[y_ax] = pd.to_numeric(df_chart[y_ax], errors='coerce').fillna(0)
                         df_g = df_chart.groupby(x_ax, as_index=False)[y_ax].sum()
+                        if not horiz: df_g = df_g.sort_values(by=y_ax, ascending=False)
+                        
                         fig = go.Figure()
-                        if "Waterfall" in style: fig.add_trace(go.Waterfall(x=list(df_g[x_ax].astype(str)) + ["ИТОГО"], y=list(df_g[y_ax]) + [df_g[y_ax].sum()], measure=["relative"] * len(df_g[y_ax]) + ["total"], increasing={"marker": {"color": color}}))
-                        elif "Donut" in style: fig.add_trace(go.Pie(labels=df_g[x_ax], values=df_g[y_ax], hole=0.4))
-                        elif "Line" in style: fig.add_trace(go.Scatter(x=df_g[x_ax], y=df_g[y_ax], mode="lines+markers", line=dict(color=color)))
-                        else: fig.add_trace(go.Bar(x=df_g[x_ax].astype(str), y=df_g[y_ax], marker_color=color))
-                        fig.update_layout(xaxis=dict(tickangle=45), uniformtext=dict(mode="hide", minsize=8))
+                        if "Waterfall" in style: fig.add_trace(go.Waterfall(x=list(df_g[x_ax].astype(str)) + ["ИТОГО"], y=list(df_g[y_ax]) + [df_g[y_ax].sum()], text=[f"{v:,.0f}" for v in df_g[y_ax]] + [f"{df_g[y_ax].sum():,.0f}"] if lbl else None, textposition="auto", measure=["relative"] * len(df_g[y_ax]) + ["total"], increasing={"marker": {"color": color}}))
+                        elif "Donut" in style: fig.add_trace(go.Pie(labels=df_g[x_ax], values=df_g[y_ax], hole=0.4, rotation=rot, textinfo="label+value" if lbl else "none"))
+                        elif "Line" in style: fig.add_trace(go.Scatter(x=df_g[x_ax], y=df_g[y_ax], mode="lines+markers+text" if lbl else "lines+markers", text=df_g[y_ax].map(lambda x: f"{x:,.0f}") if lbl else None, textposition="top center", line=dict(color=color, width=3)))
+                        else: fig.add_trace(go.Bar(y=df_g[x_ax].astype(str) if horiz else df_g[y_ax], x=df_g[y_ax] if horiz else df_g[x_ax].astype(str), text=df_g[y_ax].map(lambda x: f"{x:,.0f}") if lbl else None, textposition="auto", orientation="h" if horiz else "v", marker_color=color))
+                        fig.update_layout(xaxis=dict(tickangle=45 if not horiz else 0), uniformtext=dict(mode="hide", minsize=8))
                         st.plotly_chart(fig, use_container_width=True, key=f"p_{i}")
                     except: pass
                 st.markdown("<hr style='border:1px dashed #ddd'>", unsafe_allow_html=True)
@@ -276,8 +276,6 @@ if uploaded_files:
                 if st.session_state.manual_charts > 1:
                     if st.button("🗑️ Удалить диаграмму"): st.session_state.manual_charts -= 1; st.rerun()
 
-        elif "3. ABC/XYZ-аналитика ОЗМ" in page:
-            internal_show_abc_xyz_page()
-        elif "4. RFM-сегментация" in page:
-            internal_show_rfm_page()
+        elif "3. ABC/XYZ" in page: internal_show_abc_xyz_page()
+        elif "4. RFM" in page: internal_show_rfm_page()
 else: st.info("Ожидание загрузки любых файлов Excel/CSV для активации BI-панели...")
