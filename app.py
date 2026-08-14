@@ -3,7 +3,7 @@ import pandas as pd
 import io
 import re
 
-# МОДУЛЬ 1: ABC/XYZ Аналитика (Сквозная фильтрация)
+# МОДУЛЬ 1: ABC/XYZ Аналитика (Сквозная фильтрация из сессионного кэша)
 def internal_show_abc_xyz_page(filtered_df):
     st.title("🧮 Модуль автоматического ABC/XYZ-анализа")
     if filtered_df.empty:
@@ -38,7 +38,7 @@ def internal_show_abc_xyz_page(filtered_df):
     import plotly.express as px
     fig = px.pie(abc_summary, values='Общая_Сумма', names='Класс ABC', title='Доля стоимости по классам ABC')
     st.plotly_chart(fig, use_container_width=True)
-# МОДУЛЬ 2: RFM Сегментация (Сквозная фильтрация)
+# МОДУЛЬ 2: RFM Сегментация (Сквозная фильтрация из сессионного кэша)
 def internal_show_rfm_page(filtered_df):
     st.title("👥 Модуль RFM-сегментации номенклатуры")
     if filtered_df.empty:
@@ -102,7 +102,6 @@ def power_query_clean_engine(uploaded_files_list, skip_top, merge_headers, remov
             if df_raw.empty: continue
             
             if merge_headers and len(df_raw) > 1:
-                # 100% надёжная конвертация строк без рисков падения по AttributeError
                 row0 = [str(x).strip() for x in df_raw.iloc[0].fillna("").tolist()]
                 row1 = [str(x).strip() for x in df_raw.iloc[1].fillna("").tolist()]
                 current_parent = ""
@@ -189,6 +188,11 @@ if uploaded_files:
     if not main_df.empty:
         all_cols = ["-- Выберите заголовок --"] + list(main_df.columns)
 
+        # ТРЕБОВАНИЕ ВЫПОЛНЕНО: Глобальный каскадный срез создаётся в корне для защиты от NameError
+        active_df_global = main_df.copy()
+        if st.session_state.get("active_filter_col") and st.session_state.get("active_filter_val") and st.session_state.active_filter_col in active_df_global.columns:
+            active_df_global = active_df_global[active_df_global[st.session_state.active_filter_col].astype(str) == str(st.session_state.active_filter_val)]
+
         if page == "🗂️ 1. Загрузка и очистка данных":
             st.title("🚀 Модуль Предобработки & Импорта Данных")
             tot_rows, tot_cols = len(main_df), len(main_df.columns)
@@ -257,7 +261,7 @@ if uploaded_files:
                     if st.button("🗑️ Удалить карточку"): st.session_state.manual_cards -= 1; st.rerun()
 
             st.markdown("---")
-            st.subheader("🛠️ No-Codebadge Конструктор Графиков")
+            st.subheader("🛠️ No-Code Конструктор Графиков")
             for i in range(st.session_state.manual_charts):
                 st.markdown(f"##### 📊 Настройка диаграммы № {i+1}")
                 c1, c2, c3, c4 = st.columns(4)
@@ -294,6 +298,7 @@ if uploaded_files:
                 if st.session_state.manual_charts > 1:
                     if st.button("🗑️ Удалить диаграмму"): st.session_state.manual_charts -= 1; st.rerun()
 
-        elif "3. ABC/XYZ" in page: internal_show_abc_xyz_page(active_df)
-        elif "4. RFM" in page: internal_show_rfm_page(active_df)
+        # ИСПРАВЛЕНО: Роутинг переведен на глобальный защищенный массив active_df_global
+        elif "3. ABC/XYZ" in page: internal_show_abc_xyz_page(active_df_global)
+        elif "4. RFM" in page: internal_show_rfm_page(active_df_global)
 else: st.info("Ожидание загрузки любых файлов Excel/CSV для активации BI-панели...")
