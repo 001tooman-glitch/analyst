@@ -3,7 +3,7 @@ import pandas as pd
 import io
 import re
 
-# МОДУЛЬ 1 С УМНЫМ СРЕЗОМ: ABC/XYZ Аналитика мгновенно реагирует на выбранные каскадные фильтры
+# МОДУЛЬ 1: ABC/XYZ Аналитика (Сквозная фильтрация)
 def internal_show_abc_xyz_page(filtered_df):
     st.title("🧮 Модуль автоматического ABC/XYZ-анализа")
     if filtered_df.empty:
@@ -14,8 +14,7 @@ def internal_show_abc_xyz_page(filtered_df):
         st.error("❌ В данных отсутствуют обязательные столбцы 'ОЗМ' и 'Сумма'.")
         return
         
-    # Выводим информацию о том, какой срез сейчас анализируется
-    if st.session_state.active_filter_col and st.session_state.active_filter_val:
+    if st.session_state.get("active_filter_col") and st.session_state.get("active_filter_val"):
         st.success(f"🎯 Анализ запущен по активному срезу: `{st.session_state.active_filter_col}` = `{st.session_state.active_filter_val}`")
         
     st.markdown("### 📊 Настройка параметров классификации")
@@ -39,7 +38,7 @@ def internal_show_abc_xyz_page(filtered_df):
     import plotly.express as px
     fig = px.pie(abc_summary, values='Общая_Сумма', names='Класс ABC', title='Доля стоимости по классам ABC')
     st.plotly_chart(fig, use_container_width=True)
-# МОДУЛЬ 2 С УМНЫМ СРЕЗОМ: RFM Сегментация мгновенно реагирует на выбранные каскадные фильтры
+# МОДУЛЬ 2: RFM Сегментация (Сквозная фильтрация)
 def internal_show_rfm_page(filtered_df):
     st.title("👥 Модуль RFM-сегментации номенклатуры")
     if filtered_df.empty:
@@ -50,7 +49,7 @@ def internal_show_rfm_page(filtered_df):
         st.error("❌ Для RFM-анализа требуются столбцы 'ОЗМ', 'Сумма' и 'Источник (Файл)'.")
         return
         
-    if st.session_state.active_filter_col and st.session_state.active_filter_val:
+    if st.session_state.get("active_filter_col") and st.session_state.get("active_filter_val"):
         st.success(f"🎯 Сегментация запущена по активному срезу: `{st.session_state.active_filter_col}` = `{st.session_state.active_filter_val}`")
         
     st.markdown("### 📊 Распределение ОЗМ по RFM-сегментам")
@@ -96,12 +95,16 @@ def power_query_clean_engine(uploaded_files_list, skip_top, merge_headers, remov
     for f in uploaded_files_list:
         try:
             df_raw = pd.read_csv(f, header=None, dtype=str) if f.name.endswith('.csv') else pd.read_excel(f, header=None, dtype=str)
-            if skip_top > 0 and skip_top < len(df_raw): df_raw = df_raw.iloc[skip_top:].reset_index(drop=True)
+            if df_raw.empty: continue
+            
+            if skip_top > 0 and skip_top < len(df_raw):
+                df_raw = df_raw.iloc[skip_top:].reset_index(drop=True)
             if df_raw.empty: continue
             
             if merge_headers and len(df_raw) > 1:
-                row0 = list(df_raw.iloc.fillna("").astype(str).str.strip())
-                row1 = list(df_raw.iloc.fillna("").astype(str).str.strip())
+                # 100% надёжная конвертация строк без рисков падения по AttributeError
+                row0 = [str(x).strip() for x in df_raw.iloc[0].fillna("").tolist()]
+                row1 = [str(x).strip() for x in df_raw.iloc[1].fillna("").tolist()]
                 current_parent = ""
                 for idx in range(len(row0)):
                     val0 = row0[idx]
@@ -115,7 +118,7 @@ def power_query_clean_engine(uploaded_files_list, skip_top, merge_headers, remov
                     new_cols.append(combined if combined else f"Колонка_{idx+1}")
                 df_raw.columns = new_cols; df_raw = df_raw.iloc[2:].reset_index(drop=True)
             else:
-                df_raw.columns = df_raw.iloc.fillna("").astype(str).str.strip()
+                df_raw.columns = [str(x).strip() for x in df_raw.iloc[0].fillna("").tolist()]
                 df_raw = df_raw.iloc[1:].reset_index(drop=True)
                 
             cleaned_cols = []
@@ -162,7 +165,6 @@ uploaded_files = st.file_uploader("Загрузите один или неско
 if uploaded_files:
     if st.session_state.uploaded_backup != uploaded_files: st.session_state.uploaded_backup = uploaded_files; st.session_state.main_df = pd.DataFrame() 
 elif st.session_state.uploaded_backup: uploaded_files = st.session_state.uploaded_backup
-
 if uploaded_files:
     if page == "🗂️ 1. Загрузка и очистка данных":
         st.markdown("### 🛠️ Панель шагов трансформации (Аналог Power Query)")
@@ -186,10 +188,11 @@ if uploaded_files:
     main_df = st.session_state.main_df
     if not main_df.empty:
         all_cols = ["-- Выберите заголовок --"] + list(main_df.columns)
+
         if page == "🗂️ 1. Загрузка и очистка данных":
             st.title("🚀 Модуль Предобработки & Импорта Данных")
             tot_rows, tot_cols = len(main_df), len(main_df.columns)
-            st.success(f"📊 Идеальная сводная база сформирована! Строк: {tot_rows:,},  Колонок: {tot_cols}")
+            st.success(f"📊 Идеальная сводная база сформирована! Строк: {tot_rows:,}, Колонок: {tot_cols}")
             rows_per_page = 50
             total_pages = (tot_rows // rows_per_page) + (1 if tot_rows % rows_per_page > 0 else 0)
             col_p1, col_p2 = st.columns(2)
@@ -254,7 +257,7 @@ if uploaded_files:
                     if st.button("🗑️ Удалить карточку"): st.session_state.manual_cards -= 1; st.rerun()
 
             st.markdown("---")
-            st.subheader("🛠️ No-Code Конструктор Графиков")
+            st.subheader("🛠️ No-Codebadge Конструктор Графиков")
             for i in range(st.session_state.manual_charts):
                 st.markdown(f"##### 📊 Настройка диаграммы № {i+1}")
                 c1, c2, c3, c4 = st.columns(4)
@@ -291,7 +294,6 @@ if uploaded_files:
                 if st.session_state.manual_charts > 1:
                     if st.button("🗑️ Удалить диаграмму"): st.session_state.manual_charts -= 1; st.rerun()
 
-        # ТРЕБОВАНИЕ ВЫПОЛНЕНО: Передаем в аналитические модули динамический массив со сквозным срезом active_df
         elif "3. ABC/XYZ" in page: internal_show_abc_xyz_page(active_df)
         elif "4. RFM" in page: internal_show_rfm_page(active_df)
 else: st.info("Ожидание загрузки любых файлов Excel/CSV для активации BI-панели...")
