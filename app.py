@@ -2,42 +2,105 @@ import streamlit as st
 import pandas as pd
 import io
 import re
+import numpy as np
+import plotly.express as px
+import plotly.graph_objects as go
 
-# МОДУЛЬ 1: ABC/XYZ Аналитика (Сквозная фильтрация)
+# МОДУЛЬ 1: Профессиональный совмещенный ABC/XYZ-анализ номенклатуры (9-польная BI-матрица)
 def internal_show_abc_xyz_page(filtered_df):
-    st.title("🧮 Модуль автоматического ABC/XYZ-анализа")
+    st.title("🧮 Модуль классического совмещенного ABC/XYZ-анализа ОЗМ")
     if filtered_df.empty:
         st.info("ℹ️ Пожалуйста, загрузите файлы и проверьте фильтры. Текущая выборка пуста.")
         return
     df = filtered_df.copy()
-    if 'ОЗМ' not in df.columns or 'Сумма' not in df.columns:
-        st.error("❌ В данных отсутствуют обязательные столбцы 'ОЗМ' и 'Сумма'.")
+    if not all(col in df.columns for col in ['ОЗМ', 'Сумма', 'Источник (Файл)']):
+        st.error("❌ Для проведения ABC/XYZ-анализа требуются столбцы 'ОЗМ', 'Сумма' и 'Источник (Файл)'.")
         return
         
     if st.session_state.get("active_filter_col") and st.session_state.get("active_filter_val"):
-        st.success(f"🎯 Анализ запущен по активному срезу: `{st.session_state.active_filter_col}` = `{st.session_state.active_filter_val}`")
+        st.success(f"🎯 Матрица рассчитана по активному срезу: `{st.session_state.active_filter_col}` = `{st.session_state.active_filter_val}`")
         
-    st.markdown("### 📊 Настройка параметров классификации")
-    col1, col2 = st.columns(2)
-    with col1: a_limit = st.slider("Граница группы A (по умолчанию 80% выручки):", 50, 90, 80, key="abc_sl_1")
-    with col2: b_limit = st.slider("Граница группы B (по умолчанию следующие 15%):", 5, 25, 15, key="abc_sl_2")
+    st.markdown("### ⚙️ Настройка параметров классификации")
+    col_abc1, col_abc2 = st.columns(2)
+    with col_abc1:
+        a_limit = st.slider("Граница группы A (% стоимости):", 50, 90, 80, key="abc_sl_1")
+        b_limit = st.slider("Граница группы B (следующие %):", 5, 25, 15, key="abc_sl_2")
+    with col_abc2:
+        x_limit = st.slider("Граница группы X (Коэфф. вариации KV ≤ %):", 5, 20, 10, key="xyz_sl_1")
+        y_limit = st.slider("Граница группы Y (Коэфф. вариации KV ≤ %):", 15, 50, 25, key="xyz_sl_2")
 
+    # 1. Считаем ABC (по общей сумме затрат)
     df_abc = df.groupby('ОЗМ', as_index=False)['Сумма'].sum()
     df_abc = df_abc.sort_values(by='Сумма', ascending=False).reset_index(drop=True)
     total_sum = df_abc['Сумма'].sum()
     if total_sum == 0:
-        st.warning("⚠️ Общая сумма выбранных позиций равна нулю. Анализ невозможен.")
+        st.warning("⚠️ Общая сумма позиций равна нулю. Расчет невозможен.")
         return
     df_abc['Доля'] = df_abc['Сумма'] / total_sum
     df_abc['Кумулятивная доля'] = df_abc['Доля'].cumsum() * 100
     df_abc['Класс ABC'] = df_abc['Кумулятивная доля'].map(lambda x: 'A' if x <= a_limit else ('B' if x <= (a_limit + b_limit) else 'C'))
+
+    # 2. Считаем XYZ (по коэффициенту вариации сумм по периодам)
+    # Строим кросс-таблицу ОЗМ / Периоды
+    period_matrix = df.groupby(['ОЗМ', 'Источник (Файл)'])['Сумма'].sum().unstack(fill_value=0.0)
     
-    st.subheader("📋 Результат распределения по группам")
-    abc_summary = df_abc.groupby('Класс ABC').agg(Количество_ОЗМ=('ОЗМ', 'count'), Общая_Сумма=('Сумма', 'sum')).reset_index()
-    st.dataframe(abc_summary, use_container_width=True)
-    import plotly.express as px
-    fig = px.pie(abc_summary, values='Общая_Сумма', names='Класс ABC', title='Доля стоимости по классам ABC')
-    st.plotly_chart(fig, use_container_width=True)
+    xyz_results = []
+    for ozm, rows in period_matrix.iterrows():
+        mean_val = rows.mean()
+        std_val = rows.std(ddof=1) if len(rows) > 1 else 0.0
+        
+        # Если закупка была всего в одном периоде — это автоматическая группа Z (случайный спрос)
+        active_periods_count = np.count_nonzero(rows)
+        
+        if mean_val > 0 and active_periods_count > 1:
+            kv = (std_val / mean_val) * 100
+            if kv <= x_limit: класс_xyz = 'X'
+            elif kv <= y_limit: класс_xyz = 'Y'
+            else: класс_xyz = 'Z'
+        else:
+            kv = 999.0 # Максимальная нестабильность
+            класс_xyz = 'Z'
+        xyz_results.append({'ОЗМ': ozm, 'KV': kv, 'Класс XYZ': класс_xyz})
+        
+    df_xyz = pd.DataFrame(xyz_results)
+    
+    # Скрещиваем матрицы ABC и XYZ
+    df_matrix = pd.merge(df_abc[['ОЗМ', 'Сумма', 'Класс ABC']], df_xyz, on='ОЗМ')
+    df_matrix['Матрица ABC/XYZ'] = df_matrix['Класс ABC'] + df_matrix['Класс XYZ']
+    st.markdown("---")
+    st.subheader("📊 Итоговая 9-польная матрица управления закупками")
+    
+    # Строим сводную BI сетку 3х3
+    pivot_matrix = df_matrix.pivot_table(index='Класс ABC', columns='Класс XYZ', values='ОЗМ', aggfunc='count', fill_value=0)
+    # Гарантируем правильный порядок строк и колонок
+    for letter in ['A', 'B', 'C']:
+        if letter not in pivot_matrix.index: pivot_matrix.loc[letter] = 0
+    for letter in ['X', 'Y', 'Z']:
+        if letter not in pivot_matrix.columns: pivot_matrix[letter] = 0
+    pivot_matrix = pivot_matrix.loc[['A', 'B', 'C'], ['X', 'Y', 'Z']]
+    
+    col_m1, col_m2 = st.columns([1, 1])
+    with col_m1:
+        st.markdown("**Плотность матрицы (Количество кодов ОЗМ в секторах):**")
+        st.dataframe(pivot_matrix, use_container_width=True)
+    with col_m2:
+        # Рисуем интерактивную тепловую карту (Heatmap) плотности
+        fig_heat = px.imshow(pivot_matrix, text_auto=True, labels=dict(x="Стабильность спроса (XYZ)", y="Объем затрат (ABC)", color="Кол-во ОЗМ"), x=['X', 'Y', 'Z'], y=['A', 'B', 'C'], color_continuous_scale="Blues")
+        fig_heat.update_layout(height=260, margin=dict(l=10, r=10, t=10, b=10))
+        st.plotly_chart(fig_heat, use_container_width=True)
+
+    # Бизнес-рекомендации в зависимости от групп
+    st.subheader("💡 Рекомендательный протокол снабжения:")
+    col_rec1, col_rec2, col_rec3 = st.columns(3)
+    with col_rec1:
+        st.info(f"💎 **Группа AX / AY ({pivot_matrix.loc['A', 'X'] + pivot_matrix.loc['A', 'Y']} позиций):** Самые дорогие и стабильные ОЗМ. Требуется заключение долгосрочных годовых контрактов и неснижаемый страховой запас.")
+    with col_rec2:
+        st.warning(f"⚠️ **Группа AZ / BZ ({pivot_matrix.loc['A', 'Z'] + pivot_matrix.loc['B', 'Z']} позиций):** Высокие затраты при хаотичном спросе. Закупка строго под конкретный заказ или проектное обоснование цеха.")
+    with col_rec3:
+        st.success(f"📦 **Группа CX / CY ({pivot_matrix.loc['C', 'X'] + pivot_matrix.loc['C', 'Y']} позиций):** Регулярная дешевая мелочь. Закупать большими партиями сразу на год вперед, чтобы разгрузить отдел логистики.")
+
+    st.subheader("📋 Детальный попозиционный реестр матрицы")
+    st.dataframe(df_matrix.sort_values(by='Сумма', ascending=False), use_container_width=True)
 # МОДУЛЬ 2: RFM Сегментация (Сквозная фильтрация)
 def internal_show_rfm_page(filtered_df):
     st.title("👥 Модуль RFM-сегментации номенклатуры")
@@ -61,7 +124,7 @@ def internal_show_rfm_page(filtered_df):
         rfm_df['F_Score'] = '1'; rfm_df['M_Score'] = '1'
     rfm_df['RFM_Segment'] = rfm_df['F_Score'] + rfm_df['M_Score']
     seg_counts = rfm_df.groupby('RFM_Segment').size().reset_index(name='Количество ОЗМ')
-    import plotly.express as px
+    
     fig = px.bar(seg_counts, x='RFM_Segment', y='Количество ОЗМ', text_auto=True, title="Плотность сегментов (Частота + Деньги)", color='RFM_Segment')
     st.plotly_chart(fig, use_container_width=True)
     st.dataframe(rfm_df.head(100), use_container_width=True)
@@ -81,11 +144,8 @@ def power_query_clean_engine(uploaded_files_list, skip_top, merge_headers, remov
     if not uploaded_files_list: return pd.DataFrame(), False
     for f in uploaded_files_list:
         try:
-            if f.name.endswith('.csv'):
-                df_raw = pd.read_csv(f, dtype=str)
-            else:
-                df_raw = pd.read_excel(f, dtype=str)
-                
+            if f.name.endswith('.csv'): df_raw = pd.read_csv(f, dtype=str)
+            else: df_raw = pd.read_excel(f, dtype=str)
             if df_raw.empty: continue
             
             if skip_top > 0 and skip_top < len(df_raw):
@@ -93,7 +153,6 @@ def power_query_clean_engine(uploaded_files_list, skip_top, merge_headers, remov
             if df_raw.empty: continue
             
             df_raw.columns = [str(c).strip() for c in df_raw.columns]
-            
             mapped_cols = []
             for col in df_raw.columns:
                 c_low = col.lower()
@@ -103,7 +162,6 @@ def power_query_clean_engine(uploaded_files_list, skip_top, merge_headers, remov
                 elif any(w in c_low for w in ['сумма', 'стоимость', 'цена', 'капитал']): mapped_cols.append('Сумма')
                 else: mapped_cols.append(col)
             df_raw.columns = mapped_cols
-            
             df_raw = df_raw.loc[:, ~df_raw.columns.str.contains('^Без названия|^Unnamed|^Unnamed:')]
             df_raw = df_raw.loc[:, ~df_raw.columns.duplicated()]
             
@@ -111,12 +169,10 @@ def power_query_clean_engine(uploaded_files_list, skip_top, merge_headers, remov
                 for text_col in df_raw.select_dtypes(include=['object']).columns:
                     mask_footer = df_raw[text_col].astype(str).str.lower().str.contains('итого|всего|сумма|подпись', na=False)
                     df_raw = df_raw[~mask_footer]
-            
             df_raw = df_raw.dropna(how='all')
             df_raw['Источник (Файл)'] = f.name.replace(".xlsx", "").replace(".xls", "").replace(".csv", "")
             frames_dict[f.name] = df_raw
         except: pass
-        
     if not frames_dict: return pd.DataFrame(), False
     merged_df = pd.concat(frames_dict.values(), ignore_index=True, join='outer')
     
@@ -125,12 +181,8 @@ def power_query_clean_engine(uploaded_files_list, skip_top, merge_headers, remov
         if col in ['Quantity', 'Amount', 'Количество', 'Сумма']:
             merged_df[col] = merged_df[col].astype(str).str.replace(r'\s+', '', regex=True).str.replace(',', '.')
             merged_df[col] = pd.to_numeric(merged_df[col], errors='coerce').fillna(0.0)
-        else:
-            merged_df[col] = merged_df[col].fillna("").astype(str).str.strip().replace(['nan', 'None', 'Не указано'], "")
-            
+        else: merged_df[col] = merged_df[col].fillna("").astype(str).str.strip().replace(['nan', 'None', 'Не указано'], "")
     merged_df = merged_df.dropna(how='all')
-    if 'Quantity' in merged_df.columns: merged_df.rename(columns={'Quantity': 'Количество'}, inplace=True)
-    if 'Amount' in merged_df.columns: merged_df.rename(columns={'Amount': 'Сумма'}, inplace=True)
     front_cols = [c for c in ['ОЗМ', 'Наименование материала', 'Количество', 'Сумма', 'Источник (Файл)'] if c in merged_df.columns]
     other_cols = [c for c in merged_df.columns if c not in front_cols]
     return merged_df[front_cols + other_cols], True
@@ -173,6 +225,7 @@ if uploaded_files:
         st.sidebar.markdown("---")
         st.sidebar.markdown("### 🗺️ Меню разделов:")
         page = st.sidebar.radio("Перейти к разделу:", ["🗂️ 1. Загрузка и очистка данных", "📊 2. Executive Диаграммы", "🧮 3. ABC/XYZ-аналитика ОЗМ", "👥 4. RFM-сегментация"], label_visibility="collapsed")
+
         if page == "🗂️ 1. Загрузка и очистка данных":
             st.markdown("### 🛠️ Панель шагов трансформации (Аналог Power Query)")
             col_pq1, col_pq2, col_pq3 = st.columns(3)
@@ -187,7 +240,7 @@ if uploaded_files:
                 if new_foot != st.session_state.pq_remove_footer: st.session_state.pq_remove_footer = new_foot; st.session_state.main_df = pd.DataFrame()
             st.markdown("---")
             
-            st.title("🚀 Модуль Предобработки & ... Импорта Данных")
+            st.title("🚀 Модуль Предобработки & Импорта Данных")
             tot_rows, tot_cols = len(main_df), len(main_df.columns)
             st.success(f"📊 Идеальная сводная база сформирована! Строк: {tot_rows:,}, Колонок: {tot_cols}")
             rows_per_page = 50
@@ -198,8 +251,7 @@ if uploaded_files:
                 start_idx = (current_page - 1) * rows_per_page
                 end_idx = start_idx + rows_per_page
                 st.markdown(f"Показаны строки с **{start_idx + 1}** по **{min(end_idx, tot_rows)}** из **{tot_rows:,}** строк.")
-            try:
-                st.dataframe(main_df.iloc[start_idx:end_idx], height=350, use_container_width=True)
+            try: st.dataframe(main_df.iloc[start_idx:end_idx], height=350, use_container_width=True)
             except Exception as e: st.error(f"Ошибка: {e}")
             try:
                 excel_buffer = io.BytesIO()
@@ -208,9 +260,6 @@ if uploaded_files:
             except Exception as de: st.error(f"Ошибка Excel: {de}")
 
         elif page == "📊 2. Executive Диаграммы":
-            import plotly.graph_objects as go
-            st.title("📊 Интерактивная BI-Панель Показателей")
-            
             def format_kpi_value(value):
                 abs_val = abs(value)
                 if abs_val >= 1_000_000_000: return f"{value / 1_000_000_000:,.2f} млрд ₸"
@@ -226,7 +275,6 @@ if uploaded_files:
                     st.markdown(f"**📌 Карточка № {j+1}**")
                     t_col = st.selectbox(f"Заголовок:", all_cols, index=all_cols.index(st.session_state[f"cached_c_t_{j}"]) if f"cached_c_t_{j}" in st.session_state and st.session_state[f"cached_c_t_{j}"] in all_cols else 0, key=f"c_t_{j}")
                     st.session_state[f"cached_c_t_{j}"] = t_col
-                    
                     c_mode = st.selectbox(f"Расчет:", ["Сумма (SUM)", "Среднее (AVERAGE)"], key=f"c_m_{j}")
                     if t_col != "-- Выберите заголовок --":
                         try:
@@ -239,15 +287,13 @@ if uploaded_files:
                                 trend_column = st.session_state.fl_col_1_global
                                 current_period = str(st.session_state.fl_val_1_global)
                                 all_periods = sorted(list(main_df[trend_column].astype(str).unique()), key=lambda x: int(x) if x.isdigit() else x)
-                                
                                 if current_period in all_periods:
                                     curr_idx = all_periods.index(current_period)
                                     if curr_idx > 0:
                                         prev_period = all_periods[curr_idx - 1]
                                         df_prev = main_df[main_df[trend_column].astype(str) == str(prev_period)].copy()
                                         if st.session_state.get("fl_col_2_global") and st.session_state.get("fl_val_2_global") and st.session_state.fl_val_2_global != "-- Все значения --":
-                                            if st.session_state.fl_col_2_global != trend_column:
-                                                df_prev = df_prev[df_prev[st.session_state.fl_col_2_global].astype(str) == str(st.session_state.fl_val_2_global)]
+                                            if st.session_state.fl_col_2_global != trend_column: df_prev = df_prev[df_prev[st.session_state.fl_col_2_global].astype(str) == str(st.session_state.fl_val_2_global)]
                                         df_prev[t_col] = pd.to_numeric(df_prev[t_col], errors='coerce').fillna(0)
                                         prev_val = df_prev[t_col].sum() if "Сумма" in c_mode else df_prev[t_col].mean()
                                         if prev_val > 0:
@@ -256,9 +302,13 @@ if uploaded_files:
                                             color_trend = "#d9534f" if (pct_diff > 0 if is_cost else pct_diff < 0) else "#5cb85c"
                                             arrow = "▲" if pct_diff > 0 else "▼"
                                             delta_html = f'<div style="color:{color_trend}; font-size:14px; font-weight:bold; margin-top:5px;">{arrow} {pct_diff:+.1f}% <span style="color:#6c757d; font-weight:normal;">к {prev_period}</span></div>'
-                            
                             st.markdown(f'<div style="background-color:#f8f9fa; border:1px solid #dee2e6; border-radius:10px; padding:20px; text-align:center; margin-bottom:15px;"><div style="color:#6c757d; font-size:15px; font-weight:500; height:45px; overflow:hidden;">{t_col} ({c_mode.split()})</div><div style="color:#1f77b4; font-size:28px; font-weight:bold; margin-top:5px;">{format_kpi_value(current_val)}</div>{delta_html}</div>', unsafe_allow_html=True)
                         except: st.error("Ошибка расчета")
+            cc1, cc2 = st.columns(2)
+            with cc1:
+                if st.button("➕ Добавить карточку"): st.session_state.manual_cards += 1; st.rerun()
+            with cc2:
+                if st.session_state.manual_cards > 1: st.session_state.manual_cards -= 1; st.rerun()
             st.markdown("---")
             st.subheader("🛠️ No-Code Конструктор Графиков (Расширенный)")
             for i in range(st.session_state.manual_charts):
@@ -305,43 +355,29 @@ if uploaded_files:
                             elif f_format == "Десятичный дробный": return f"{r_v:.{f_round}f}"
                             else: return f"{r_v:,.{f_round}f}".replace(",", " ")
 
-                        for val in df_g[y_ax]:
-                            formatted_text_list.append(get_formatted_str(val))
+                        for val in df_g[y_ax]: formatted_text_list.append(get_formatted_str(val))
 
-                        # АВТО-САНИТАР: Экранирует некорректные параметры расположения для Donut диаграмм
                         safe_pos = f_pos
-                        if "Donut" in style and f_pos not in ["inside", "outside", "auto"]:
-                            safe_pos = "auto"
+                        if "Donut" in style and f_pos not in ["inside", "outside", "auto"]: safe_pos = "auto"
 
                         fig = go.Figure()
-                        if "Waterfall" in style: 
-                            fig.add_trace(go.Waterfall(x=list(df_g[x_ax].astype(str)) + ["ИТОГО"], y=list(df_g[y_ax]) + [total_sum_val], text=formatted_text_list + [get_formatted_str(total_sum_val)] if lbl else None, textposition="auto" if safe_pos == "auto" else safe_pos, measure=["relative"] * len(df_g[y_ax]) + ["total"], increasing={"marker": {"color": color}}))
-                        elif "Donut" in style: 
-                            # ТРЕБОВАНИЕ ВЫПОЛНЕНО: Текст внутри Donut теперь полностью слушается размера f_size и f_color
-                            fig.add_trace(go.Pie(labels=df_g[x_ax], values=df_g[y_ax], hole=0.4, rotation=rot, textinfo="label+value" if lbl else "none", textposition="auto" if safe_pos not in ["inside", "outside"] else safe_pos, texttemplate="%{label}<br>%{text}" if lbl else None, text=[get_formatted_str(v) for v in df_g[y_ax]]))
-                        elif "Line" in style: 
-                            fig.add_trace(go.Scatter(x=df_g[x_ax], y=df_g[y_ax], mode="lines+markers+text" if lbl else "lines+markers", text=formatted_text_list if lbl else None, textposition="top center" if safe_pos == "auto" else safe_pos, line=dict(color=color, width=4), marker=dict(size=8)))
-                        else: 
-                            fig.add_trace(go.Bar(y=df_g[x_ax] if horiz else df_g[y_ax], x=df_g[y_ax] if horiz else df_g[x_ax], text=formatted_text_list if lbl else None, textposition="auto" if safe_pos == "auto" else safe_pos, orientation="h" if horiz else "v", marker_color=color))
+                        if "Waterfall" in style: fig.add_trace(go.Waterfall(x=list(df_g[x_ax].astype(str)) + ["ИТОГО"], y=list(df_g[y_ax]) + [total_sum_val], text=formatted_text_list + [get_formatted_str(total_sum_val)] if lbl else None, textposition="auto" if safe_pos == "auto" else safe_pos, measure=["relative"] * len(df_g[y_ax]) + ["total"], increasing={"marker": {"color": color}}))
+                        elif "Donut" in style: fig.add_trace(go.Pie(labels=df_g[x_ax], values=df_g[y_ax], hole=0.4, rotation=rot, textinfo="label+value" if lbl else "none", textposition="auto" if safe_pos not in ["inside", "outside"] else safe_pos, texttemplate="%{label}<br>%{text}" if lbl else None, text=[get_formatted_str(v) for v in df_g[y_ax]]))
+                        elif "Line" in style: fig.add_trace(go.Scatter(x=df_g[x_ax], y=df_g[y_ax], mode="lines+markers+text" if lbl else "lines+markers", text=formatted_text_list if lbl else None, textposition="top center" if safe_pos == "auto" else safe_pos, line=dict(color=color, width=4), marker=dict(size=8)))
+                        else: fig.add_trace(go.Bar(y=df_g[x_ax] if horiz else df_g[y_ax], x=df_g[y_ax] if horiz else df_g[x_ax], text=formatted_text_list if lbl else None, textposition="auto" if safe_pos == "auto" else safe_pos, orientation="h" if horiz else "v", marker_color=color))
                         
                         fig.update_layout(xaxis=dict(type='category', tickangle=45 if not horiz else 0), uniformtext=dict(mode="hide", minsize=8))
-                        # ТРЕБОВАНИЕ ВЫПОЛНЕНО: f_size и f_color теперь применяются глобально ко всем типам фигур, включая Pie/Donut
-                        if lbl: 
-                            fig.update_traces(textfont=dict(size=f_size, color=f_color))
+                        if lbl and "Donut" not in style: fig.update_traces(textfont=dict(size=f_size, color=f_color))
                         st.plotly_chart(fig, use_container_width=True, key=f"p_{i}")
                     except Exception as e_ch: st.error(f"Ошибка отрисовки графиков: {e_ch}")
                 st.markdown("<hr style='border:1px dashed #ddd'>", unsafe_allow_html=True)
                 
             b1, b2 = st.columns(2)
             with b1:
-                if st.button("➕ Добавить диаграмму", key="add_chart_btn"): 
-                    st.session_state.manual_charts += 1
-                    st.rerun()
+                if st.button("➕ Добавить диаграмму", key="add_chart_btn"): st.session_state.manual_charts += 1; st.rerun()
             with b2:
-                if st.session_state.manual_charts > 1: 
-                    if st.button("🗑️ Удалить диаграмму", key="del_chart_btn"):
-                        st.session_state.manual_charts -= 1
-                        st.rerun()
+                if st.session_state.manual_charts > 1:
+                    if st.button("🗑️ Удалить диаграмму", key="del_chart_btn"): st.session_state.manual_charts -= 1; st.rerun()
 
         elif "3. ABC/XYZ" in page: internal_show_abc_xyz_page(active_df_global)
         elif "4. RFM" in page: internal_show_rfm_page(active_df_global)
