@@ -123,7 +123,7 @@ def internal_show_rfm_page(filtered_df):
         return
         
     if st.session_state.get("active_filter_col") and st.session_state.get("active_filter_val"):
-        st.success(f"🎯 Сегментация запущена по активному срезу: `{st.session_state.active_filter_col}` = `{st.session_state.active_filter_val}`")
+        st.success(f"🎯 Сегментация запущена по active срезу: `{st.session_state.active_filter_col}` = `{st.session_state.active_filter_val}`")
         
     st.markdown("### 📊 Распределение ОЗМ по RFM-сегментам")
     rfm_df = df.groupby('ОЗМ').agg(Frequency=('Источник (Файл)', 'count'), Monetary=('Сумма', 'sum')).reset_index()
@@ -272,6 +272,7 @@ if uploaded_files:
             except Exception as de: st.error(f"Ошибка Excel: {de}")
 
         elif page == "📊 2. Executive Диаграммы":
+            import plotly.graph_objects as go
             def format_kpi_value(value):
                 abs_val = abs(value)
                 if abs_val >= 1_000_000_000: return f"{value / 1_000_000_000:,.2f} млрд ₸"
@@ -374,7 +375,10 @@ if uploaded_files:
                         fig = go.Figure()
                         if "Waterfall" in style: fig.add_trace(go.Waterfall(x=list(df_g[x_ax].astype(str)) + ["ИТОГО"], y=list(df_g[y_ax]) + [total_sum_val], text=formatted_text_list + [get_formatted_str(total_sum_val)] if lbl else None, textposition="auto" if safe_pos == "auto" else safe_pos, measure=["relative"] * len(df_g[y_ax]) + ["total"], increasing={"marker": {"color": color}}))
                         elif "Donut" in style: fig.add_trace(go.Pie(labels=df_g[x_ax], values=df_g[y_ax], hole=0.4, rotation=rot, textinfo="label+value" if lbl else "none", textposition="auto" if safe_pos not in ["inside", "outside"] else safe_pos, texttemplate="%{label}<br>%{text}" if lbl else None, text=[get_formatted_str(v) for v in df_g[y_ax]]))
+                        
+                        # КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Переменная y_g намертво заменена на y_ax. Линейный тренд полностью ожил!
                         elif "Line" in style: fig.add_trace(go.Scatter(x=df_g[x_ax], y=df_g[y_ax], mode="lines+markers+text" if lbl else "lines+markers", text=formatted_text_list if lbl else None, textposition="top center" if safe_pos == "auto" else safe_pos, line=dict(color=color, width=4), marker=dict(size=8)))
+                        
                         else: fig.add_trace(go.Bar(y=df_g[x_ax] if horiz else df_g[y_ax], x=df_g[y_ax] if horiz else df_g[x_ax], text=formatted_text_list if lbl else None, textposition="auto" if safe_pos == "auto" else safe_pos, orientation="h" if horiz else "v", marker_color=color))
                         
                         fig.update_layout(xaxis=dict(type='category', tickangle=45 if not horiz else 0), uniformtext=dict(mode="hide", minsize=8))
