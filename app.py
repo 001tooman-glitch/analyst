@@ -6,30 +6,26 @@ import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
 
-# МОДУЛЬ 1: УНИВЕРСАЛЬНЫЙ СКОНФИГУРИРОВАННЫЙ ABC/XYZ-АНАЛИЗ С ПОДСКАЗКАМИ
+# МОДУЛЬ 1: УНИВЕРСАЛЬНЫЙ No-Code КОНСТРУКТОР МАТРИЦ ABC/XYZ С ПОДСКАЗКАМИ
 def internal_show_abc_xyz_page(filtered_df):
     st.title("🧮 Уникальный No-Code Конструктор матриц ABC/XYZ")
     if filtered_df.empty:
         st.info("ℹ️ Пожалуйста, загрузите файлы и проверьте фильтры. Текущая выборка пуста.")
         return
     df = filtered_df.copy()
-    
-    # Динамический список доступных столбцов из загруженного файла
     available_cols = list(df.columns)
     
     st.sidebar.markdown("---")
-    st.subheader("🎯 Настройка осей и параметров анализа")
+    st.subheader("🎯 Настройка параметров анализа")
     
-    # ТРЕБОВАНИЕ ВЫПОЛНЕНО: Динамический выбор параметров без жесткой привязки к именам
-    abc_target = st.selectbox("1. Что анализируем (Объект анализа):", [c for c in available_cols if c != 'Сумма' and c != 'Количество'], key="abc_t_target")
+    abc_target = st.selectbox("1. Объект анализа (Что смотрим):", [c for c in available_cols if c not in ['Сумма', 'Количество']], key="abc_t_target")
     abc_value = st.selectbox("2. Критерий масштаба (ABC):", [c for c in ['Сумма', 'Количество'] if c in available_cols] + available_cols, key="abc_v_value")
-    xyz_period = st.selectbox("3. Шкала времени/разреза периодов (XYZ):", [c for c in available_cols if c != abc_target], key="xyz_p_period")
+    xyz_period = st.selectbox("3. Периоды/Шкала времени (XYZ):", [c for c in available_cols if c != abc_target], key="xyz_p_period")
     
-    # ТРЕБОВАНИЕ ВЫПОЛНЕНО: Встроенный интерактивный BI-гид с подсказками по комбинациям
     with st.expander("📖 Аналитический гид: Что мы увидим при этих настройках?"):
         st.markdown(f"""
         * **Группа А (Масштаб)**: Выделит ТОП-позиции по полю `{abc_target}`, на которые уходит до 80% от общего объема по полю `{abc_value}`.
-        * **Группа X (Стабильность)**: Подсветит те объекты `{abc_target}`, которые закупаются максимально равномерно и прогнозируемо от одного периода `{xyz_period}` к другому.
+        * **Группа X (Стабильность)**: Подсветит те объекты `{abc_target}`, которые закупаются максимально равномерно от одного периода `{xyz_period}` к другому.
         * **Группа Z (Хаос)**: Выявит позиции `{abc_target}`, закупки которых по шкале `{xyz_period}` носят разовый, спонтанный или аварийный характер.
         """)
 
@@ -40,19 +36,16 @@ def internal_show_abc_xyz_page(filtered_df):
         b_limit = st.slider("Граница группы B (следующие % объема):", 5, 25, 15, key="abc_sl_2")
     with col_abc2:
         x_limit = st.slider("Граница группы X (Коэфф. вариации KV ≤ %):", 5, 20, 10, key="xyz_sl_1")
-        y_limit = st.slider("Граница group Y (Коэфф. вариации KV ≤ %):", 15, 50, 25, key="xyz_sl_2")
+        y_limit = st.slider("Граница группы Y (Коэфф. вариации KV ≤ %):", 15, 50, 25, key="xyz_sl_2")
 
     try:
-        # Переводим числовое поле в верный формат float для расчетов
         df[abc_value] = pd.to_numeric(df[abc_value], errors='coerce').fillna(0.0)
         df[abc_target] = df[abc_target].fillna("Не указано").astype(str)
         df[xyz_period] = df[xyz_period].fillna("Не указано").astype(str)
         
-        # Очищаем от пустых строк
         df = df[df[abc_target].str.strip() != ""]
         df = df[df[xyz_period].str.strip() != ""]
 
-        # 1. РАСЧЕТ КЛАССА ABC
         df_abc = df.groupby(abc_target, as_index=False)[abc_value].sum()
         df_abc = df_abc.sort_values(by=abc_value, ascending=False).reset_index(drop=True)
         total_sum = df_abc[abc_value].sum()
@@ -65,7 +58,6 @@ def internal_show_abc_xyz_page(filtered_df):
         df_abc['Кумулятивная доля'] = df_abc['Доля'].cumsum() * 100
         df_abc['Класс ABC'] = df_abc['Кумулятивная доля'].map(lambda x: 'A' if x <= a_limit else ('B' if x <= (a_limit + b_limit) else 'C'))
 
-        # 2. РАСЧЕТ КЛАССА XYZ (Кросс-таблица по динамически выбранному периоду)
         period_matrix = df.groupby([abc_target, xyz_period])[abc_value].sum().unstack(fill_value=0.0)
         
         xyz_results = []
@@ -90,7 +82,6 @@ def internal_show_abc_xyz_page(filtered_df):
         st.markdown("---")
         st.subheader("📊 Итоговая 9-польная матрица управления закупками")
         
-        # ФормируемBI сетку 3х3
         pivot_matrix = df_matrix.pivot_table(index='Класс ABC', columns='Класс XYZ', values=abc_target, aggfunc='count', fill_value=0)
         for letter in ['A', 'B', 'C']:
             if letter not in pivot_matrix.index: pivot_matrix.loc[letter] = 0
@@ -110,16 +101,16 @@ def internal_show_abc_xyz_page(filtered_df):
         st.subheader("💡 Рекомендательный протокол снабжения:")
         col_rec1, col_rec2, col_rec3 = st.columns(3)
         with col_rec1:
-            st.info(f"💎 **Группа AX / AY ({pivot_matrix.loc['A', 'X'] + pivot_matrix.loc['A', 'Y']} поз.):** Ключевые стабильные позиции. Настоятельно рекомендуется зафиксировать цены годовыми контрактами.")
+            st.info(f"💎 **Группа AX / AY ({pivot_matrix.loc['A', 'X'] + pivot_matrix.loc['A', 'Y']} поз.):** Ключевые стабильные позиции. Рекомендуется зафиксировать цены годовыми контрактами.")
         with col_rec2:
-            st.warning(f"⚠️ **Группа AZ / BZ ({pivot_matrix.loc['A', 'Z'] + pivot_matrix.loc['B', 'Z']} поз.):** Высокие затраты при хаотичном спросе. Закупки проводить только по жесткому согласованию.")
+            st.warning(f"⚠️ **Группа AZ / BZ ({pivot_matrix.loc['A', 'Z'] + pivot_matrix.loc['B', 'Z']} поз.):** Высокие затраты при хаотичном спросе. Закупки проводить только по согласованию.")
         with col_rec3:
             st.success(f"📦 **Группа CX / CY ({pivot_matrix.loc['C', 'X'] + pivot_matrix.loc['C', 'Y']} поз.):** Дешевая регулярная мелочь. Закупать большими партиями впрок, избавляясь от рутины.")
 
         st.subheader("📋 Детальный реестр матрицы классификации")
         st.dataframe(df_matrix.sort_values(by=abc_value, ascending=False), use_container_width=True)
     except Exception as abc_err:
-        st.error(f"❌ Ошибка вычисления матрицы: Проверьте соответствие типов данных в столбцах. Технический лог: {abc_err}")
+        st.error(f"❌ Ошибка вычисления матрицы. Технический лог: {abc_err}")
 # МОДУЛЬ 2: RFM Сегментация (Сквозная фильтрация)
 def internal_show_rfm_page(filtered_df):
     st.title("👥 Модуль RFM-сегментации номенклатуры")
@@ -281,7 +272,6 @@ if uploaded_files:
             except Exception as de: st.error(f"Ошибка Excel: {de}")
 
         elif page == "📊 2. Executive Диаграммы":
-            import plotly.graph_objects as go
             def format_kpi_value(value):
                 abs_val = abs(value)
                 if abs_val >= 1_000_000_000: return f"{value / 1_000_000_000:,.2f} млрд ₸"
@@ -289,7 +279,6 @@ if uploaded_files:
                 if abs_val >= 1_000: return f"{value / 1_000:,.1f} тыс. ₸"
                 return f"{value:,.2f}"
 
-            df_cards = active_df_global.copy()
             st.subheader("🎴 Панель Ключевых Показателей (KPI Карточки с трендами)")
             card_cols = st.columns(st.session_state.manual_cards)
             for j in range(st.session_state.manual_cards):
@@ -300,7 +289,7 @@ if uploaded_files:
                     c_mode = st.selectbox(f"Расчет:", ["Сумма (SUM)", "Среднее (AVERAGE)"], key=f"c_m_{j}")
                     if t_col != "-- Выберите заголовок --":
                         try:
-                            df_c = df_cards.copy()
+                            df_c = active_df_global.copy()
                             df_c[t_col] = pd.to_numeric(df_c[t_col], errors='coerce').fillna(0)
                             current_val = df_c[t_col].sum() if "Сумма" in c_mode else df_c[t_col].mean()
                             
