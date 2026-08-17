@@ -16,11 +16,12 @@ def internal_show_abc_xyz_page(filtered_df):
     available_cols = list(df.columns)
     
     st.sidebar.markdown("---")
-    st.subheader("🎯 Настройка параметров анализа")
+    st.sidebar.subheader("🎯 Параметры ABC/XYZ")
     
-    abc_target = st.selectbox("1. Объект анализа (Что смотрим):", [c for c in available_cols if c not in ['Сумма', 'Количество']], key="abc_t_target")
-    abc_value = st.selectbox("2. Критерий масштаба (ABC):", [c for c in ['Сумма', 'Количество'] if c in available_cols] + available_cols, key="abc_v_value")
-    xyz_period = st.selectbox("3. Периоды/Шкала времени (XYZ):", [c for c in available_cols if c != abc_target], key="xyz_p_period")
+    # БЕЗОПАСНАЯ ИНИЦИАЛИЗАЦИЯ СЕЛЕКТОРОВ: Полная защита от NameError
+    abc_target = st.sidebar.selectbox("1. Объект анализа (Что смотрим):", [c for c in available_cols if c not in ['Сумма', 'Количество']], key="abc_t_target")
+    abc_value = st.sidebar.selectbox("2. Критерий масштаба (ABC):", [c for c in ['Сумма', 'Количество'] if c in available_cols] + available_cols, key="abc_v_value")
+    xyz_period = st.sidebar.selectbox("3. Периоды/Шкала времени (XYZ):", [c for c in available_cols if c != abc_target], key="xyz_p_period")
     
     with st.expander("📖 Аналитический гид: Что мы увидим при этих настройках?"):
         st.markdown(f"""
@@ -123,7 +124,7 @@ def internal_show_rfm_page(filtered_df):
         return
         
     if st.session_state.get("active_filter_col") and st.session_state.get("active_filter_val"):
-        st.success(f"🎯 Сегментация запущена по active срезу: `{st.session_state.active_filter_col}` = `{st.session_state.active_filter_val}`")
+        st.success(f"🎯 Сегментация запущена по активному срезу: `{st.session_state.active_filter_col}` = `{st.session_state.active_filter_val}`")
         
     st.markdown("### 📊 Распределение ОЗМ по RFM-сегментам")
     rfm_df = df.groupby('ОЗМ').agg(Frequency=('Источник (Файл)', 'count'), Monetary=('Сумма', 'sum')).reset_index()
@@ -272,7 +273,6 @@ if uploaded_files:
             except Exception as de: st.error(f"Ошибка Excel: {de}")
 
         elif page == "📊 2. Executive Диаграммы":
-            import plotly.graph_objects as go
             def format_kpi_value(value):
                 abs_val = abs(value)
                 if abs_val >= 1_000_000_000: return f"{value / 1_000_000_000:,.2f} млрд ₸"
@@ -285,7 +285,12 @@ if uploaded_files:
             for j in range(st.session_state.manual_cards):
                 with card_cols[j % len(card_cols)]:
                     st.markdown(f"**📌 Карточка № {j+1}**")
-                    t_col = st.selectbox(f"Заголовок:", all_cols, index=all_cols.index(st.session_state[f"cached_c_t_{j}"]) if f"cached_c_t_{j}" in st.session_state and st.session_state[f"cached_c_t_{j}"] in all_cols else 0, key=f"c_t_{j}")
+                    
+                    # ИСПРАВЛЕН ЗАЩИТНЫЙ МЕХАНИЗМ ИНИЦИАЛИЗАЦИИ: Замена сырого index на безопасный .get() метод
+                    cached_val = st.session_state.get(f"cached_c_t_{j}", "-- Выберите заголовок --")
+                    t_idx = all_cols.index(cached_val) if cached_val in all_cols else 0
+                    
+                    t_col = st.selectbox(f"Заголовок:", all_cols, index=t_idx, key=f"c_t_{j}")
                     st.session_state[f"cached_c_t_{j}"] = t_col
                     c_mode = st.selectbox(f"Расчет:", ["Сумма (SUM)", "Среднее (AVERAGE)"], key=f"c_m_{j}")
                     if t_col != "-- Выберите заголовок --":
@@ -327,8 +332,16 @@ if uploaded_files:
                 st.markdown(f"##### 📊 Настройка диаграммы № {i+1}")
                 c1, c2, c3, c4 = st.columns(4)
                 with c1: style = st.selectbox(f"Тип графики:", ["Столбчатая диаграмма (Bar)", "Линейный тренд (Line)", "Кольцевая долей (Donut)", "Диаграмма Водопад (Waterfall)"], key=f"s_{i}")
-                with c2: x_ax = st.selectbox(f"Ось X (Категории):", all_cols, index=all_cols.index(st.session_state[f"cached_x_{i}"]) if f"cached_x_{i}" in st.session_state and st.session_state[f"cached_x_{i}"] in all_cols else 0, key=f"x_{i}"); st.session_state[f"cached_x_{i}"] = x_ax
-                with c3: y_ax = st.selectbox(f"Ось Y (Показатели):", all_cols, index=all_cols.index(st.session_state[f"cached_y_{i}"]) if f"cached_y_{i}" in st.session_state and st.session_state[f"cached_y_{i}"] in all_cols else 0, key=f"y_{i}"); st.session_state[f"cached_y_{i}"] = y_ax
+                
+                # ИСПРАВЛЕН ЗАЩИТНЫЙ МЕХАНИЗМ ИНИЦИАЛИЗАЦИИ: Замена сырого index на метод .get() для осей конструктора
+                cached_x = st.session_state.get(f"cached_x_{i}", "-- Выберите заголовок --")
+                x_idx = all_cols.index(cached_x) if cached_x in all_cols else 0
+                with c2: x_ax = st.selectbox(f"Ось X (Категории):", all_cols, index=x_idx, key=f"x_{i}"); st.session_state[f"cached_x_{i}"] = x_ax
+                
+                cached_y = st.session_state.get(f"cached_y_{i}", "-- Выберите заголовок --")
+                y_idx = all_cols.index(cached_y) if cached_y in all_cols else 0
+                with c3: y_ax = st.selectbox(f"Ось Y (Показатели):", all_cols, index=y_idx, key=f"y_{i}"); st.session_state[f"cached_y_{i}"] = y_ax
+                
                 with c4: color = st.color_picker(f"Цвет элементов:", "#1f77b4", key=f"col_{i}")
                 
                 with st.expander("🎨 Настройки отображения шрифтов, меток и округления"):
@@ -375,10 +388,7 @@ if uploaded_files:
                         fig = go.Figure()
                         if "Waterfall" in style: fig.add_trace(go.Waterfall(x=list(df_g[x_ax].astype(str)) + ["ИТОГО"], y=list(df_g[y_ax]) + [total_sum_val], text=formatted_text_list + [get_formatted_str(total_sum_val)] if lbl else None, textposition="auto" if safe_pos == "auto" else safe_pos, measure=["relative"] * len(df_g[y_ax]) + ["total"], increasing={"marker": {"color": color}}))
                         elif "Donut" in style: fig.add_trace(go.Pie(labels=df_g[x_ax], values=df_g[y_ax], hole=0.4, rotation=rot, textinfo="label+value" if lbl else "none", textposition="auto" if safe_pos not in ["inside", "outside"] else safe_pos, texttemplate="%{label}<br>%{text}" if lbl else None, text=[get_formatted_str(v) for v in df_g[y_ax]]))
-                        
-                        # КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Переменная y_g намертво заменена на y_ax. Линейный тренд полностью ожил!
                         elif "Line" in style: fig.add_trace(go.Scatter(x=df_g[x_ax], y=df_g[y_ax], mode="lines+markers+text" if lbl else "lines+markers", text=formatted_text_list if lbl else None, textposition="top center" if safe_pos == "auto" else safe_pos, line=dict(color=color, width=4), marker=dict(size=8)))
-                        
                         else: fig.add_trace(go.Bar(y=df_g[x_ax] if horiz else df_g[y_ax], x=df_g[y_ax] if horiz else df_g[x_ax], text=formatted_text_list if lbl else None, textposition="auto" if safe_pos == "auto" else safe_pos, orientation="h" if horiz else "v", marker_color=color))
                         
                         fig.update_layout(xaxis=dict(type='category', tickangle=45 if not horiz else 0), uniformtext=dict(mode="hide", minsize=8))
