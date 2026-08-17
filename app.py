@@ -30,7 +30,6 @@ def internal_show_abc_xyz_page(filtered_df):
         * **Группа X (Стабильность)**: Подсветит те объекты `{abc_target}`, которые закупаются максимально равномерно от одного периода `{xyz_period}` к другому.
         * **Группа Z (Хаос)**: Выявит позиции `{abc_target}`, закупки которых по шкале `{xyz_period}` носят разовый, спонтанный или аварийный характер.
         """)
-
     st.markdown("### ⚙️ Границы классификации долей и стабильности")
     col_abc1, col_abc2 = st.columns(2)
     with col_abc1:
@@ -39,13 +38,13 @@ def internal_show_abc_xyz_page(filtered_df):
     with col_abc2:
         x_limit = st.slider("Граница группы X (Коэфф. вариации KV ≤ %):", 5, 20, 10, key="xyz_sl_1")
         y_limit = st.slider("Граница группы Y (Коэфф. вариации KV ≤ %):", 15, 50, 25, key="xyz_sl_2")
+
     try:
         df[abc_value] = pd.to_numeric(df[abc_value], errors='coerce').fillna(0.0)
         df[abc_target] = df[abc_target].fillna("Не указано").astype(str)
         df[xyz_period] = df[xyz_period].fillna("Не указано").astype(str)
         
-        df = df[df[abc_target].str.strip() != ""]
-        df = df[df[xyz_period].str.strip() != ""]
+        df = df[(df[abc_target].str.strip() != "") & (df[xyz_period].str.strip() != "")]
 
         df_abc = df.groupby(abc_target, as_index=False)[abc_value].sum()
         df_abc = df_abc.sort_values(by=abc_value, ascending=False).reset_index(drop=True)
@@ -60,7 +59,6 @@ def internal_show_abc_xyz_page(filtered_df):
         df_abc['Class_ABC'] = df_abc['Кумулятивная доля'].map(lambda x: 'A' if x <= a_limit else ('B' if x <= (a_limit + b_limit) else 'C'))
 
         period_matrix = df.groupby([abc_target, xyz_period])[abc_value].sum().unstack(fill_value=0.0)
-        
         xyz_results = []
         for obj_name, rows in period_matrix.iterrows():
             mean_val = rows.mean()
@@ -69,12 +67,9 @@ def internal_show_abc_xyz_page(filtered_df):
             
             if mean_val > 0 and active_periods_count > 1:
                 kv = (std_val / mean_val) * 100
-                if kv <= x_limit: класс_xyz = 'X'
-                elif kv <= y_limit: класс_xyz = 'Y'
-                else: класс_xyz = 'Z'
+                класс_xyz = 'X' if kv <= x_limit else ('Y' if kv <= y_limit else 'Z')
             else:
-                kv = 999.0
-                класс_xyz = 'Z'
+                kv, класс_xyz = 999.0, 'Z'
             xyz_results.append({abc_target: obj_name, 'KV': kv, 'Класс XYZ': класс_xyz})
             
         df_xyz = pd.DataFrame(xyz_results)
@@ -90,6 +85,7 @@ def internal_show_abc_xyz_page(filtered_df):
         for letter in ['X', 'Y', 'Z']:
             if letter not in pivot_matrix.columns: pivot_matrix[letter] = 0
         pivot_matrix = pivot_matrix.loc[['A', 'B', 'C'], ['X', 'Y', 'Z']]
+        
         col_m1, col_m2 = st.columns(2)
         with col_m1:
             st.markdown(f"**Плотность матрицы (Количество объектов `{abc_target}` в секторах):**")
@@ -101,12 +97,9 @@ def internal_show_abc_xyz_page(filtered_df):
 
         st.subheader("💡 Рекомендательный протокол снабжения:")
         col_rec1, col_rec2, col_rec3 = st.columns(3)
-        with col_rec1:
-            st.info(f"💎 **Группа AX / AY ({pivot_matrix.loc['A', 'X'] + pivot_matrix.loc['A', 'Y']} поз.):** Стабильные лидеры затрат. Рекомендуется зафиксировать цены годовыми контрактами.")
-        with col_rec2:
-            st.warning(f"⚠️ **Группа AZ / BZ ({pivot_matrix.loc['A', 'Z'] + pivot_matrix.loc['B', 'Z']} поз.):** Высокие затраты при хаотичном спросе. Закупки проводить только по согласованию.")
-        with col_rec3:
-            st.success(f"📦 **Группа CX / CY ({pivot_matrix.loc['C', 'X'] + pivot_matrix.loc['C', 'Y']} поз.):** Дешевая регулярная мелочь. Закупать большими партиями впрок.")
+        with col_rec1: st.info(f"💎 **Группа AX / AY ({pivot_matrix.loc['A', 'X'] + pivot_matrix.loc['A', 'Y']} поз.):** Самые ценные стабильные позиции. Рекомендуется фиксация цен годовыми контрактами.")
+        with col_rec2: st.warning(f"⚠️ **Группа AZ / BZ ({pivot_matrix.loc['A', 'Z'] + pivot_matrix.loc['B', 'Z']} поз.):** Высокие затраты при хаотичном спросе. Закупки строго под проектное обоснование.")
+        with col_rec3: st.success(f"📦 **Группа CX / CY ({pivot_matrix.loc['C', 'X'] + pivot_matrix.loc['C', 'Y']} поз.):** Дешевая регулярная мелочь. Закупать большими партиями впрок.")
 
         st.subheader("📋 Детальный реестр матрицы классификации")
         st.dataframe(df_matrix.sort_values(by=abc_value, ascending=False), use_container_width=True)
@@ -129,7 +122,7 @@ def internal_show_rfm_page(filtered_df):
         rfm_df['F_Score'] = pd.qcut(rfm_df['Frequency'].rank(method='first'), 3, labels=['3', '2', '1']).astype(str)
         rfm_df['M_Score'] = pd.qcut(rfm_df['Monetary'].rank(method='first'), 3, labels=['3', '2', '1']).astype(str)
     else:
-        rfm_df['F_Score'] = '1'; rfm_df['M_Score'] = '1'
+        rfm_df['F_Score'], rfm_df['M_Score'] = '1', '1'
     rfm_df['RFM_Segment'] = rfm_df['F_Score'] + rfm_df['M_Score']
     seg_counts = rfm_df.groupby('RFM_Segment').size().reset_index(name='Количество ОЗМ')
     fig = px.bar(seg_counts, x='RFM_Segment', y='Количество ОЗМ', text_auto=True, title="Плотность сегментов (Частота + Деньги)", color='RFM_Segment')
@@ -140,9 +133,8 @@ if "manual_cards" not in st.session_state: st.session_state.manual_cards = 1
 if "pq_skip_top" not in st.session_state: st.session_state.pq_skip_top = 0
 if "pq_merge_headers" not in st.session_state: st.session_state.pq_merge_headers = False
 if "pq_remove_footer" not in st.session_state: st.session_state.pq_remove_footer = True
+if "main_df" not in st.session_state: st.session_state.main_df = pd.DataFrame()
 
-# УЛЬТРА-СКОРОСТЬ: Декоратор кэширует данные, прекращая повторное долгое чтение файлов Excel
-@st.cache_data(show_spinner=False)
 def power_query_clean_engine(uploaded_files_list, skip_top, merge_headers, remove_footer):
     frames_dict = {}
     if not uploaded_files_list: return pd.DataFrame(), False
@@ -190,13 +182,16 @@ def power_query_clean_engine(uploaded_files_list, skip_top, merge_headers, remov
     return merged_df[front_cols + other_cols], True
 
 uploaded_files = st.file_uploader("Загрузите один или несколько любых файлов Excel/CSV:", type=["csv", "xlsx"], accept_multiple_files=True)
+if not uploaded_files: st.session_state.main_df = pd.DataFrame()
 if uploaded_files:
-    # Очистка и сборка выполняются со спиннером ОДИН РАЗ, далее всё летает из памяти кэша!
-    with st.spinner("⏳ Идёт молниеносная Power Query сборка данных... Пожалуйста, подождите."):
-        calculated_df, is_merged = power_query_clean_engine(uploaded_files, st.session_state.pq_skip_top, st.session_state.pq_merge_headers, st.session_state.pq_remove_footer)
-    
-    if not calculated_df.empty:
-        main_df = calculated_df
+    # ЖЕСТКАЯ СЕССИОННАЯ ОПТИМИЗАЦИЯ: Очистка запускается ТОЛЬКО ОДИН РАЗ при импорте. Переключения вкладок мгновенные!
+    if st.session_state.main_df.empty:
+        with st.spinner("⏳ Идёт глубокая Power Query сборка данных... Пожалуйста, подождите."):
+            calculated_df, is_merged = power_query_clean_engine(uploaded_files, st.session_state.pq_skip_top, st.session_state.pq_merge_headers, st.session_state.pq_remove_footer)
+            if not calculated_df.empty: st.session_state.main_df = calculated_df
+
+    main_df = st.session_state.main_df
+    if not main_df.empty:
         all_cols = ["-- Выберите заголовок --"] + list(main_df.columns)
 
         st.sidebar.markdown("---")
@@ -221,19 +216,18 @@ if uploaded_files:
         st.sidebar.markdown("---")
         st.sidebar.markdown("### 🗺️ Меню разделов:")
         page = st.sidebar.radio("Перейти к разделу:", ["🗂️ 1. Загрузка и очистка данных", "📊 2. Executive Диаграммы", "🧮 3. ABC/XYZ-аналитика ОЗМ", "👥 4. RFM-сегментация"], label_visibility="collapsed")
-
         if page == "🗂️ 1. Загрузка и очистка данных":
             st.markdown("### 🛠️ Панель шагов трансформации (Аналог Power Query)")
             col_pq1, col_pq2, col_pq3 = st.columns(3)
             with col_pq1:
                 new_skip = st.number_input("1. Пропустить верхние строки (строк):", min_value=0, max_value=20, value=st.session_state.pq_skip_top, step=1)
-                if new_skip != st.session_state.pq_skip_top: st.session_state.pq_skip_top = new_skip; st.cache_data.clear()
+                if new_skip != st.session_state.pq_skip_top: st.session_state.pq_skip_top = new_skip; st.session_state.main_df = pd.DataFrame()
             with col_pq2:
                 new_merge = st.checkbox("2. Схлопнуть заголовок из 2-х строк", value=st.session_state.pq_merge_headers)
-                if new_merge != st.session_state.pq_merge_headers: st.session_state.pq_merge_headers = new_merge; st.cache_data.clear()
+                if new_merge != st.session_state.pq_merge_headers: st.session_state.pq_merge_headers = new_merge; st.session_state.main_df = pd.DataFrame()
             with col_pq3:
                 new_foot = st.checkbox("3. Авто-очистка подвала", value=st.session_state.pq_remove_footer)
-                if new_foot != st.session_state.pq_remove_footer: st.session_state.pq_remove_footer = new_foot; st.cache_data.clear()
+                if new_foot != st.session_state.pq_remove_footer: st.session_state.pq_remove_footer = new_foot; st.session_state.main_df = pd.DataFrame()
             st.markdown("---")
             
             st.title("🚀 Модуль Предобработки & Импорта Данных")
@@ -252,7 +246,6 @@ if uploaded_files:
             excel_buffer = io.BytesIO()
             with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer: main_df.to_excel(writer, index=False, sheet_name='Сводные данные')
             st.download_button(label="📥 Скачать базу (Excel .xlsx)", data=excel_buffer.getvalue(), file_name="Сводная_база.xlsx")
-
         elif page == "📊 2. Executive Диаграммы":
             st.title("📊 Интерактивная BI-Панель Показателей")
             def format_kpi_value(value):
