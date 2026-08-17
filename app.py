@@ -122,13 +122,15 @@ def power_query_clean_engine(uploaded_files_list, skip_top, merge_headers, remov
     
     for col in merged_df.columns:
         if col == 'Источник (Файл)': continue
-        if col in ['Количество', 'Сумма']:
+        if col in ['Quantity', 'Amount', 'Количество', 'Сумма']:
             merged_df[col] = merged_df[col].astype(str).str.replace(r'\s+', '', regex=True).str.replace(',', '.')
             merged_df[col] = pd.to_numeric(merged_df[col], errors='coerce').fillna(0.0)
         else:
             merged_df[col] = merged_df[col].fillna("").astype(str).str.strip().replace(['nan', 'None', 'Не указано'], "")
             
     merged_df = merged_df.dropna(how='all')
+    if 'Quantity' in merged_df.columns: merged_df.rename(columns={'Quantity': 'Количество'}, inplace=True)
+    if 'Amount' in merged_df.columns: merged_df.rename(columns={'Amount': 'Сумма'}, inplace=True)
     front_cols = [c for c in ['ОЗМ', 'Наименование материала', 'Количество', 'Сумма', 'Источник (Файл)'] if c in merged_df.columns]
     other_cols = [c for c in merged_df.columns if c not in front_cols]
     return merged_df[front_cols + other_cols], True
@@ -277,7 +279,8 @@ if uploaded_files:
                         f_size = st.slider("Размер шрифта надписей (px):", 8, 24, 12, key=f"sz_{i}")
                         f_color = st.color_picker("Цвет шрифта надписей:", "#ffffff" if style != "Линейный тренд (Line)" else "#000000", key=f"fcol_{i}")
                     with col_u3:
-                        f_pos = st.selectbox("Расположение надписей:", ["auto", "inside", "outside", "outside center"], key=f"pos_{i}")
+                        # ИСПРАВЛЕНИЕ ОШИБКИ OUTSIDE CENTER: Плохие параметры автоматически экранируются
+                        f_pos = st.selectbox("Расположение надписей:", ["auto", "inside", "outside"], key=f"pos_{i}")
                         horiz = st.checkbox("Горизонтальный вид столбцов", value=False, key=f"h_{i}") if "Bar" in style else False
                         rot = st.slider("🔄 Поворот кольца (градусы):", 0, 360, 0, step=15, key=f"rot_{i}") if "Donut" in style else 0
 
@@ -291,37 +294,48 @@ if uploaded_files:
                         if not horiz: df_g = df_g.sort_values(by=y_ax, ascending=False)
                         
                         formatted_text_list = []
-                        for val in df_g[y_ax]:
-                            rounded_val = round(val, f_round)
-                            if f_format == "Финансовый (₸)": text_item = f"{rounded_val:,.{f_round}f}".replace(",", " ") + " ₸"
+                        total_sum_val = df_g[y_ax].sum()
+                        
+                        # ВНУТРЕННИЙ ФУНКЦИОНАЛ ФОРМАТИРОВАНИЯ МЕТОК ЗНАЧЕНИЙ
+                        def get_formatted_str(value_input):
+                            r_v = round(value_input, f_round)
+                            if f_format == "Финансовый (₸)": return f"{r_v:,.{f_round}f}".replace(",", " ") + " ₸"
                             elif f_format == "Финансовый сжатый (млн/млрд ₸)":
-                                if abs(val) >= 1_000_000_000: text_item = f"{val / 1_000_000_000:,.2f} млрд ₸"
-                                elif abs(val) >= 1_000_000: text_item = f"{val / 1_000_000:,.2f} млн ₸"
-                                else: text_item = f"{val / 1_000:,.1f} тыс. ₸"
-                            elif f_format == "Десятичный дробный": text_item = f"{rounded_val:.{f_round}f}"
-                            else: text_item = f"{rounded_val:,.{f_round}f}".replace(",", " ")
-                            formatted_text_list.append(text_item)
+                                if abs(value_input) >= 1_000_000_000: return f"{value_input / 1_000_000_000:,.2f} млрд ₸"
+                                elif abs(value_input) >= 1_000_000: return f"{value_input / 1_000_000:,.2f} млн ₸"
+                                else: return f"{value_input / 1_000:,.1f} тыс. ₸"
+                            elif f_format == "Десятичный дробный": return f"{r_v:.{f_round}f}"
+                            else: return f"{r_v:,.{f_round}f}".replace(",", " ")
+
+                        for val in df_g[y_ax]:
+                            formatted_text_list.append(get_formatted_str(val))
 
                         fig = go.Figure()
-                        if "Waterfall" in style: fig.add_trace(go.Waterfall(x=list(df_g[x_ax].astype(str)) + ["ИТОГО"], y=list(df_g[y_ax]) + [df_g[y_ax].sum()], text=formatted_text_list + [formatted_text_list] if lbl else None, textposition="auto" if f_pos == "auto" else f_pos, measure=["relative"] * len(df_g[y_ax]) + ["total"], increasing={"marker": {"color": color}}))
-                        elif "Donut" in style: fig.add_trace(go.Pie(labels=df_g[x_ax], values=df_g[y_ax], hole=0.4, rotation=rot, textinfo="label+value" if lbl else "none", textposition="auto" if f_pos == "auto" else f_pos))
-                        elif "Line" in style: fig.add_trace(go.Scatter(x=df_g[x_ax], y=df_g[y_ax], mode="lines+markers+text" if lbl else "lines+markers", text=formatted_text_list if lbl else None, textposition="top center" if f_pos == "auto" else f_pos, line=dict(color=color, width=4), marker=dict(size=8)))
-                        else: fig.add_trace(go.Bar(y=df_g[x_ax] if horiz else df_g[y_ax], x=df_g[y_ax] if horiz else df_g[x_ax], text=formatted_text_list if lbl else None, textposition="auto" if f_pos == "auto" else f_pos, orientation="h" if horiz else "v", marker_color=color))
+                        
+                        # ИСПРАВЛЕНИЕ: Водопад теперь гарантированно выводит итоговую сумму в выбранном No-Code формате
+                        if "Waterfall" in style: 
+                            fig.add_trace(go.Waterfall(x=list(df_g[x_ax].astype(str)) + ["ИТОГО"], y=list(df_g[y_ax]) + [total_sum_val], text=formatted_text_list + [get_formatted_str(total_sum_val)] if lbl else None, textposition="auto" if f_pos == "auto" else f_pos, measure=["relative"] * len(df_g[y_ax]) + ["total"], increasing={"marker": {"color": color}}))
+                        elif "Donut" in style: 
+                            fig.add_trace(go.Pie(labels=df_g[x_ax], values=df_g[y_ax], hole=0.4, rotation=rot, textinfo="label+value" if lbl else "none", textposition="auto" if f_pos not in ["inside", "outside"] else f_pos))
+                        elif "Line" in style: 
+                            fig.add_trace(go.Scatter(x=df_g[x_ax], y=df_g[y_ax], mode="lines+markers+text" if lbl else "lines+markers", text=formatted_text_list if lbl else None, textposition="top center" if f_pos == "auto" else f_pos, line=dict(color=color, width=4), marker=dict(size=8)))
+                        else: 
+                            fig.add_trace(go.Bar(y=df_g[x_ax] if horiz else df_g[y_ax], x=df_g[y_ax] if horiz else df_g[x_ax], text=formatted_text_list if lbl else None, textposition="auto" if f_pos == "auto" else f_pos, orientation="h" if horiz else "v", marker_color=color))
                         
                         fig.update_layout(xaxis=dict(type='category', tickangle=45 if not horiz else 0), uniformtext=dict(mode="hide", minsize=8))
-                        if lbl: fig.update_traces(textfont=dict(size=f_size, color=f_color))
+                        if lbl and "Donut" not in style: fig.update_traces(textfont=dict(size=f_size, color=f_color))
                         st.plotly_chart(fig, use_container_width=True, key=f"p_{i}")
                     except Exception as e_ch: st.error(f"Ошибка отрисовки графиков: {e_ch}")
                 st.markdown("<hr style='border:1px dashed #ddd'>", unsafe_allow_html=True)
                 
             b1, b2 = st.columns(2)
             with b1:
-                if st.button("➕ Добавить диаграмму"): 
+                if st.button("➕ Добавить диаграмму", key="add_chart_btn"): 
                     st.session_state.manual_charts += 1
                     st.rerun()
             with b2:
-                if st.session_state.manual_charts > 1: 
-                    if st.button("🗑️ Удалить диаграмму"):
+                if st.session_state.manual_charts > 1:
+                    if st.button("🗑️ Удалить диаграмму", key="del_chart_btn"):
                         st.session_state.manual_charts -= 1
                         st.rerun()
 
