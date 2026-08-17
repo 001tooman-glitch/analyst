@@ -6,7 +6,7 @@ import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
 
-# МОДУЛЬ 1: УНИВЕРСАЛЬНЫЙ КОНСТРУКТОР МАТРИЦ ABC/XYZ (Интерфейс перенесен из сайдбара на главный экран)
+# МОДУЛЬ 1: УНИВЕРСАЛЬНЫЙ No-Code КОНСТРУКТОР МАТРИЦ ABC/XYZ
 def internal_show_abc_xyz_page(filtered_df):
     st.title("🧮 Уникальный No-Code Конструктор матриц ABC/XYZ")
     if filtered_df.empty:
@@ -16,11 +16,10 @@ def internal_show_abc_xyz_page(filtered_df):
     available_cols = list(df.columns)
     
     st.markdown("### 🎯 Настройка параметров анализа")
-    # ИЗОЛЯЦИЯ: Виджеты размещены на главной странице, сайдбар зафиксирован!
-    col_sel1, col_rec_sel2, col_sel3 = st.columns(3)
+    col_sel1, col_sel2, col_sel3 = st.columns(3)
     with col_sel1:
         abc_target = st.selectbox("1. Объект анализа (Что смотрим):", [c for c in available_cols if c not in ['Сумма', 'Количество']], key="abc_t_target")
-    with col_rec_sel2:
+    with col_sel2:
         abc_value = st.selectbox("2. Критерий масштаба (ABC):", [c for c in ['Сумма', 'Количество'] if c in available_cols] + available_cols, key="abc_v_value")
     with col_sel3:
         xyz_period = st.selectbox("3. Периоды/Шкала времени (XYZ):", [c for c in available_cols if c != abc_target], key="xyz_p_period")
@@ -91,6 +90,7 @@ def internal_show_abc_xyz_page(filtered_df):
         for letter in ['X', 'Y', 'Z']:
             if letter not in pivot_matrix.columns: pivot_matrix[letter] = 0
         pivot_matrix = pivot_matrix.loc[['A', 'B', 'C'], ['X', 'Y', 'Z']]
+        
         col_m1, col_m2 = st.columns(2)
         with col_m1:
             st.markdown(f"**Плотность матрицы (Количество объектов `{abc_target}` в секторах):**")
@@ -103,18 +103,18 @@ def internal_show_abc_xyz_page(filtered_df):
         st.subheader("💡 Рекомендательный протокол снабжения:")
         col_rec1, col_rec2, col_rec3 = st.columns(3)
         with col_rec1:
-            st.info(f"💎 **Группа AX / AY ({pivot_matrix.loc['A', 'X'] + pivot_matrix.loc['A', 'Y']} поз.):** Ключевые стабильные позиции. Рекомендуется зафиксировать цены годовыми контрактами.")
+            st.info(f"💎 **Группа AX / AY ({pivot_matrix.loc['A', 'X'] + pivot_matrix.loc['A', 'Y']} поз.):** Стабильные лидеры затрат. Рекомендуется зафиксировать цены годовыми контрактами.")
         with col_rec2:
             st.warning(f"⚠️ **Группа AZ / BZ ({pivot_matrix.loc['A', 'Z'] + pivot_matrix.loc['B', 'Z']} поз.):** Высокие затраты при хаотичном спросе. Закупки проводить только по согласованию.")
         with col_rec3:
-            st.success(f"📦 **Группа CX / CY ({pivot_matrix.loc['C', 'X'] + pivot_matrix.loc['C', 'Y']} поз.):** Дешевая регулярная мелочь. Закупать большими партиями впрок, избавляясь от рутины.")
+            st.success(f"📦 **Группа CX / CY ({pivot_matrix.loc['C', 'X'] + pivot_matrix.loc['C', 'Y']} поз.):** Дешевая регулярная мелочь. Закупать большими партиями впрок.")
 
         st.subheader("📋 Детальный реестр матрицы классификации")
         st.dataframe(df_matrix.sort_values(by=abc_value, ascending=False), use_container_width=True)
     except Exception as abc_err:
         st.error(f"❌ Ошибка вычисления матрицы. Технический лог: {abc_err}")
 
-# МОДУЛЬ 2: RFM Сегментация (Сквозная фильтрация)
+# МОДУЛЬ 2: RFM Сегментация
 def internal_show_rfm_page(filtered_df):
     st.title("👥 Модуль RFM-сегментации номенклатуры")
     if filtered_df.empty:
@@ -133,17 +133,11 @@ def internal_show_rfm_page(filtered_df):
         rfm_df['F_Score'] = '1'; rfm_df['M_Score'] = '1'
     rfm_df['RFM_Segment'] = rfm_df['F_Score'] + rfm_df['M_Score']
     seg_counts = rfm_df.groupby('RFM_Segment').size().reset_index(name='Количество ОЗМ')
-    
     fig = px.bar(seg_counts, x='RFM_Segment', y='Количество ОЗМ', text_auto=True, title="Плотность сегментов (Частота + Деньги)", color='RFM_Segment')
     st.plotly_chart(fig, use_container_width=True)
     st.dataframe(rfm_df.head(100), use_container_width=True)
 if "manual_charts" not in st.session_state: st.session_state.manual_charts = 1
 if "manual_cards" not in st.session_state: st.session_state.manual_cards = 1
-if "active_filter_val" not in st.session_state: st.session_state.active_filter_val = None
-if "active_filter_col" not in st.session_state: st.session_state.active_filter_col = None
-if "main_df" not in st.session_state: st.session_state.main_df = pd.DataFrame()
-if "uploaded_backup" not in st.session_state: st.session_state.uploaded_backup = None
-
 if "pq_skip_top" not in st.session_state: st.session_state.pq_skip_top = 0
 if "pq_merge_headers" not in st.session_state: st.session_state.pq_merge_headers = False
 if "pq_remove_footer" not in st.session_state: st.session_state.pq_remove_footer = True
@@ -153,8 +147,7 @@ def power_query_clean_engine(uploaded_files_list, skip_top, merge_headers, remov
     if not uploaded_files_list: return pd.DataFrame(), False
     for f in uploaded_files_list:
         try:
-            if f.name.endswith('.csv'): df_raw = pd.read_csv(f, dtype=str)
-            else: df_raw = pd.read_excel(f, dtype=str)
+            df_raw = pd.read_csv(f, dtype=str) if f.name.endswith('.csv') else pd.read_excel(f, dtype=str)
             if df_raw.empty: continue
             if skip_top > 0 and skip_top < len(df_raw): df_raw = df_raw.iloc[skip_top:].reset_index(drop=True)
             if df_raw.empty: continue
@@ -172,17 +165,35 @@ def power_query_clean_engine(uploaded_files_list, skip_top, merge_headers, remov
             df_raw = df_raw.loc[:, ~df_raw.columns.str.contains('^Без названия|^Unnamed|^Unnamed:')]
             df_raw = df_raw.loc[:, ~df_raw.columns.duplicated()]
             
-            if remove_footer:if uploaded_files:
-    if st.session_state.main_df.empty:
-        with st.spinner("⏳ Идёт глубокая Power Query очистка данных... Пожалуйста, подождите."):
-            calculated_df, is_merged = power_query_clean_engine(uploaded_files, st.session_state.pq_skip_top, st.session_state.pq_merge_headers, st.session_state.pq_remove_footer)
-            if not calculated_df.empty: st.session_state.main_df = calculated_df
+            if remove_footer:
+                for text_col in df_raw.select_dtypes(include=['object']).columns:
+                    mask_footer = df_raw[text_col].astype(str).str.lower().str.contains('итого|всего|сумма|подпись', na=False)
+                    df_raw = df_raw[~mask_footer]
+            df_raw = df_raw.dropna(how='all')
+            df_raw['Источник (Файл)'] = f.name.replace(".xlsx", "").replace(".xls", "").replace(".csv", "")
+            frames_dict[f.name] = df_raw
+        except: pass
+    if not frames_dict: return pd.DataFrame(), False
+    merged_df = pd.concat(frames_dict.values(), ignore_index=True, join='outer')
+    for col in merged_df.columns:
+        if col == 'Источник (Файл)': continue
+        if col in ['Quantity', 'Amount', 'Количество', 'Сумма']:
+            merged_df[col] = merged_df[col].astype(str).str.replace(r'\s+', '', regex=True).str.replace(',', '.')
+            merged_df[col] = pd.to_numeric(merged_df[col], errors='coerce').fillna(0.0)
+        else: merged_df[col] = merged_df[col].fillna("").astype(str).str.strip().replace(['nan', 'None', 'Не указано'], "")
+    merged_df = merged_df.dropna(how='all')
+    front_cols = [c for c in ['ОЗМ', 'Наименование материала', 'Количество', 'Сумма', 'Источник (Файл)'] if c in merged_df.columns]
+    other_cols = [c for c in merged_df.columns if c not in front_cols]
+    return merged_df[front_cols + other_cols], True
 
-    main_df = st.session_state.main_df
-    if not main_df.empty:
+# ИСПРАВЛЕНИЕ: Прямая, молниеносная загрузка без циклических ловушек кэша
+uploaded_files = st.file_uploader("Загрузите один или несколько любых файлов Excel/CSV:", type=["csv", "xlsx"], accept_multiple_files=True)
+if uploaded_files:
+    calculated_df, is_merged = power_query_clean_engine(uploaded_files, st.session_state.pq_skip_top, st.session_state.pq_merge_headers, st.session_state.pq_remove_footer)
+    if not calculated_df.empty:
+        main_df = calculated_df
         all_cols = ["-- Выберите заголовок --"] + list(main_df.columns)
 
-        # САЙДБАР СТАЛ КРИСТАЛЬНО МОНОЛИТНЫМ: Никаких динамических изменений виджетов! Браузер больше не упадет.
         st.sidebar.markdown("---")
         st.sidebar.subheader("🎚️ Глобальные Фильтры BI-платформы")
         filter_col_1 = st.sidebar.selectbox("Шаг 1. Первое поле среза:", all_cols, key="fl_col_1_global")
@@ -193,8 +204,6 @@ def power_query_clean_engine(uploaded_files_list, skip_top, merge_headers, remov
             filter_val_1 = st.sidebar.selectbox("Шаг 2. Значение среза №1:", unique_vals_1, key="fl_val_1_global")
             if filter_val_1 != "-- Все значения --":
                 active_df_global = active_df_global[active_df_global[filter_col_1].astype(str) == str(filter_val_1)]
-                st.session_state.active_filter_col = filter_col_1
-                st.session_state.active_filter_val = filter_val_1
         
         st.sidebar.markdown("---")
         filter_col_2 = st.sidebar.selectbox("Шаг 3. Второе поле среза:", all_cols, key="fl_col_2_global")
@@ -212,37 +221,39 @@ def power_query_clean_engine(uploaded_files_list, skip_top, merge_headers, remov
             st.markdown("### 🛠️ Панель шагов трансформации (Аналог Power Query)")
             col_pq1, col_pq2, col_pq3 = st.columns(3)
             with col_pq1:
-                new_skip = st.number_input("1. Пропустить верхние строки (строк):", min_value=0, max_value=20, value=st.session_state.pq_skip_top, step=1)
-                if new_skip != st.session_state.pq_skip_top: st.session_state.pq_skip_top = new_skip; st.session_state.main_df = pd.DataFrame()
+                st.session_state.pq_skip_top = st.number_input("1. Пропустить верхние строки (строк):", min_value=0, max_value=20, value=st.session_state.pq_skip_top, step=1)
             with col_pq2:
-                new_merge = st.checkbox("2. Схлопнуть заголовок из 2-х строк", value=st.session_state.pq_merge_headers)
-                if new_merge != st.session_state.pq_merge_headers: st.session_state.pq_merge_headers = new_merge; st.session_state.main_df = pd.DataFrame()
+                st.session_state.pq_merge_headers = st.checkbox("2. Схлопнуть заголовок из 2-х строк", value=st.session_state.pq_merge_headers)
             with col_pq3:
-                new_foot = st.checkbox("3. Авто-очистка подвала", value=st.session_state.pq_remove_footer)
-                if new_foot != st.session_state.pq_remove_footer: st.session_state.pq_remove_footer = new_foot; st.session_state.main_df = pd.DataFrame()
+                st.session_state.pq_remove_footer = st.checkbox("3. Авто-очистка подвала", value=st.session_state.pq_remove_footer)
             st.markdown("---")
             
             st.title("🚀 Модуль Предобработки & Импорта Данных")
             tot_rows, tot_cols = len(main_df), len(main_df.columns)
-            st.success(f"📊 Идеальная сводная база сформирована! Строк: {tot_rows:,}, Колонок: {tot_cols}")
+            st.success(f"📊 База сформирована! Строк: {tot_rows:,}, Колонок: {tot_cols}")
             rows_per_page = 50
             total_pages = (tot_rows // rows_per_page) + (1 if tot_rows % rows_per_page > 0 else 0)
             col_p1, col_p2 = st.columns(2)
-            with col_p1: current_page = st.number_input(f"Страница (из {total_pages}):", min_value=1, max_value=total_pages, value=1, step=1, key="nav_pg_idx")
+            with col_p1: current_page = st.number_input(f"Страница (из {total_pages}):", min_value=1, max_value=total_pages, value=1, step=1)
             with col_p2:
                 start_idx = (current_page - 1) * rows_per_page
                 end_idx = start_idx + rows_per_page
-                st.markdown(f"Показаны строки с **{start_idx + 1}** по **{min(end_idx, tot_rows)}** из **{tot_rows:,}** строк.")
-            try: st.dataframe(main_df.iloc[start_idx:end_idx], height=350, use_container_width=True)
-            except Exception as e: st.error(f"Ошибка: {e}")
-            try:
-                excel_buffer = io.BytesIO()
-                with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer: main_df.to_excel(writer, index=False, sheet_name='Сводные данные')
-                st.download_button(label="📥 Скачать идеальную сводную базу (Excel .xlsx)", data=excel_buffer.getvalue(), file_name="Идеальная_сводная_база.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-            except Exception as de: st.error(f"Ошибка Excel: {de}")
-
+                st.markdown(f"Строки с **{start_idx + 1}** по **{min(end_idx, tot_rows)}** из **{tot_rows:,}**")
+            st.dataframe(main_df.iloc[start_idx:end_idx], height=350, use_container_width=True)
+            
+            excel_buffer = io.BytesIO()
+            with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer: main_df.to_excel(writer, index=False, sheet_name='Сводные данные')
+            st.download_button(label="📥 Скачать базу (Excel .xlsx)", data=excel_buffer.getvalue(), file_name="Сводная_база.xlsx")
         elif page == "📊 2. Executive Диаграммы":
             st.title("📊 Интерактивная BI-Панель Показателей")
+            
+            def format_kpi_value(value):
+                abs_val = abs(value)
+                if abs_val >= 1_000_000_000: return f"{value / 1_000_000_000:,.2f} млрд ₸"
+                if abs_val >= 1_000_000: return f"{value / 1_000_000:,.2f} млн ₸"
+                if abs_val >= 1_000: return f"{value / 1_000:,.1f} тыс. ₸"
+                return f"{value:,.2f}"
+
             card_cols = st.columns(st.session_state.manual_cards)
             for j in range(st.session_state.manual_cards):
                 with card_cols[j % len(card_cols)]:
@@ -254,33 +265,14 @@ def power_query_clean_engine(uploaded_files_list, skip_top, merge_headers, remov
                             df_c = active_df_global.copy()
                             df_c[t_col] = pd.to_numeric(df_c[t_col], errors='coerce').fillna(0)
                             current_val = df_c[t_col].sum() if "Сумма" in c_mode else df_c[t_col].mean()
-                            delta_html = ""
-                            if st.session_state.get("fl_col_1_global") and st.session_state.fl_col_1_global != "-- Выберите заголовок --" and st.session_state.get("fl_val_1_global") and st.session_state.fl_val_1_global != "-- Все значения --":
-                                trend_column = st.session_state.fl_col_1_global
-                                current_period = str(st.session_state.fl_val_1_global)
-                                all_periods = sorted(list(main_df[trend_column].astype(str).unique()), key=lambda x: int(x) if x.isdigit() else x)
-                                if current_period in all_periods:
-                                    curr_idx = all_periods.index(current_period)
-                                    if curr_idx > 0:
-                                        prev_period = all_periods[curr_idx - 1]
-                                        df_prev = main_df[main_df[trend_column].astype(str) == str(prev_period)].copy()
-                                        if st.session_state.get("fl_col_2_global") and st.session_state.get("fl_val_2_global") and st.session_state.fl_val_2_global != "-- Все значения --":
-                                            if st.session_state.fl_col_2_global != trend_column: df_prev = df_prev[df_prev[st.session_state.fl_col_2_global].astype(str) == str(st.session_state.fl_val_2_global)]
-                                        df_prev[t_col] = pd.to_numeric(df_prev[t_col], errors='coerce').fillna(0)
-                                        prev_val = df_prev[t_col].sum() if "Сумма" in c_mode else df_prev[t_col].mean()
-                                        if prev_val > 0:
-                                            pct_diff = ((current_val - prev_val) / prev_val) * 100
-                                            is_cost = any(w in t_col.lower() for w in ['сумма', 'цена', 'стоимость', 'amount'])
-                                            color_trend = "#d9534f" if (pct_diff > 0 if is_cost else pct_diff < 0) else "#5cb85c"
-                                            arrow = "▲" if pct_diff > 0 else "▼"
-                                            delta_html = f'<div style="color:{color_trend}; font-size:14px; font-weight:bold; margin-top:5px;">{arrow} {pct_diff:+.1f}% <span style="color:#6c757d; font-weight:normal;">к {prev_period}</span></div>'
-                            st.markdown(f'<div style="background-color:#f8f9fa; border:1px solid #dee2e6; border-radius:10px; padding:20px; text-align:center; margin-bottom:15px;"><div style="color:#6c757d; font-size:15px; font-weight:500; height:45px; overflow:hidden;">{t_col}</div><div style="color:#1f77b4; font-size:26px; font-weight:bold; margin-top:5px;">{format_kpi_value(current_val)}</div>{delta_html}</div>', unsafe_allow_html=True)
+                            st.markdown(f'<div style="background-color:#f8f9fa; border:1px solid #dee2e6; border-radius:10px; padding:20px; text-align:center; margin-bottom:15px;"><div style="color:#6c757d; font-size:15px; font-weight:500;">{t_col}</div><div style="color:#1f77b4; font-size:26px; font-weight:bold; margin-top:5px;">{format_kpi_value(current_val)}</div></div>', unsafe_allow_html=True)
                         except: pass
             cc1, cc2 = st.columns(2)
             with cc1:
                 if st.button("➕ Добавить карточку"): st.session_state.manual_cards += 1; st.rerun()
             with cc2:
                 if st.session_state.manual_cards > 1: st.session_state.manual_cards -= 1; st.rerun()
+
             st.markdown("---")
             st.subheader("🛠️ No-Code Конструктор Графиков (Расширенный)")
             for i in range(st.session_state.manual_charts):
@@ -352,28 +344,3 @@ def power_query_clean_engine(uploaded_files_list, skip_top, merge_headers, remov
         elif "3. ABC/XYZ" in page: internal_show_abc_xyz_page(active_df_global)
         elif "4. RFM" in page: internal_show_rfm_page(active_df_global)
 else: st.info("Ожидание загрузки любых файлов Excel/CSV для активации BI-панели...")
-
-                for text_col in df_raw.select_dtypes(include=['object']).columns:
-                    mask_footer = df_raw[text_col].astype(str).str.lower().str.contains('итого|всего|сумма|подпись', na=False)
-                    df_raw = df_raw[~mask_footer]
-            df_raw = df_raw.dropna(how='all')
-            df_raw['Источник (Файл)'] = f.name.replace(".xlsx", "").replace(".xls", "").replace(".csv", "")
-            frames_dict[f.name] = df_raw
-        except: pass
-    if not frames_dict: return pd.DataFrame(), False
-    merged_df = pd.concat(frames_dict.values(), ignore_index=True, join='outer')
-    for col in merged_df.columns:
-        if col == 'Источник (Файл)': continue
-        if col in ['Quantity', 'Amount', 'Количество', 'Сумма']:
-            merged_df[col] = merged_df[col].astype(str).str.replace(r'\s+', '', regex=True).str.replace(',', '.')
-            merged_df[col] = pd.to_numeric(merged_df[col], errors='coerce').fillna(0.0)
-        else: merged_df[col] = merged_df[col].fillna("").astype(str).str.strip().replace(['nan', 'None', 'Не указано'], "")
-    merged_df = merged_df.dropna(how='all')
-    front_cols = [c for c in ['ОЗМ', 'Наименование материала', 'Количество', 'Сумма', 'Источник (Файл)'] if c in merged_df.columns]
-    other_cols = [c for c in merged_df.columns if c not in front_cols]
-    return merged_df[front_cols + other_cols], True
-
-uploaded_files = st.file_uploader("Загрузите один или несколько любых файлов Excel/CSV:", type=["csv", "xlsx"], accept_multiple_files=True)
-if uploaded_files:
-    if st.session_state.uploaded_backup != uploaded_files: st.session_state.uploaded_backup = uploaded_files; st.session_state.main_df = pd.DataFrame() 
-elif st.session_state.uploaded_backup: uploaded_files = st.session_state.uploaded_backup
