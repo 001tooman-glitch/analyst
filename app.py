@@ -90,7 +90,6 @@ def internal_show_abc_xyz_page(filtered_df):
         for letter in ['X', 'Y', 'Z']:
             if letter not in pivot_matrix.columns: pivot_matrix[letter] = 0
         pivot_matrix = pivot_matrix.loc[['A', 'B', 'C'], ['X', 'Y', 'Z']]
-        
         col_m1, col_m2 = st.columns(2)
         with col_m1:
             st.markdown(f"**Плотность матрицы (Количество объектов `{abc_target}` в секторах):**")
@@ -142,6 +141,8 @@ if "pq_skip_top" not in st.session_state: st.session_state.pq_skip_top = 0
 if "pq_merge_headers" not in st.session_state: st.session_state.pq_merge_headers = False
 if "pq_remove_footer" not in st.session_state: st.session_state.pq_remove_footer = True
 
+# УЛЬТРА-СКОРОСТЬ: Декоратор кэширует данные, прекращая повторное долгое чтение файлов Excel
+@st.cache_data(show_spinner=False)
 def power_query_clean_engine(uploaded_files_list, skip_top, merge_headers, remove_footer):
     frames_dict = {}
     if not uploaded_files_list: return pd.DataFrame(), False
@@ -182,14 +183,18 @@ def power_query_clean_engine(uploaded_files_list, skip_top, merge_headers, remov
             merged_df[col] = pd.to_numeric(merged_df[col], errors='coerce').fillna(0.0)
         else: merged_df[col] = merged_df[col].fillna("").astype(str).str.strip().replace(['nan', 'None', 'Не указано'], "")
     merged_df = merged_df.dropna(how='all')
+    if 'Quantity' in merged_df.columns: merged_df.rename(columns={'Quantity': 'Количество'}, inplace=True)
+    if 'Amount' in merged_df.columns: merged_df.rename(columns={'Amount': 'Сумма'}, inplace=True)
     front_cols = [c for c in ['ОЗМ', 'Наименование материала', 'Количество', 'Сумма', 'Источник (Файл)'] if c in merged_df.columns]
     other_cols = [c for c in merged_df.columns if c not in front_cols]
     return merged_df[front_cols + other_cols], True
 
-# ИСПРАВЛЕНИЕ: Прямая, молниеносная загрузка без циклических ловушек кэша
 uploaded_files = st.file_uploader("Загрузите один или несколько любых файлов Excel/CSV:", type=["csv", "xlsx"], accept_multiple_files=True)
 if uploaded_files:
-    calculated_df, is_merged = power_query_clean_engine(uploaded_files, st.session_state.pq_skip_top, st.session_state.pq_merge_headers, st.session_state.pq_remove_footer)
+    # Очистка и сборка выполняются со спиннером ОДИН РАЗ, далее всё летает из памяти кэша!
+    with st.spinner("⏳ Идёт молниеносная Power Query сборка данных... Пожалуйста, подождите."):
+        calculated_df, is_merged = power_query_clean_engine(uploaded_files, st.session_state.pq_skip_top, st.session_state.pq_merge_headers, st.session_state.pq_remove_footer)
+    
     if not calculated_df.empty:
         main_df = calculated_df
         all_cols = ["-- Выберите заголовок --"] + list(main_df.columns)
@@ -221,11 +226,14 @@ if uploaded_files:
             st.markdown("### 🛠️ Панель шагов трансформации (Аналог Power Query)")
             col_pq1, col_pq2, col_pq3 = st.columns(3)
             with col_pq1:
-                st.session_state.pq_skip_top = st.number_input("1. Пропустить верхние строки (строк):", min_value=0, max_value=20, value=st.session_state.pq_skip_top, step=1)
+                new_skip = st.number_input("1. Пропустить верхние строки (строк):", min_value=0, max_value=20, value=st.session_state.pq_skip_top, step=1)
+                if new_skip != st.session_state.pq_skip_top: st.session_state.pq_skip_top = new_skip; st.cache_data.clear()
             with col_pq2:
-                st.session_state.pq_merge_headers = st.checkbox("2. Схлопнуть заголовок из 2-х строк", value=st.session_state.pq_merge_headers)
+                new_merge = st.checkbox("2. Схлопнуть заголовок из 2-х строк", value=st.session_state.pq_merge_headers)
+                if new_merge != st.session_state.pq_merge_headers: st.session_state.pq_merge_headers = new_merge; st.cache_data.clear()
             with col_pq3:
-                st.session_state.pq_remove_footer = st.checkbox("3. Авто-очистка подвала", value=st.session_state.pq_remove_footer)
+                new_foot = st.checkbox("3. Авто-очистка подвала", value=st.session_state.pq_remove_footer)
+                if new_foot != st.session_state.pq_remove_footer: st.session_state.pq_remove_footer = new_foot; st.cache_data.clear()
             st.markdown("---")
             
             st.title("🚀 Модуль Предобработки & Импорта Данных")
@@ -244,9 +252,9 @@ if uploaded_files:
             excel_buffer = io.BytesIO()
             with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer: main_df.to_excel(writer, index=False, sheet_name='Сводные данные')
             st.download_button(label="📥 Скачать базу (Excel .xlsx)", data=excel_buffer.getvalue(), file_name="Сводная_база.xlsx")
+
         elif page == "📊 2. Executive Диаграммы":
             st.title("📊 Интерактивная BI-Панель Показателей")
-            
             def format_kpi_value(value):
                 abs_val = abs(value)
                 if abs_val >= 1_000_000_000: return f"{value / 1_000_000_000:,.2f} млрд ₸"
@@ -265,14 +273,33 @@ if uploaded_files:
                             df_c = active_df_global.copy()
                             df_c[t_col] = pd.to_numeric(df_c[t_col], errors='coerce').fillna(0)
                             current_val = df_c[t_col].sum() if "Сумма" in c_mode else df_c[t_col].mean()
-                            st.markdown(f'<div style="background-color:#f8f9fa; border:1px solid #dee2e6; border-radius:10px; padding:20px; text-align:center; margin-bottom:15px;"><div style="color:#6c757d; font-size:15px; font-weight:500;">{t_col}</div><div style="color:#1f77b4; font-size:26px; font-weight:bold; margin-top:5px;">{format_kpi_value(current_val)}</div></div>', unsafe_allow_html=True)
+                            delta_html = ""
+                            if st.session_state.get("fl_col_1_global") and st.session_state.fl_col_1_global != "-- Выберите заголовок --" and st.session_state.get("fl_val_1_global") and st.session_state.fl_val_1_global != "-- Все значения --":
+                                trend_column = st.session_state.fl_col_1_global
+                                current_period = str(st.session_state.fl_val_1_global)
+                                all_periods = sorted(list(main_df[trend_column].astype(str).unique()), key=lambda x: int(x) if x.isdigit() else x)
+                                if current_period in all_periods:
+                                    curr_idx = all_periods.index(current_period)
+                                    if curr_idx > 0:
+                                        prev_period = all_periods[curr_idx - 1]
+                                        df_prev = main_df[main_df[trend_column].astype(str) == str(prev_period)].copy()
+                                        if st.session_state.get("fl_col_2_global") and st.session_state.get("fl_val_2_global") and st.session_state.fl_val_2_global != "-- Все значения --":
+                                            if st.session_state.fl_col_2_global != trend_column: df_prev = df_prev[df_prev[st.session_state.fl_col_2_global].astype(str) == str(st.session_state.fl_val_2_global)]
+                                        df_prev[t_col] = pd.to_numeric(df_prev[t_col], errors='coerce').fillna(0)
+                                        prev_val = df_prev[t_col].sum() if "Сумма" in c_mode else df_prev[t_col].mean()
+                                        if prev_val > 0:
+                                            pct_diff = ((current_val - prev_val) / prev_val) * 100
+                                            is_cost = any(w in t_col.lower() for w in ['сумма', 'цена', 'стоимость', 'amount'])
+                                            color_trend = "#d9534f" if (pct_diff > 0 if is_cost else pct_diff < 0) else "#5cb85c"
+                                            arrow = "▲" if pct_diff > 0 else "▼"
+                                            delta_html = f'<div style="color:{color_trend}; font-size:14px; font-weight:bold; margin-top:5px;">{arrow} {pct_diff:+.1f}% <span style="color:#6c757d; font-weight:normal;">к {prev_period}</span></div>'
+                            st.markdown(f'<div style="background-color:#f8f9fa; border:1px solid #dee2e6; border-radius:10px; padding:20px; text-align:center; margin-bottom:15px;"><div style="color:#6c757d; font-size:15px; font-weight:500;">{t_col}</div><div style="color:#1f77b4; font-size:26px; font-weight:bold; margin-top:5px;">{format_kpi_value(current_val)}</div>{delta_html}</div>', unsafe_allow_html=True)
                         except: pass
             cc1, cc2 = st.columns(2)
             with cc1:
                 if st.button("➕ Добавить карточку"): st.session_state.manual_cards += 1; st.rerun()
             with cc2:
                 if st.session_state.manual_cards > 1: st.session_state.manual_cards -= 1; st.rerun()
-
             st.markdown("---")
             st.subheader("🛠️ No-Code Конструктор Графиков (Расширенный)")
             for i in range(st.session_state.manual_charts):
