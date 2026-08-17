@@ -18,7 +18,6 @@ def internal_show_abc_xyz_page(filtered_df):
     st.sidebar.markdown("---")
     st.sidebar.subheader("🎯 Параметры ABC/XYZ")
     
-    # БЕЗОПАСНАЯ ИНИЦИАЛИЗАЦИЯ СЕЛЕКТОРОВ: Полная защита от NameError
     abc_target = st.sidebar.selectbox("1. Объект анализа (Что смотрим):", [c for c in available_cols if c not in ['Сумма', 'Количество']], key="abc_t_target")
     abc_value = st.sidebar.selectbox("2. Критерий масштаба (ABC):", [c for c in ['Сумма', 'Количество'] if c in available_cols] + available_cols, key="abc_v_value")
     xyz_period = st.sidebar.selectbox("3. Периоды/Шкала времени (XYZ):", [c for c in available_cols if c != abc_target], key="xyz_p_period")
@@ -57,7 +56,7 @@ def internal_show_abc_xyz_page(filtered_df):
             
         df_abc['Доля'] = df_abc[abc_value] / total_sum
         df_abc['Кумулятивная доля'] = df_abc['Доля'].cumsum() * 100
-        df_abc['Класс ABC'] = df_abc['Кумулятивная доля'].map(lambda x: 'A' if x <= a_limit else ('B' if x <= (a_limit + b_limit) else 'C'))
+        df_abc['Class_ABC'] = df_abc['Кумулятивная доля'].map(lambda x: 'A' if x <= a_limit else ('B' if x <= (a_limit + b_limit) else 'C'))
 
         period_matrix = df.groupby([abc_target, xyz_period])[abc_value].sum().unstack(fill_value=0.0)
         
@@ -78,12 +77,12 @@ def internal_show_abc_xyz_page(filtered_df):
             xyz_results.append({abc_target: obj_name, 'KV': kv, 'Класс XYZ': класс_xyz})
             
         df_xyz = pd.DataFrame(xyz_results)
-        df_matrix = pd.merge(df_abc[[abc_target, abc_value, 'Класс ABC']], df_xyz, on=abc_target)
-        df_matrix['Матрица ABC/XYZ'] = df_matrix['Класс ABC'] + df_matrix['Класс XYZ']
+        df_matrix = pd.merge(df_abc[[abc_target, abc_value, 'Class_ABC']], df_xyz, on=abc_target)
+        df_matrix['Матрица ABC/XYZ'] = df_matrix['Class_ABC'] + df_matrix['Класс XYZ']
         st.markdown("---")
         st.subheader("📊 Итоговая 9-польная матрица управления закупками")
         
-        pivot_matrix = df_matrix.pivot_table(index='Класс ABC', columns='Класс XYZ', values=abc_target, aggfunc='count', fill_value=0)
+        pivot_matrix = df_matrix.pivot_table(index='Class_ABC', columns='Класс XYZ', values=abc_target, aggfunc='count', fill_value=0)
         for letter in ['A', 'B', 'C']:
             if letter not in pivot_matrix.index: pivot_matrix.loc[letter] = 0
         for letter in ['X', 'Y', 'Z']:
@@ -237,7 +236,7 @@ if uploaded_files:
 
         st.sidebar.markdown("---")
         st.sidebar.markdown("### 🗺️ Меню разделов:")
-        page = st.sidebar.radio("Перейти к разделу:", ["🗂️ 1. Загрузка и очистка данных", "📊 2. Executive Диаграммы", "🧮 3. ABC/XYZ-аналитика ОЗМ", "👥 4. RFM-сегментация"], label_visibility="collapsed")
+        page = st.sidebar.radio("Перейти к разделу:", ["🗂️ 1. Загрузка и очистка данных", "📊 2. Executive Диаграммы", "🗂️ 3. ABC/XYZ-аналитика ОЗМ", "👥 4. RFM-сегментация"], label_visibility="collapsed")
 
         if page == "🗂️ 1. Загрузка и очистка данных":
             st.markdown("### 🛠️ Панель шагов трансформации (Аналог Power Query)")
@@ -273,6 +272,7 @@ if uploaded_files:
             except Exception as de: st.error(f"Ошибка Excel: {de}")
 
         elif page == "📊 2. Executive Диаграммы":
+            import plotly.graph_objects as go
             def format_kpi_value(value):
                 abs_val = abs(value)
                 if abs_val >= 1_000_000_000: return f"{value / 1_000_000_000:,.2f} млрд ₸"
@@ -286,12 +286,8 @@ if uploaded_files:
                 with card_cols[j % len(card_cols)]:
                     st.markdown(f"**📌 Карточка № {j+1}**")
                     
-                    # ИСПРАВЛЕН ЗАЩИТНЫЙ МЕХАНИЗМ ИНИЦИАЛИЗАЦИИ: Замена сырого index на безопасный .get() метод
-                    cached_val = st.session_state.get(f"cached_c_t_{j}", "-- Выберите заголовок --")
-                    t_idx = all_cols.index(cached_val) if cached_val in all_cols else 0
-                    
-                    t_col = st.selectbox(f"Заголовок:", all_cols, index=t_idx, key=f"c_t_{j}")
-                    st.session_state[f"cached_c_t_{j}"] = t_col
+                    # ПОЛНАЯ ЛИКВИДАЦИЯ INDEX ИЗ СЕЛЕКТОРОВ: 100% защита от аварийного кэша сервера
+                    t_col = st.selectbox(f"Заголовок:", all_cols, key=f"c_t_{j}")
                     c_mode = st.selectbox(f"Расчет:", ["Сумма (SUM)", "Среднее (AVERAGE)"], key=f"c_m_{j}")
                     if t_col != "-- Выберите заголовок --":
                         try:
@@ -333,15 +329,9 @@ if uploaded_files:
                 c1, c2, c3, c4 = st.columns(4)
                 with c1: style = st.selectbox(f"Тип графики:", ["Столбчатая диаграмма (Bar)", "Линейный тренд (Line)", "Кольцевая долей (Donut)", "Диаграмма Водопад (Waterfall)"], key=f"s_{i}")
                 
-                # ИСПРАВЛЕН ЗАЩИТНЫЙ МЕХАНИЗМ ИНИЦИАЛИЗАЦИИ: Замена сырого index на метод .get() для осей конструктора
-                cached_x = st.session_state.get(f"cached_x_{i}", "-- Выберите заголовок --")
-                x_idx = all_cols.index(cached_x) if cached_x in all_cols else 0
-                with c2: x_ax = st.selectbox(f"Ось X (Категории):", all_cols, index=x_idx, key=f"x_{i}"); st.session_state[f"cached_x_{i}"] = x_ax
-                
-                cached_y = st.session_state.get(f"cached_y_{i}", "-- Выберите заголовок --")
-                y_idx = all_cols.index(cached_y) if cached_y in all_cols else 0
-                with c3: y_ax = st.selectbox(f"Ось Y (Показатели):", all_cols, index=y_idx, key=f"y_{i}"); st.session_state[f"cached_y_{i}"] = y_ax
-                
+                # ПОЛНАЯ ЛИКВИДАЦИЯ INDEX ИЗ КОНСТРУКТОРА: Никаких вызовов .index(). Ошибка исключена!
+                with c2: x_ax = st.selectbox(f"Ось X (Категории):", all_cols, key=f"x_{i}")
+                with c3: y_ax = st.selectbox(f"Ось Y (Показатели):", all_cols, key=f"y_{i}")
                 with c4: color = st.color_picker(f"Цвет элементов:", "#1f77b4", key=f"col_{i}")
                 
                 with st.expander("🎨 Настройки отображения шрифтов, меток и округления"):
