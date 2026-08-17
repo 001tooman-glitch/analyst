@@ -285,8 +285,6 @@ if uploaded_files:
                     try:
                         df_chart = active_df_global.copy()
                         df_chart[y_ax] = pd.to_numeric(df_chart[y_ax], errors='coerce').fillna(0)
-                        
-                        # КРИТИЧЕСКОЕ УЛУЧШЕНИЕ: Принудительный кастинг к ТЕКСТУ удаляет дробные аномалии float-оси
                         df_chart[x_ax] = df_chart[x_ax].fillna("Не указано").astype(str)
                         
                         df_g = df_chart.groupby(x_ax, as_index=False)[y_ax].sum()
@@ -307,9 +305,7 @@ if uploaded_files:
                         fig = go.Figure()
                         if "Waterfall" in style: fig.add_trace(go.Waterfall(x=list(df_g[x_ax].astype(str)) + ["ИТОГО"], y=list(df_g[y_ax]) + [df_g[y_ax].sum()], text=formatted_text_list + [formatted_text_list] if lbl else None, textposition="auto" if f_pos == "auto" else f_pos, measure=["relative"] * len(df_g[y_ax]) + ["total"], increasing={"marker": {"color": color}}))
                         elif "Donut" in style: fig.add_trace(go.Pie(labels=df_g[x_ax], values=df_g[y_ax], hole=0.4, rotation=rot, textinfo="label+value" if lbl else "none", textposition="auto" if f_pos == "auto" else f_pos))
-                        elif "Line" in style:
-                            # ИСПРАВЛЕНО: Полная трассировка y_ax убрала сбой пустого экрана. Линия ожила!
-                            fig.add_trace(go.Scatter(x=df_g[x_ax], y=df_g[y_ax], mode="lines+markers+text" if lbl else "lines+markers", text=formatted_text_list if lbl else None, textposition="top center" if f_pos == "auto" else f_pos, line=dict(color=color, width=4), marker=dict(size=8)))
+                        elif "Line" in style: fig.add_trace(go.Scatter(x=df_g[x_ax], y=df_g[y_ax], mode="lines+markers+text" if lbl else "lines+markers", text=formatted_text_list if lbl else None, textposition="top center" if f_pos == "auto" else f_pos, line=dict(color=color, width=4), marker=dict(size=8)))
                         else: fig.add_trace(go.Bar(y=df_g[x_ax] if horiz else df_g[y_ax], x=df_g[y_ax] if horiz else df_g[x_ax], text=formatted_text_list if lbl else None, textposition="auto" if f_pos == "auto" else f_pos, orientation="h" if horiz else "v", marker_color=color))
                         
                         fig.update_layout(xaxis=dict(type='category', tickangle=45 if not horiz else 0), uniformtext=dict(mode="hide", minsize=8))
@@ -317,11 +313,17 @@ if uploaded_files:
                         st.plotly_chart(fig, use_container_width=True, key=f"p_{i}")
                     except Exception as e_ch: st.error(f"Ошибка отрисовки графиков: {e_ch}")
                 st.markdown("<hr style='border:1px dashed #ddd'>", unsafe_allow_html=True)
+                
             b1, b2 = st.columns(2)
             with b1:
-                if st.button("➕ Добавить диаграмму"): st.session_state.manual_charts += 1; st.rerun()
+                if st.button("➕ Добавить диаграмму"): 
+                    st.session_state.manual_charts += 1
+                    st.rerun()
             with b2:
-                if st.session_state.manual_charts > 1: st.session_state.manual_charts -= 1; st.rerun()
+                if st.session_state.manual_charts > 1: 
+                    if st.button("🗑️ Удалить диаграмму"):
+                        st.session_state.manual_charts -= 1
+                        st.rerun()
 
         elif "3. ABC/XYZ" in page: internal_show_abc_xyz_page(active_df_global)
         elif "4. RFM" in page: internal_show_rfm_page(active_df_global)
