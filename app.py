@@ -76,7 +76,6 @@ if "uploaded_backup" not in st.session_state: st.session_state.uploaded_backup =
 if "pq_skip_top" not in st.session_state: st.session_state.pq_skip_top = 0
 if "pq_merge_headers" not in st.session_state: st.session_state.pq_merge_headers = False
 if "pq_remove_footer" not in st.session_state: st.session_state.pq_remove_footer = True
-# ЧИСТЫЙ И СТАБИЛЬНЫЙ ДВИЖОК ОЧИСТКИ ЗАКУПОЧНЫХ БАЗ
 def power_query_clean_engine(uploaded_files_list, skip_top, merge_headers, remove_footer):
     frames_dict = {}
     if not uploaded_files_list: return pd.DataFrame(), False
@@ -148,7 +147,7 @@ if uploaded_files:
     if not main_df.empty:
         all_cols = ["-- Выберите заголовок --"] + list(main_df.columns)
 
-        # СБОРКА БЕЗ СБОЕВ: Панель фильтров отрисовывается строго по готовому all_cols
+        # ФИКСИРУЕМ ГЛОБАЛЬНЫЙ САЙДБАР В КОРНЕ СИСТЕМЫ
         st.sidebar.markdown("---")
         st.sidebar.subheader("🎚️ Глобальные Фильтры BI-платформы")
         filter_col_1 = st.sidebar.selectbox("Шаг 1. Первое поле среза:", all_cols, key="fl_col_1_global")
@@ -211,8 +210,16 @@ if uploaded_files:
             import plotly.graph_objects as go
             st.title("📊 Интерактивная BI-Панель Показателей")
             
+            # ВНУТРЕННЯЯ ФУНКЦИЯ УМНОГО МАСШТАБА ДЛЯ KPI КАРТОЧЕК
+            def format_kpi_value(value):
+                abs_val = abs(value)
+                if abs_val >= 1_000_000_000: return f"{value / 1_000_000_000:,.2f} млрд ₸"
+                if abs_val >= 1_000_000: return f"{value / 1_000_000:,.2f} млн ₸"
+                if abs_val >= 1_000: return f"{value / 1_000:,.1f} тыс. ₸"
+                return f"{value:,.2f}"
+
             df_cards = active_df_global.copy()
-            st.subheader("🎴 Панель Ключевых Показателей (KPI Карточки)")
+            st.subheader("🎴 Панель Ключевых Показателей (KPI Карточки с трендами)")
             card_cols = st.columns(st.session_state.manual_cards)
             for j in range(st.session_state.manual_cards):
                 with card_cols[j % len(card_cols)]:
@@ -228,15 +235,39 @@ if uploaded_files:
                         try:
                             df_c = df_cards.copy()
                             df_c[t_col] = pd.to_numeric(df_c[t_col], errors='coerce').fillna(0)
-                            val = df_c[t_col].sum() if "Сумма" in c_mode else df_c[t_col].mean()
-                            st.markdown(f'<div style="background-color:#f8f9fa; border:1px solid #dee2e6; border-radius:10px; padding:20px; text-align:center; margin-bottom:15px;"><div style="color:#6c757d; font-size:16px;">{t_col}</div><div style="color:#1f77b4; font-size:36px; font-weight:bold;">{val:,.2f}</div></div>', unsafe_allow_html=True)
-                        except: st.error("Ошибка")
+                            current_val = df_c[t_col].sum() if "Сумма" in c_mode else df_c[t_col].mean()
+                            
+                            # ДВИЖОК АВТО-СРАВНЕНИЯ ПЕРИОДОВ (MoM/YoY Дельты)
+                            delta_html = ""
+                            if 'Источник (Файл)' in main_df.columns and st.session_state.get("fl_val_1_global") and st.session_state.fl_val_1_global != "-- Все значения --":
+                                current_period = str(st.session_state.fl_val_1_global)
+                                all_periods = sorted(list(main_df['Источник (Файл)'].unique()))
+                                if current_period in all_periods:
+                                    curr_idx = all_periods.index(current_period)
+                                    if curr_idx > 0:
+                                        prev_period = all_periods[curr_idx - 1]
+                                        df_prev = main_df[main_df['Источник (Файл)'].astype(str) == str(prev_period)].copy()
+                                        if st.session_state.get("fl_col_2_global") and st.session_state.get("fl_val_2_global") and st.session_state.fl_val_2_global != "-- Все значения --":
+                                            if st.session_state.fl_col_2_global != 'Источник (Файл)':
+                                                df_prev = df_prev[df_prev[st.session_state.fl_col_2_global].astype(str) == str(st.session_state.fl_val_2_global)]
+                                        df_prev[t_col] = pd.to_numeric(df_prev[t_col], errors='coerce').fillna(0)
+                                        prev_val = df_prev[t_col].sum() if "Сумма" in c_mode else df_prev[t_col].mean()
+                                        if prev_val > 0:
+                                            pct_diff = ((current_val - prev_val) / prev_val) * 100
+                                            is_cost = any(w in t_col.lower() for w in ['сумма', 'цена', 'стоимость', 'amount'])
+                                            color_trend = "#d9534f" if (pct_diff > 0 if is_cost else pct_diff < 0) else "#5cb85c"
+                                            arrow = "▲" if pct_diff > 0 else "▼"
+                                            delta_html = f'<div style="color:{color_trend}; font-size:14px; font-weight:bold; margin-top:5px;">{arrow} {pct_diff:+.1f}% <span style="color:#6c757d; font-weight:normal;">к {prev_period}</span></div>'
+                            
+                            st.markdown(f'<div style="background-color:#f8f9fa; border:1px solid #dee2e6; border-radius:10px; padding:20px; text-align:center; margin-bottom:15px;"><div style="color:#6c757d; font-size:15px; font-weight:500; height:45px; overflow:hidden;">{t_col} ({c_mode.split()[0]})</div><div style="color:#1f77b4; font-size:28px; font-weight:bold; margin-top:5px;">{format_kpi_value(current_val)}</div>{delta_html}</div>', unsafe_allow_html=True)
+                        except: st.error("Ошибка расчета")
             cc1, cc2 = st.columns(2)
             with cc1:
                 if st.button("➕ Добавить карточку"): st.session_state.manual_cards += 1; st.rerun()
             with cc2:
                 if st.session_state.manual_cards > 1:
                     if st.button("🗑️ Удалить карточку"): st.session_state.manual_cards -= 1; st.rerun()
+
             st.markdown("---")
             st.subheader("🛠️ No-Code Конструктор Графиков")
             for i in range(st.session_state.manual_charts):
