@@ -76,7 +76,6 @@ if "uploaded_backup" not in st.session_state: st.session_state.uploaded_backup =
 if "pq_skip_top" not in st.session_state: st.session_state.pq_skip_top = 0
 if "pq_merge_headers" not in st.session_state: st.session_state.pq_merge_headers = False
 if "pq_remove_footer" not in st.session_state: st.session_state.pq_remove_footer = True
-# ЧИСТЫЙ И СТАБИЛЬНЫЙ ДВИЖОК ОЧИСТКИ ЗАКУПОЧНЫХ БАЗ
 def power_query_clean_engine(uploaded_files_list, skip_top, merge_headers, remove_footer):
     frames_dict = {}
     if not uploaded_files_list: return pd.DataFrame(), False
@@ -123,13 +122,15 @@ def power_query_clean_engine(uploaded_files_list, skip_top, merge_headers, remov
     
     for col in merged_df.columns:
         if col == 'Источник (Файл)': continue
-        if col in ['Количество', 'Сумма']:
+        if col in ['Quantity', 'Amount', 'Количество', 'Сумма']:
             merged_df[col] = merged_df[col].astype(str).str.replace(r'\s+', '', regex=True).str.replace(',', '.')
             merged_df[col] = pd.to_numeric(merged_df[col], errors='coerce').fillna(0.0)
         else:
             merged_df[col] = merged_df[col].fillna("").astype(str).str.strip().replace(['nan', 'None', 'Не указано'], "")
             
     merged_df = merged_df.dropna(how='all')
+    if 'Quantity' in merged_df.columns: merged_df.rename(columns={'Quantity': 'Количество'}, inplace=True)
+    if 'Amount' in merged_df.columns: merged_df.rename(columns={'Amount': 'Сумма'}, inplace=True)
     front_cols = [c for c in ['ОЗМ', 'Наименование материала', 'Количество', 'Сумма', 'Источник (Файл)'] if c in merged_df.columns]
     other_cols = [c for c in merged_df.columns if c not in front_cols]
     return merged_df[front_cols + other_cols], True
@@ -148,7 +149,6 @@ if uploaded_files:
     if not main_df.empty:
         all_cols = ["-- Выберите заголовок --"] + list(main_df.columns)
 
-        # СБОРКА БЕЗ СБОЕВ: Панель фильтров отрисовывается строго по готовому all_cols
         st.sidebar.markdown("---")
         st.sidebar.subheader("🎚️ Глобальные Фильтры BI-платформы")
         filter_col_1 = st.sidebar.selectbox("Шаг 1. Первое поле среза:", all_cols, key="fl_col_1_global")
@@ -187,7 +187,7 @@ if uploaded_files:
                 if new_foot != st.session_state.pq_remove_footer: st.session_state.pq_remove_footer = new_foot; st.session_state.main_df = pd.DataFrame()
             st.markdown("---")
             
-            st.title("🚀 Модуль Предобработки & Импорта Данных")
+            st.title("🚀 Модуль Предобработки & ... Импорта Данных")
             tot_rows, tot_cols = len(main_df), len(main_df.columns)
             st.success(f"📊 Идеальная сводная база сформирована! Строк: {tot_rows:,}, Колонок: {tot_cols}")
             rows_per_page = 50
@@ -211,16 +211,20 @@ if uploaded_files:
             import plotly.graph_objects as go
             st.title("📊 Интерактивная BI-Панель Показателей")
             
+            def format_kpi_value(value):
+                abs_val = abs(value)
+                if abs_val >= 1_000_000_000: return f"{value / 1_000_000_000:,.2f} млрд ₸"
+                if abs_val >= 1_000_000: return f"{value / 1_000_000:,.2f} млн ₸"
+                if abs_val >= 1_000: return f"{value / 1_000:,.1f} тыс. ₸"
+                return f"{value:,.2f}"
+
             df_cards = active_df_global.copy()
-            st.subheader("🎴 Панель Ключевых Показателей (KPI Карточки)")
+            st.subheader("🎴 Панель Ключевых Показателей (KPI Карточки с трендами)")
             card_cols = st.columns(st.session_state.manual_cards)
             for j in range(st.session_state.manual_cards):
                 with card_cols[j % len(card_cols)]:
                     st.markdown(f"**📌 Карточка № {j+1}**")
-                    t_idx = 0
-                    if f"cached_c_t_{j}" in st.session_state and st.session_state[f"cached_c_t_{j}"] in all_cols:
-                        t_idx = all_cols.index(st.session_state[f"cached_c_t_{j}"])
-                    t_col = st.selectbox(f"Заголовок:", all_cols, index=t_idx, key=f"c_t_{j}")
+                    t_col = st.selectbox(f"Заголовок:", all_cols, index=all_cols.index(st.session_state[f"cached_c_t_{j}"]) if f"cached_c_t_{j}" in st.session_state and st.session_state[f"cached_c_t_{j}"] in all_cols else 0, key=f"c_t_{j}")
                     st.session_state[f"cached_c_t_{j}"] = t_col
                     
                     c_mode = st.selectbox(f"Расчет:", ["Сумма (SUM)", "Среднее (AVERAGE)"], key=f"c_m_{j}")
@@ -228,60 +232,116 @@ if uploaded_files:
                         try:
                             df_c = df_cards.copy()
                             df_c[t_col] = pd.to_numeric(df_c[t_col], errors='coerce').fillna(0)
-                            val = df_c[t_col].sum() if "Сумма" in c_mode else df_c[t_col].mean()
-                            st.markdown(f'<div style="background-color:#f8f9fa; border:1px solid #dee2e6; border-radius:10px; padding:20px; text-align:center; margin-bottom:15px;"><div style="color:#6c757d; font-size:16px;">{t_col}</div><div style="color:#1f77b4; font-size:36px; font-weight:bold;">{val:,.2f}</div></div>', unsafe_allow_html=True)
-                        except: st.error("Ошибка")
-            cc1, cc2 = st.columns(2)
-            with cc1:
-                if st.button("➕ Добавить карточку"): st.session_state.manual_cards += 1; st.rerun()
-            with cc2:
-                if st.session_state.manual_cards > 1:
-                    if st.button("🗑️ Удалить карточку"): st.session_state.manual_cards -= 1; st.rerun()
+                            current_val = df_c[t_col].sum() if "Сумма" in c_mode else df_c[t_col].mean()
+                            
+                            delta_html = ""
+                            if st.session_state.get("fl_col_1_global") and st.session_state.fl_col_1_global != "-- Выберите заголовок --" and st.session_state.get("fl_val_1_global") and st.session_state.fl_val_1_global != "-- Все значения --":
+                                trend_column = st.session_state.fl_col_1_global
+                                current_period = str(st.session_state.fl_val_1_global)
+                                all_periods = sorted(list(main_df[trend_column].astype(str).unique()), key=lambda x: int(x) if x.isdigit() else x)
+                                
+                                if current_period in all_periods:
+                                    curr_idx = all_periods.index(current_period)
+                                    if curr_idx > 0:
+                                        prev_period = all_periods[curr_idx - 1]
+                                        df_prev = main_df[main_df[trend_column].astype(str) == str(prev_period)].copy()
+                                        if st.session_state.get("fl_col_2_global") and st.session_state.get("fl_val_2_global") and st.session_state.fl_val_2_global != "-- Все значения --":
+                                            if st.session_state.fl_col_2_global != trend_column:
+                                                df_prev = df_prev[df_prev[st.session_state.fl_col_2_global].astype(str) == str(st.session_state.fl_val_2_global)]
+                                        df_prev[t_col] = pd.to_numeric(df_prev[t_col], errors='coerce').fillna(0)
+                                        prev_val = df_prev[t_col].sum() if "Сумма" in c_mode else df_prev[t_col].mean()
+                                        if prev_val > 0:
+                                            pct_diff = ((current_val - prev_val) / prev_val) * 100
+                                            is_cost = any(w in t_col.lower() for w in ['сумма', 'цена', 'стоимость', 'amount'])
+                                            color_trend = "#d9534f" if (pct_diff > 0 if is_cost else pct_diff < 0) else "#5cb85c"
+                                            arrow = "▲" if pct_diff > 0 else "▼"
+                                            delta_html = f'<div style="color:{color_trend}; font-size:14px; font-weight:bold; margin-top:5px;">{arrow} {pct_diff:+.1f}% <span style="color:#6c757d; font-weight:normal;">к {prev_period}</span></div>'
+                            
+                            st.markdown(f'<div style="background-color:#f8f9fa; border:1px solid #dee2e6; border-radius:10px; padding:20px; text-align:center; margin-bottom:15px;"><div style="color:#6c757d; font-size:15px; font-weight:500; height:45px; overflow:hidden;">{t_col} ({c_mode.split()})</div><div style="color:#1f77b4; font-size:28px; font-weight:bold; margin-top:5px;">{format_kpi_value(current_val)}</div>{delta_html}</div>', unsafe_allow_html=True)
+                        except: st.error("Ошибка расчета")
             st.markdown("---")
-            st.subheader("🛠️ No-Code Конструктор Графиков")
+            st.subheader("🛠️ No-Code Конструктор Графиков (Расширенный)")
             for i in range(st.session_state.manual_charts):
                 st.markdown(f"##### 📊 Настройка диаграммы № {i+1}")
                 c1, c2, c3, c4 = st.columns(4)
                 with c1: style = st.selectbox(f"Тип графики:", ["Столбчатая диаграмма (Bar)", "Линейный тренд (Line)", "Кольцевая долей (Donut)", "Диаграмма Водопад (Waterfall)"], key=f"s_{i}")
-                with c2:
-                    x_idx = 0
-                    if f"cached_x_{i}" in st.session_state and st.session_state[f"cached_x_{i}"] in all_cols: x_idx = all_cols.index(st.session_state[f"cached_x_{i}"])
-                    x_ax = st.selectbox(f"Ось X (Категории):", all_cols, index=x_idx, key=f"x_{i}")
-                    st.session_state[f"cached_x_{i}"] = x_ax
-                with c3:
-                    y_idx = 0
-                    if f"cached_y_{i}" in st.session_state and st.session_state[f"cached_y_{i}"] in all_cols: y_idx = all_cols.index(st.session_state[f"cached_y_{i}"])
-                    y_ax = st.selectbox(f"Ось Y (Показатели):", all_cols, index=y_idx, key=f"y_{i}")
-                    st.session_state[f"cached_y_{i}"] = y_ax
+                with c2: x_ax = st.selectbox(f"Ось X (Категории):", all_cols, index=all_cols.index(st.session_state[f"cached_x_{i}"]) if f"cached_x_{i}" in st.session_state and st.session_state[f"cached_x_{i}"] in all_cols else 0, key=f"x_{i}"); st.session_state[f"cached_x_{i}"] = x_ax
+                with c3: y_ax = st.selectbox(f"Ось Y (Показатели):", all_cols, index=all_cols.index(st.session_state[f"cached_y_{i}"]) if f"cached_y_{i}" in st.session_state and st.session_state[f"cached_y_{i}"] in all_cols else 0, key=f"y_{i}"); st.session_state[f"cached_y_{i}"] = y_ax
                 with c4: color = st.color_picker(f"Цвет элементов:", "#1f77b4", key=f"col_{i}")
                 
-                with st.expander("🎨 Настройки отображения"):
-                    lbl = st.checkbox("Показывать значения на графике", value=True, key=f"lbl_{i}")
-                    horiz = st.checkbox("Горизонтальный вид столбцов", value=False, key=f"h_{i}") if "Bar" in style else False
-                    rot = st.slider("🔄 Поворот кольца:", 0, 360, 0, step=15, key=f"rot_{i}") if "Donut" in style else 0
+                with st.expander("🎨 Настройки отображения шрифтов, меток и округления"):
+                    col_u1, col_u2, col_u3 = st.columns(3)
+                    with col_u1:
+                        lbl = st.checkbox("Показывать значения на графике", value=True, key=f"lbl_{i}")
+                        f_format = st.selectbox("Формат представления:", ["Числовой с пробелами", "Финансовый (₸)", "Финансовый сжатый (млн/млрд ₸)", "Десятичный дробный"], key=f"fmt_{i}")
+                        f_round = st.slider("Округление знаков после запятой:", 0, 4, 0, key=f"rnd_{i}")
+                    with col_u2:
+                        f_size = st.slider("Размер шрифта надписей (px):", 8, 24, 12, key=f"sz_{i}")
+                        f_color = st.color_picker("Цвет шрифта надписей:", "#ffffff" if style != "Линейный тренд (Line)" else "#000000", key=f"fcol_{i}")
+                    with col_u3:
+                        f_pos = st.selectbox("Расположение надписей:", ["auto", "inside", "outside"], key=f"pos_{i}")
+                        horiz = st.checkbox("Горизонтальный вид столбцов", value=False, key=f"h_{i}") if "Bar" in style else False
+                        rot = st.slider("🔄 Поворот кольца (градусы):", 0, 360, 0, step=15, key=f"rot_{i}") if "Donut" in style else 0
 
                 if x_ax != "-- Выберите заголовок --" and y_ax != "-- Выберите заголовок --":
                     try:
                         df_chart = active_df_global.copy()
                         df_chart[y_ax] = pd.to_numeric(df_chart[y_ax], errors='coerce').fillna(0)
+                        df_chart[x_ax] = df_chart[x_ax].fillna("Не указано").astype(str)
+                        
                         df_g = df_chart.groupby(x_ax, as_index=False)[y_ax].sum()
                         if not horiz: df_g = df_g.sort_values(by=y_ax, ascending=False)
                         
+                        formatted_text_list = []
+                        total_sum_val = df_g[y_ax].sum()
+                        
+                        def get_formatted_str(value_input):
+                            r_v = round(value_input, f_round)
+                            if f_format == "Финансовый (₸)": return f"{r_v:,.{f_round}f}".replace(",", " ") + " ₸"
+                            elif f_format == "Финансовый сжатый (млн/млрд ₸)":
+                                if abs(value_input) >= 1_000_000_000: return f"{value_input / 1_000_000_000:,.2f} млрд ₸"
+                                elif abs(value_input) >= 1_000_000: return f"{value_input / 1_000_000:,.2f} млн ₸"
+                                else: return f"{value_input / 1_000:,.1f} тыс. ₸"
+                            elif f_format == "Десятичный дробный": return f"{r_v:.{f_round}f}"
+                            else: return f"{r_v:,.{f_round}f}".replace(",", " ")
+
+                        for val in df_g[y_ax]:
+                            formatted_text_list.append(get_formatted_str(val))
+
+                        # АВТО-САНИТАР: Экранирует некорректные параметры расположения для Donut диаграмм
+                        safe_pos = f_pos
+                        if "Donut" in style and f_pos not in ["inside", "outside", "auto"]:
+                            safe_pos = "auto"
+
                         fig = go.Figure()
-                        if "Waterfall" in style: fig.add_trace(go.Waterfall(x=list(df_g[x_ax].astype(str)) + ["ИТОГО"], y=list(df_g[y_ax]) + [df_g[y_ax].sum()], text=[f"{v:,.0f}" for v in df_g[y_ax]] + [f"{df_g[y_ax].sum():,.0f}"] if lbl else None, textposition="auto", measure=["relative"] * len(df_g[y_ax]) + ["total"], increasing={"marker": {"color": color}}))
-                        elif "Donut" in style: fig.add_trace(go.Pie(labels=df_g[x_ax], values=df_g[y_ax], hole=0.4, rotation=rot, textinfo="label+value" if lbl else "none"))
-                        elif "Line" in style: fig.add_trace(go.Scatter(x=df_g[x_ax], y=df_g[y_ax], mode="lines+markers+text" if lbl else "lines+markers", text=df_g[y_ax].map(lambda x: f"{x:,.0f}") if lbl else None, textposition="top center", line=dict(color=color, width=3)))
-                        else: fig.add_trace(go.Bar(y=df_g[x_ax].astype(str) if horiz else df_g[y_ax], x=df_g[y_ax] if horiz else df_g[x_ax].astype(str), text=df_g[y_ax].map(lambda x: f"{x:,.0f}") if lbl else None, textposition="auto", orientation="h" if horiz else "v", marker_color=color))
-                        fig.update_layout(xaxis=dict(tickangle=45 if not horiz else 0), uniformtext=dict(mode="hide", minsize=8))
+                        if "Waterfall" in style: 
+                            fig.add_trace(go.Waterfall(x=list(df_g[x_ax].astype(str)) + ["ИТОГО"], y=list(df_g[y_ax]) + [total_sum_val], text=formatted_text_list + [get_formatted_str(total_sum_val)] if lbl else None, textposition="auto" if safe_pos == "auto" else safe_pos, measure=["relative"] * len(df_g[y_ax]) + ["total"], increasing={"marker": {"color": color}}))
+                        elif "Donut" in style: 
+                            # ТРЕБОВАНИЕ ВЫПОЛНЕНО: Текст внутри Donut теперь полностью слушается размера f_size и f_color
+                            fig.add_trace(go.Pie(labels=df_g[x_ax], values=df_g[y_ax], hole=0.4, rotation=rot, textinfo="label+value" if lbl else "none", textposition="auto" if safe_pos not in ["inside", "outside"] else safe_pos, texttemplate="%{label}<br>%{text}" if lbl else None, text=[get_formatted_str(v) for v in df_g[y_ax]]))
+                        elif "Line" in style: 
+                            fig.add_trace(go.Scatter(x=df_g[x_ax], y=df_g[y_ax], mode="lines+markers+text" if lbl else "lines+markers", text=formatted_text_list if lbl else None, textposition="top center" if safe_pos == "auto" else safe_pos, line=dict(color=color, width=4), marker=dict(size=8)))
+                        else: 
+                            fig.add_trace(go.Bar(y=df_g[x_ax] if horiz else df_g[y_ax], x=df_g[y_ax] if horiz else df_g[x_ax], text=formatted_text_list if lbl else None, textposition="auto" if safe_pos == "auto" else safe_pos, orientation="h" if horiz else "v", marker_color=color))
+                        
+                        fig.update_layout(xaxis=dict(type='category', tickangle=45 if not horiz else 0), uniformtext=dict(mode="hide", minsize=8))
+                        # ТРЕБОВАНИЕ ВЫПОЛНЕНО: f_size и f_color теперь применяются глобально ко всем типам фигур, включая Pie/Donut
+                        if lbl: 
+                            fig.update_traces(textfont=dict(size=f_size, color=f_color))
                         st.plotly_chart(fig, use_container_width=True, key=f"p_{i}")
-                    except: pass
+                    except Exception as e_ch: st.error(f"Ошибка отрисовки графиков: {e_ch}")
                 st.markdown("<hr style='border:1px dashed #ddd'>", unsafe_allow_html=True)
+                
             b1, b2 = st.columns(2)
             with b1:
-                if st.button("➕ Добавить диаграмму"): st.session_state.manual_charts += 1; st.rerun()
+                if st.button("➕ Добавить диаграмму", key="add_chart_btn"): 
+                    st.session_state.manual_charts += 1
+                    st.rerun()
             with b2:
-                if st.session_state.manual_charts > 1:
-                    if st.button("🗑️ Удалить диаграмму"): st.session_state.manual_charts -= 1; st.rerun()
+                if st.session_state.manual_charts > 1: 
+                    if st.button("🗑️ Удалить диаграмму", key="del_chart_btn"):
+                        st.session_state.manual_charts -= 1
+                        st.rerun()
 
         elif "3. ABC/XYZ" in page: internal_show_abc_xyz_page(active_df_global)
         elif "4. RFM" in page: internal_show_rfm_page(active_df_global)
