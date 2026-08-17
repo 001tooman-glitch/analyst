@@ -147,7 +147,6 @@ if uploaded_files:
     if not main_df.empty:
         all_cols = ["-- Выберите заголовок --"] + list(main_df.columns)
 
-        # ФИКСИРУЕМ ГЛОБАЛЬНЫЙ ПУЛЬТ УПРАВЛЕНИЯ В САЙДБАРЕ
         st.sidebar.markdown("---")
         st.sidebar.subheader("🎚️ Глобальные Фильтры BI-платформы")
         filter_col_1 = st.sidebar.selectbox("Шаг 1. Первое поле среза:", all_cols, key="fl_col_1_global")
@@ -223,10 +222,7 @@ if uploaded_files:
             for j in range(st.session_state.manual_cards):
                 with card_cols[j % len(card_cols)]:
                     st.markdown(f"**📌 Карточка № {j+1}**")
-                    t_idx = 0
-                    if f"cached_c_t_{j}" in st.session_state and st.session_state[f"cached_c_t_{j}"] in all_cols:
-                        t_idx = all_cols.index(st.session_state[f"cached_c_t_{j}"])
-                    t_col = st.selectbox(f"Заголовок:", all_cols, index=t_idx, key=f"c_t_{j}")
+                    t_col = st.selectbox(f"Заголовок:", all_cols, index=all_cols.index(st.session_state[f"cached_c_t_{j}"]) if f"cached_c_t_{j}" in st.session_state and st.session_state[f"cached_c_t_{j}"] in all_cols else 0, key=f"c_t_{j}")
                     st.session_state[f"cached_c_t_{j}"] = t_col
                     
                     c_mode = st.selectbox(f"Расчет:", ["Сумма (SUM)", "Среднее (AVERAGE)"], key=f"c_m_{j}")
@@ -236,7 +232,6 @@ if uploaded_files:
                             df_c[t_col] = pd.to_numeric(df_c[t_col], errors='coerce').fillna(0)
                             current_val = df_c[t_col].sum() if "Сумма" in c_mode else df_c[t_col].mean()
                             
-                            # ДИНАМИЧЕСКИЙ ДВИЖОК СРАВНЕНИЯ: Считывает ось и тип данных из Шага 1-2 глобального сайдбара
                             delta_html = ""
                             if st.session_state.get("fl_col_1_global") and st.session_state.fl_col_1_global != "-- Выберите заголовок --" and st.session_state.get("fl_val_1_global") and st.session_state.fl_val_1_global != "-- Все значения --":
                                 trend_column = st.session_state.fl_col_1_global
@@ -262,58 +257,71 @@ if uploaded_files:
                             
                             st.markdown(f'<div style="background-color:#f8f9fa; border:1px solid #dee2e6; border-radius:10px; padding:20px; text-align:center; margin-bottom:15px;"><div style="color:#6c757d; font-size:15px; font-weight:500; height:45px; overflow:hidden;">{t_col} ({c_mode.split()})</div><div style="color:#1f77b4; font-size:28px; font-weight:bold; margin-top:5px;">{format_kpi_value(current_val)}</div>{delta_html}</div>', unsafe_allow_html=True)
                         except: st.error("Ошибка расчета")
-            cc1, cc2 = st.columns(2)
-            with cc1:
-                if st.button("➕ Добавить карточку"): st.session_state.manual_cards += 1; st.rerun()
-            with cc2:
-                if st.session_state.manual_cards > 1:
-                    if st.button("🗑️ Удалить карточку"): st.session_state.manual_cards -= 1; st.rerun()
-
             st.markdown("---")
-            st.subheader("🛠️ No-Code Конструктор Графиков")
+            st.subheader("🛠️ No-Code Конструктор Графиков (Расширенный)")
             for i in range(st.session_state.manual_charts):
                 st.markdown(f"##### 📊 Настройка диаграммы № {i+1}")
                 c1, c2, c3, c4 = st.columns(4)
                 with c1: style = st.selectbox(f"Тип графики:", ["Столбчатая диаграмма (Bar)", "Линейный тренд (Line)", "Кольцевая долей (Donut)", "Диаграмма Водопад (Waterfall)"], key=f"s_{i}")
-                with c2:
-                    x_idx = 0
-                    if f"cached_x_{i}" in st.session_state and st.session_state[f"cached_x_{i}"] in all_cols: x_idx = all_cols.index(st.session_state[f"cached_x_{i}"])
-                    x_ax = st.selectbox(f"Ось X (Категории):", all_cols, index=x_idx, key=f"x_{i}")
-                    st.session_state[f"cached_x_{i}"] = x_ax
-                with c3:
-                    y_idx = 0
-                    if f"cached_y_{i}" in st.session_state and st.session_state[f"cached_y_{i}"] in all_cols: y_idx = all_cols.index(st.session_state[f"cached_y_{i}"])
-                    y_ax = st.selectbox(f"Ось Y (Показатели):", all_cols, index=y_idx, key=f"y_{i}")
-                    st.session_state[f"cached_y_{i}"] = y_ax
+                with c2: x_ax = st.selectbox(f"Ось X (Категории):", all_cols, index=all_cols.index(st.session_state[f"cached_x_{i}"]) if f"cached_x_{i}" in st.session_state and st.session_state[f"cached_x_{i}"] in all_cols else 0, key=f"x_{i}"); st.session_state[f"cached_x_{i}"] = x_ax
+                with c3: y_ax = st.selectbox(f"Ось Y (Показатели):", all_cols, index=all_cols.index(st.session_state[f"cached_y_{i}"]) if f"cached_y_{i}" in st.session_state and st.session_state[f"cached_y_{i}"] in all_cols else 0, key=f"y_{i}"); st.session_state[f"cached_y_{i}"] = y_ax
                 with c4: color = st.color_picker(f"Цвет элементов:", "#1f77b4", key=f"col_{i}")
                 
-                with st.expander("🎨 Настройки отображения"):
-                    lbl = st.checkbox("Показывать значения на графике", value=True, key=f"lbl_{i}")
-                    horiz = st.checkbox("Горизонтальный вид столбцов", value=False, key=f"h_{i}") if "Bar" in style else False
-                    rot = st.slider("🔄 Поворот кольца:", 0, 360, 0, step=15, key=f"rot_{i}") if "Donut" in style else 0
+                with st.expander("🎨 Настройки отображения шрифтов, меток и округления"):
+                    col_u1, col_u2, col_u3 = st.columns(3)
+                    with col_u1:
+                        lbl = st.checkbox("Показывать значения на графике", value=True, key=f"lbl_{i}")
+                        f_format = st.selectbox("Формат представления:", ["Числовой с пробелами", "Финансовый (₸)", "Финансовый сжатый (млн/млрд ₸)", "Десятичный дробный"], key=f"fmt_{i}")
+                        f_round = st.slider("Округление знаков после запятой:", 0, 4, 0, key=f"rnd_{i}")
+                    with col_u2:
+                        f_size = st.slider("Размер шрифта надписей (px):", 8, 24, 12, key=f"sz_{i}")
+                        f_color = st.color_picker("Цвет шрифта надписей:", "#ffffff" if style != "Линейный тренд (Line)" else "#000000", key=f"fcol_{i}")
+                    with col_u3:
+                        f_pos = st.selectbox("Расположение надписей:", ["auto", "inside", "outside", "outside center"], key=f"pos_{i}")
+                        horiz = st.checkbox("Горизонтальный вид столбцов", value=False, key=f"h_{i}") if "Bar" in style else False
+                        rot = st.slider("🔄 Поворот кольца (градусы):", 0, 360, 0, step=15, key=f"rot_{i}") if "Donut" in style else 0
 
                 if x_ax != "-- Выберите заголовок --" and y_ax != "-- Выберите заголовок --":
                     try:
                         df_chart = active_df_global.copy()
                         df_chart[y_ax] = pd.to_numeric(df_chart[y_ax], errors='coerce').fillna(0)
+                        
+                        # КРИТИЧЕСКОЕ УЛУЧШЕНИЕ: Принудительный кастинг к ТЕКСТУ удаляет дробные аномалии float-оси
+                        df_chart[x_ax] = df_chart[x_ax].fillna("Не указано").astype(str)
+                        
                         df_g = df_chart.groupby(x_ax, as_index=False)[y_ax].sum()
                         if not horiz: df_g = df_g.sort_values(by=y_ax, ascending=False)
                         
+                        formatted_text_list = []
+                        for val in df_g[y_ax]:
+                            rounded_val = round(val, f_round)
+                            if f_format == "Финансовый (₸)": text_item = f"{rounded_val:,.{f_round}f}".replace(",", " ") + " ₸"
+                            elif f_format == "Финансовый сжатый (млн/млрд ₸)":
+                                if abs(val) >= 1_000_000_000: text_item = f"{val / 1_000_000_000:,.2f} млрд ₸"
+                                elif abs(val) >= 1_000_000: text_item = f"{val / 1_000_000:,.2f} млн ₸"
+                                else: text_item = f"{val / 1_000:,.1f} тыс. ₸"
+                            elif f_format == "Десятичный дробный": text_item = f"{rounded_val:.{f_round}f}"
+                            else: text_item = f"{rounded_val:,.{f_round}f}".replace(",", " ")
+                            formatted_text_list.append(text_item)
+
                         fig = go.Figure()
-                        if "Waterfall" in style: fig.add_trace(go.Waterfall(x=list(df_g[x_ax].astype(str)) + ["ИТОГО"], y=list(df_g[y_ax]) + [df_g[y_ax].sum()], text=[f"{v:,.0f}" for v in df_g[y_ax]] + [f"{df_g[y_ax].sum():,.0f}"] if lbl else None, textposition="auto", measure=["relative"] * len(df_g[y_ax]) + ["total"], increasing={"marker": {"color": color}}))
-                        elif "Donut" in style: fig.add_trace(go.Pie(labels=df_g[x_ax], values=df_g[y_ax], hole=0.4, rotation=rot, textinfo="label+value" if lbl else "none"))
-                        elif "Line" in style: fig.add_trace(go.Scatter(x=df_g[x_ax], y=df_g[y_g], mode="lines+markers+text" if lbl else "lines+markers", text=df_g[y_ax].map(lambda x: f"{x:,.0f}") if lbl else None, textposition="top center", line=dict(color=color, width=3)))
-                        else: fig.add_trace(go.Bar(y=df_g[x_ax].astype(str) if horiz else df_g[y_ax], x=df_g[y_ax] if horiz else df_g[x_ax].astype(str), text=df_g[y_ax].map(lambda x: f"{x:,.0f}") if lbl else None, textposition="auto", orientation="h" if horiz else "v", marker_color=color))
-                        fig.update_layout(xaxis=dict(tickangle=45 if not horiz else 0), uniformtext=dict(mode="hide", minsize=8))
+                        if "Waterfall" in style: fig.add_trace(go.Waterfall(x=list(df_g[x_ax].astype(str)) + ["ИТОГО"], y=list(df_g[y_ax]) + [df_g[y_ax].sum()], text=formatted_text_list + [formatted_text_list] if lbl else None, textposition="auto" if f_pos == "auto" else f_pos, measure=["relative"] * len(df_g[y_ax]) + ["total"], increasing={"marker": {"color": color}}))
+                        elif "Donut" in style: fig.add_trace(go.Pie(labels=df_g[x_ax], values=df_g[y_ax], hole=0.4, rotation=rot, textinfo="label+value" if lbl else "none", textposition="auto" if f_pos == "auto" else f_pos))
+                        elif "Line" in style:
+                            # ИСПРАВЛЕНО: Полная трассировка y_ax убрала сбой пустого экрана. Линия ожила!
+                            fig.add_trace(go.Scatter(x=df_g[x_ax], y=df_g[y_ax], mode="lines+markers+text" if lbl else "lines+markers", text=formatted_text_list if lbl else None, textposition="top center" if f_pos == "auto" else f_pos, line=dict(color=color, width=4), marker=dict(size=8)))
+                        else: fig.add_trace(go.Bar(y=df_g[x_ax] if horiz else df_g[y_ax], x=df_g[y_ax] if horiz else df_g[x_ax], text=formatted_text_list if lbl else None, textposition="auto" if f_pos == "auto" else f_pos, orientation="h" if horiz else "v", marker_color=color))
+                        
+                        fig.update_layout(xaxis=dict(type='category', tickangle=45 if not horiz else 0), uniformtext=dict(mode="hide", minsize=8))
+                        if lbl: fig.update_traces(textfont=dict(size=f_size, color=f_color))
                         st.plotly_chart(fig, use_container_width=True, key=f"p_{i}")
-                    except: pass
+                    except Exception as e_ch: st.error(f"Ошибка отрисовки графиков: {e_ch}")
                 st.markdown("<hr style='border:1px dashed #ddd'>", unsafe_allow_html=True)
             b1, b2 = st.columns(2)
             with b1:
                 if st.button("➕ Добавить диаграмму"): st.session_state.manual_charts += 1; st.rerun()
             with b2:
-                if st.session_state.manual_charts > 1:
-                    if st.button("🗑️ Удалить диаграмму"): st.session_state.manual_charts -= 1; st.rerun()
+                if st.session_state.manual_charts > 1: st.session_state.manual_charts -= 1; st.rerun()
 
         elif "3. ABC/XYZ" in page: internal_show_abc_xyz_page(active_df_global)
         elif "4. RFM" in page: internal_show_rfm_page(active_df_global)
