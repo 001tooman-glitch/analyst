@@ -46,9 +46,9 @@ def internal_show_abc_xyz_page(filtered_df):
         xyz_results = []
         for obj_name, rows in period_matrix.iterrows():
             mean_val = rows.mean()
-            std_val = rows.std(ddof=1) if len(rows) > 1 else 0.0
+            st_val = rows.std(ddof=1) if len(rows) > 1 else 0.0
             if mean_val > 0 and np.count_nonzero(rows) > 1:
-                kv = (std_val / mean_val) * 100
+                kv = (st_val / mean_val) * 100
                 класс_xyz = 'X' if kv <= x_limit else ('Y' if kv <= y_limit else 'Z')
             else: kv, класс_xyz = 999.0, 'Z'
             xyz_results.append({abc_target: obj_name, 'KV': kv, 'Класс XYZ': класс_xyz})
@@ -94,8 +94,6 @@ def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_ro
         df_chart = active_df.copy()
         df_chart[y_ax] = pd.to_numeric(df_chart[y_ax], errors='coerce').fillna(0)
         df_chart[x_ax] = df_chart[x_ax].fillna("Не указано").astype(str)
-        
-        # ТОП-ОГРАНИЧЕНИЕ: Возвращен встроенный фильтр для очистки графиков от каши
         df_g = df_chart.groupby(x_ax, as_index=False)[y_ax].sum().sort_values(by=y_ax, ascending=False).head(top_limit)
         if horiz: df_g = df_g.sort_values(by=y_ax, ascending=True)
         
@@ -125,6 +123,7 @@ def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_ro
         if lbl and "Donut" not in style: fig.update_traces(textfont=dict(size=f_size, color=f_color))
         st.plotly_chart(fig, use_container_width=True, key=f"p_{i}")
     except: pass
+
 # АВТОНОМНЫЙ БЛОК 4: ИМПОРТ И ПРЕДОБРАБОТКА ДАННЫХ RUST CALAMINE
 def power_query_clean_engine(uploaded_files_list, skip_top, merge_headers, remove_footer):
     frames_dict = {}
@@ -182,7 +181,7 @@ uploaded_files = st.file_uploader("Загрузите файлы Excel/CSV:", ty
 if not uploaded_files: st.session_state.main_df = pd.DataFrame()
 if uploaded_files:
     if st.session_state.main_df.empty:
-        with st.spinner("⏳ Идёт глубокая Rust Calamine очистка данных... Пожалуйста, подождите."):
+        with st.spinner("⏳ Идёт глубокая Power Query очистка данных... Пожалуйста, подождите."):
             calculated_df, is_merged = power_query_clean_engine(uploaded_files, st.session_state.pq_skip_top, st.session_state.pq_merge_headers, st.session_state.pq_remove_footer)
             if not calculated_df.empty: st.session_state.main_df = calculated_df
 
@@ -207,7 +206,7 @@ if uploaded_files:
         st.sidebar.markdown("---")
         page = st.sidebar.radio("Перейти к разделу:", ["🗂️ 1. Загрузка и очистка данных", "📊 2. Executive Диаграммы", "🧮 3. ABC/XYZ-аналитика ОЗМ", "👥 4. RFM-сегментация"], label_visibility="collapsed")
 
-        if "1. Загрузка" in page:
+        def show_page_1(act_df, all_cols):
             col_pq1, col_pq2, col_pq3 = st.columns(3)
             with col_pq1:
                 new_skip = st.number_input("1. Пропустить верхние строки (строк):", min_value=0, max_value=20, value=st.session_state.pq_skip_top, step=1)
@@ -224,56 +223,69 @@ if uploaded_files:
             current_page = st.number_input(f"Страница (из {(tot_rows // 50) + 1}):", min_value=1, max_value=(tot_rows // 50) + 1, value=1, step=1)
             st.dataframe(main_df.iloc[(current_page - 1) * 50: current_page * 50], height=350, use_container_width=True)
 
-        elif "2. Executive" in page:
+        def show_page_2(act_df, all_cols):
             st.title("📊 Интерактивная BI-Панель Показателей")
             card_cols = st.columns(st.session_state.manual_cards)
             for j in range(st.session_state.manual_cards):
                 with card_cols[j % len(card_cols)]:
-                    t_col = st.selectbox(f"Заголовок карточки №{j+1}:", all_cols, key=f"c_t_{j}")
-                    c_mode = st.selectbox(f"Расчет карточки №{j+1}:", ["Сумма (SUM)", "Среднее (AVERAGE)"], key=f"c_m_{j}")
+                    st.markdown(f"**📌 Карточка № {j+1}**")
+                    t_col = st.selectbox(f"Поле для расчета:", all_cols, key=f"c_t_{j}")
+                    c_mode = st.selectbox(f"Тип агрегации:", ["Сумма (SUM)", "Среднее (AVERAGE)"], key=f"c_m_{j}")
+                    
+                    with st.expander("🎨 Тонкие настройки карточки"):
+                        c_fmt = st.selectbox("Формат отображения:", ["Числовой с пробелами", "Финансовый (₸)", "Финансовый сжатый (млн/млрд ₸)"], key=f"c_f_{j}")
+                        c_rnd = st.slider("Округление знаков:", 0, 4, 2, key=f"c_r_{j}")
+                        c_sz = st.slider("Размер шрифта цифр (px):", 16, 48, 28, key=f"c_s_{j}")
+                        c_pad = st.slider("Вертикальный отступ плашки (px):", 10, 50, 20, key=f"c_p_{j}")
+                    
                     if t_col != "-- Выберите заголовок --":
-                        try:
-                            df_c = active_df_global.copy()
-                            df_c[t_col] = pd.to_numeric(df_c[t_col], errors='coerce').fillna(0)
-                            cv = df_c[t_col].sum() if "Сумма" in c_mode else df_c[t_col].mean()
-                            st.markdown(f'<div style="background-color:#f8f9fa; border:1px solid #dee2e6; border-radius:10px; padding:20px; text-align:center; margin-bottom:15px;"><div style="color:#6c757d; font-size:15px;">{t_col}</div><div style="color:#1f77b4; font-size:26px; font-weight:bold; margin-top:5px;">{cv:,.2f}</div></div>', unsafe_allow_html=True)
-                        except: pass
+                        df_c = act_df.copy()
+                        df_c[t_col] = pd.to_numeric(df_c[t_col], errors='coerce').fillna(0)
+                        cv = df_c[t_col].sum() if "Сумма" in c_mode else df_c[t_col].mean()
+                        
+                        if c_fmt == "Финансовый (₸)":
+                            lbl_text = f"{round(cv, c_rnd):,.{c_rnd}f}".replace(",", " ") + " ₸"
+                        elif c_fmt == "Финансовый сжатый (млн/млрд ₸)":
+                            abs_v = abs(cv)
+                            if abs_v >= 1_000_000_000: lbl_text = f"{cv / 1_000_000_000:,.2f} млрд ₸"
+                            elif abs_v >= 1_000_000: lbl_text = f"{cv / 1_000_000:,.2f} млн ₸"
+                            else: lbl_text = f"{cv / 1_000:,.1f} тыс. ₸"
+                        else:
+                            lbl_text = f"{round(cv, c_rnd):,.{c_rnd}f}".replace(",", " ")
+                            
+                        st.markdown(f'<div style="background-color:#f8f9fa; border:1px solid #dee2e6; border-radius:10px; padding:{c_pad}px 20px; text-align:center; margin-bottom:15px;"><div style="color:#6c757d; font-size:14px; font-weight:500; margin-bottom:5px;">{t_col}</div><div style="color:#1f77b4; font-size:{c_sz}px; font-weight:bold; line-height:1.2;">{lbl_text}</div></div>', unsafe_allow_html=True)
+            
             cc1, cc2 = st.columns(2)
             with cc1:
                 if st.button("➕ Добавить карточку"): st.session_state.manual_cards += 1; st.rerun()
             with cc2:
                 if st.session_state.manual_cards > 1: st.session_state.manual_cards -= 1; st.rerun()
-
+            
             st.markdown("---")
             st.subheader("🛠️ No-Code Конструктор Графиков")
             for i in range(st.session_state.manual_charts):
-                st.markdown(f"##### 📊 Настройка диаграммы № {i+1}")
                 c1, c2, c3, c4 = st.columns(4)
                 with c1: style = st.selectbox(f"Тип графики №{i+1}:", ["Столбчатая диаграмма (Bar)", "Линейный тренд (Line)", "Кольцевая долей (Donut)", "Диаграмма Водопад (Waterfall)"], key=f"s_{i}")
                 with c2: x_ax = st.selectbox(f"Ось X №{i+1}:", all_cols, key=f"x_{i}")
                 with c3: y_ax = st.selectbox(f"Ось Y №{i+1}:", all_cols, key=f"y_{i}")
-                with c4: color = st.color_picker(f"Цвет №{i+1}:", "#1f77b4", key=f"col_{i}")
-                
-                # ВСЕ НАСТРОЙКИ НАДПИСЕЙ И ШРИФТОВ СНОВА ДОСТУПНЫ!
-                with st.expander("🎨 Настройки отображения шрифтов, меток и округления"):
-                    col_u1, col_u2, col_u3 = st.columns(3)
-                    with col_u1:
-                        lbl = st.checkbox("Показывать значения на графике", value=True, key=f"lbl_{i}")
-                        f_format = st.selectbox("Формат представления:", ["Числовой с пробелами", "Финансовый (₸)", "Финансовый сжатый (млн/млрд ₸)", "Десятичный дробный"], key=f"fmt_{i}")
-                        f_round = st.slider("Округление знаков после запятой:", 0, 4, 0, key=f"rnd_{i}")
-                    with col_u2:
-                        f_size = st.slider("Размер шрифта надписей (px):", 8, 24, 12, key=f"sz_{i}")
-                        f_color = st.color_picker("Цвет шрифта надписей:", "#000000", key=f"fcol_{i}")
-                    with col_u3:
-                        f_pos = st.selectbox("Расположение надписей:", ["auto", "inside", "outside"], key=f"pos_{i}")
-                        horiz = st.checkbox("Горизонтальный вид столбцов", value=False, key=f"h_{i}") if "Bar" in style else False
-                        rot = st.slider("🔄 Поворот кольца (градусы):", 0, 360, 0, step=15, key=f"rot_{i}") if "Donut" in style else 0
-                        top_limit = st.slider("🔝 Ограничить вывод (Показать только ТОП позиций):", 5, 200, 15, key=f"top_{i}")
-
+                with c4: color = st.color_picker(f"Цвет элементов №{i+1}:", "#1f77b4", key=f"col_{i}")
+                with st.expander("🎨 Настройки надписей"):
+                    cu1, cu2, cu3 = st.columns(3)
+                    with cu1:
+                        lbl = st.checkbox("Показывать значения", value=True, key=f"lbl_{i}")
+                        f_format = st.selectbox("Формат:", ["Числовой с пробелами", "Финансовый (₸)", "Финансовый сжатый (млн/млрд ₸)", "Десятичный дробный"], key=f"fmt_{i}")
+                        f_round = st.slider("Округление:", 0, 4, 0, key=f"rnd_{i}")
+                    with cu2:
+                        f_size = st.slider("Размер шрифта (px):", 8, 24, 12, key=f"sz_{i}")
+                        f_color = st.color_picker("Цвет шрифта:", "#000000", key=f"fcol_{i}")
+                    with cu3:
+                        f_pos = st.selectbox("Положение:", ["auto", "inside", "outside"], key=f"pos_{i}")
+                        horiz = st.checkbox("Горизонтально", value=False, key=f"h_{i}") if "Bar" in style else False
+                        rot = st.slider("🔄 Поворот:", 0, 360, 0, step=15, key=f"rot_{i}") if "Donut" in style else 0
+                        top_limit = st.slider("🔝 Показать только ТОП позиций:", 5, 200, 15, key=f"top_{i}")
                 if x_ax != "-- Выберите заголовок --" and y_ax != "-- Выберите заголовок --":
                     render_custom_chart(active_df_global, x_ax, y_ax, style, color, lbl, f_format, f_round, f_size, f_color, f_pos, horiz, rot, top_limit, i)
                 st.markdown("<hr style='border:1px dashed #ddd'>", unsafe_allow_html=True)
-                
             b1, b2 = st.columns(2)
             with b1:
                 if st.button("➕ Добавить диаграмму"): st.session_state.manual_charts += 1; st.rerun()
@@ -281,6 +293,11 @@ if uploaded_files:
                 if st.session_state.manual_charts > 1:
                     if st.button("🗑️ Удалить диаграмму"): st.session_state.manual_charts -= 1; st.rerun()
 
-        elif "3. ABC/XYZ" in page: internal_show_abc_xyz_page(active_df_global)
-        elif "4. RFM" in page: internal_show_rfm_page(active_df_global)
+        router = {
+            "🗂️ 1. Загрузка и очистка данных": lambda: show_page_1(active_df_global, all_cols),
+            "📊 2. Executive Диаграммы": lambda: show_page_2(active_df_global, all_cols),
+            "🧮 3. ABC/XYZ-аналитика ОЗМ": lambda: internal_show_abc_xyz_page(active_df_global),
+            "👥 4. RFM-сегментация": lambda: internal_show_rfm_page(active_df_global)
+        }
+        router[page]()
 else: st.info("Ожидание загрузки любых файлов Excel/CSV...")
