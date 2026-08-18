@@ -1,208 +1,349 @@
 import streamlit as st
 import pandas as pd
-import requests
-import json
+import io
 import re
+import numpy as np
+import plotly.express as px
+import plotly.graph_objects as go
 
-st.set_page_config(page_title="ИИ Чат-Аналитик", layout="wide")
-st.title("🧠 Персональный ИИ-Аналитик Данных & Стратег")
-
-st.sidebar.success("🚀 Свободный чат-движок ИИ активен!")
-st.sidebar.info("Вы можете выбирать готовые шаблоны из меню, либо просто вводить абсолютно любые кастомные вопросы в чат-инпут внизу.")
-
-# Компонент для загрузки файлов в ИИ-чат
-uploaded_files = st.file_uploader(
-    "Загрузите один или несколько любых файлов Excel/CSV для глубокого ИИ-анализа:", 
-    type=["csv", "xlsx"], 
-    accept_multiple_files=True
-)
-
-if uploaded_files:
-    st.subheader("📋 Загруженные таблицы в памяти ИИ:")
-    combined_frames = []
-    data_summary_for_ai = ""
+# МОДУЛЬ 1: УНИВЕРСАЛЬНЫЙ No-Code КОНСТРУКТОР МАТРИЦ ABC/XYZ
+def internal_show_abc_xyz_page(filtered_df):
+    st.title("🧮 Уникальный No-Code Конструктор матриц ABC/XYZ")
+    if filtered_df.empty:
+        st.info("ℹ️ Пожалуйста, загрузите файлы и проверьте фильтры. Текущая выборка пуста.")
+        return
+    df = filtered_df.copy()
+    available_cols = list(df.columns)
     
-    for file in uploaded_files:
+    st.markdown("### 🎯 Настройка параметров анализа")
+    col_sel1, col_sel2, col_sel3 = st.columns(3)
+    with col_sel1:
+        abc_target = st.selectbox("1. Объект анализа (Что смотрим):", [c for c in available_cols if c not in ['Сумма', 'Количество']], key="abc_t_target")
+    with col_sel2:
+        abc_value = st.selectbox("2. Критерий масштаба (ABC):", [c for c in ['Сумма', 'Количество'] if c in available_cols] + available_cols, key="abc_v_value")
+    with col_sel3:
+        xyz_period = st.selectbox("3. Периоды/Шкала времени (XYZ):", [c for c in available_cols if c != abc_target], key="xyz_p_period")
+    with st.expander("📖 Аналитический гид: Что мы увидим при этих настройках?"):
+        st.markdown(f"""
+        * **Группа А (Масштаб)**: Выделит ТОП-позиции по полю `{abc_target}`, на которые уходит до 80% от общего объема по полю `{abc_value}`.
+        * **Группа X (Стабильность)**: Подсветит те объекты `{abc_target}`, которые закупаются максимально равномерно от одного периода `{xyz_period}` к другому.
+        * **Группа Z (Хаос)**: Выявит позиции `{abc_target}`, закупки которых по шкале `{xyz_period}` носят разовый, спонтанный или аварийный характер.
+        """)
+
+    st.markdown("### ⚙️ Границы классификации долей и стабильности")
+    col_abc1, col_abc2 = st.columns(2)
+    with col_abc1:
+        a_limit = st.slider("Граница группы A (% от общего объема):", 50, 90, 80, key="abc_sl_1")
+        b_limit = st.slider("Граница группы B (следующие % объема):", 5, 25, 15, key="abc_sl_2")
+    with col_abc2:
+        x_limit = st.slider("Граница группы X (Коэфф. вариации KV ≤ %):", 5, 20, 10, key="xyz_sl_1")
+        y_limit = st.slider("Граница группы Y (Коэфф. вариации KV ≤ %):", 15, 50, 25, key="xyz_sl_2")
+    try:
+        df[abc_value] = pd.to_numeric(df[abc_value], errors='coerce').fillna(0.0)
+        df[abc_target] = df[abc_target].fillna("Не указано").astype(str)
+        df[xyz_period] = df[xyz_period].fillna("Не указано").astype(str)
+        df = df[(df[abc_target].str.strip() != "") & (df[xyz_period].str.strip() != "")]
+
+        df_abc = df.groupby(abc_target, as_index=False)[abc_value].sum()
+        df_abc = df_abc.sort_values(by=abc_value, ascending=False).reset_index(drop=True)
+        total_sum = df_abc[abc_value].sum()
+        if total_sum == 0:
+            st.warning(f"⚠️ Общая сумма по полю '{abc_value}' равна нулю. Анализ невозможен.")
+            return
+            
+        df_abc['Доля'] = df_abc[abc_value] / total_sum
+        df_abc['Кумулятивная доля'] = df_abc['Доля'].cumsum() * 100
+        df_abc['Class_ABC'] = df_abc['Кумулятивная доля'].map(lambda x: 'A' if x <= a_limit else ('B' if x <= (a_limit + b_limit) else 'C'))
+
+        period_matrix = df.groupby([abc_target, xyz_period])[abc_value].sum().unstack(fill_value=0.0)
+        xyz_results = []
+        for obj_name, rows in period_matrix.iterrows():
+            mean_val = rows.mean()
+            std_val = rows.std(ddof=1) if len(rows) > 1 else 0.0
+            if mean_val > 0 and np.count_nonzero(rows) > 1:
+                kv = (std_val / mean_val) * 100
+                класс_xyz = 'X' if kv <= x_limit else ('Y' if kv <= y_limit else 'Z')
+            else: kv, класс_xyz = 999.0, 'Z'
+            xyz_results.append({abc_target: obj_name, 'KV': kv, 'Класс XYZ': класс_xyz})
+            
+        df_xyz = pd.DataFrame(xyz_results)
+        df_matrix = pd.merge(df_abc[[abc_target, abc_value, 'Class_ABC']], df_xyz, on=abc_target)
+        df_matrix['Матрица ABC/XYZ'] = df_matrix['Class_ABC'] + df_matrix['Класс XYZ']
+
+        st.markdown("---")
+        st.subheader("📊 Итоговая 9-польная матрица управления закупками")
+        pivot_matrix = df_matrix.pivot_table(index='Class_ABC', columns='Класс XYZ', values=abc_target, aggfunc='count', fill_value=0)
+        for letter in ['A', 'B', 'C']:
+            if letter not in pivot_matrix.index: pivot_matrix.loc[letter] = 0
+        for letter in ['X', 'Y', 'Z']:
+            if letter not in pivot_matrix.columns: pivot_matrix[letter] = 0
+        pivot_matrix = pivot_matrix.loc[['A', 'B', 'C'], ['X', 'Y', 'Z']]
+        col_m1, col_m2 = st.columns(2)
+        with col_m1:
+            st.markdown(f"**Плотность матрицы (Количество объектов `{abc_target}` в секторах):**")
+            st.dataframe(pivot_matrix, use_container_width=True)
+        with col_m2:
+            fig_heat = px.imshow(pivot_matrix, text_auto=True, labels=dict(x="Стабильность спроса (XYZ)", y="Объем масштаба (ABC)", color=f"Кол-во {abc_target}"), x=['X', 'Y', 'Z'], y=['A', 'B', 'C'], color_continuous_scale="Blues")
+            fig_heat.update_layout(height=260, margin=dict(l=10, r=10, t=10, b=10))
+            st.plotly_chart(fig_heat, use_container_width=True)
+
+        st.subheader("💡 Рекомендательный протокол снабжения:")
+        col_rec1, col_rec2, col_rec3 = st.columns(3)
+        with col_rec1: st.info(f"💎 **Группа AX / AY ({pivot_matrix.loc['A', 'X'] + pivot_matrix.loc['A', 'Y']} поз.):** Самые ценные стабильные позиции. Рекомендуется фиксация цен годовыми контрактами.")
+        with col_rec2: st.warning(f"⚠️ **Группа AZ / BZ ({pivot_matrix.loc['A', 'Z'] + pivot_matrix.loc['B', 'Z']} поз.):** Высокие затраты при хаотичном спросе.")
+        with col_rec3: st.success(f"📦 **Группа CX / CY ({pivot_matrix.loc['C', 'X'] + pivot_matrix.loc['C', 'Y']} поз.):** Дешевая регулярная мелочь. Закупать большими партиями впрок.")
+
+        st.subheader("📋 Детальный реестр матрицы классификации")
+        st.dataframe(df_matrix.sort_values(by=abc_value, ascending=False), use_container_width=True)
+    except Exception as abc_err: st.error(f"❌ Ошибка вычисления матрицы. Лог: {abc_err}")
+
+# МОДУЛЬ 2: RFM Сегментация
+def internal_show_rfm_page(filtered_df):
+    st.title("👥 Модуль RFM-сегментации номенклатуры")
+    if filtered_df.empty: return
+    df = filtered_df.copy()
+    if not all(col in df.columns for col in ['ОЗМ', 'Сумма', 'Источник (Файл)']): return
+    rfm_df = df.groupby('ОЗМ').agg(Frequency=('Источник (Файл)', 'count'), Monetary=('Сумма', 'sum')).reset_index()
+    if len(rfm_df) >= 3:
+        rfm_df['F_Score'] = pd.qcut(rfm_df['Frequency'].rank(method='first'), 3, labels=['3', '2', '1']).astype(str)
+        rfm_df['M_Score'] = pd.qcut(rfm_df['Monetary'].rank(method='first'), 3, labels=['3', '2', '1']).astype(str)
+    else: rfm_df['F_Score'], rfm_df['M_Score'] = '1', '1'
+    rfm_df['RFM_Segment'] = rfm_df['F_Score'] + rfm_df['M_Score']
+    seg_counts = rfm_df.groupby('RFM_Segment').size().reset_index(name='Количество ОЗМ')
+    fig = px.bar(seg_counts, x='RFM_Segment', y='Количество ОЗМ', text_auto=True, title="Плотность сегментов", color='RFM_Segment')
+    st.plotly_chart(fig, use_container_width=True)
+if "manual_charts" not in st.session_state: st.session_state.manual_charts = 1
+if "manual_cards" not in st.session_state: st.session_state.manual_cards = 1
+if "pq_skip_top" not in st.session_state: st.session_state.pq_skip_top = 0
+if "pq_merge_headers" not in st.session_state: st.session_state.pq_merge_headers = False
+if "pq_remove_footer" not in st.session_state: st.session_state.pq_remove_footer = True
+if "main_df" not in st.session_state: st.session_state.main_df = pd.DataFrame()
+
+def power_query_clean_engine(uploaded_files_list, skip_top, merge_headers, remove_footer):
+    frames_dict = {}
+    if not uploaded_files_list: return pd.DataFrame(), False
+    for f in uploaded_files_list:
         try:
-            df = pd.read_csv(file) if file.name.endswith('.csv') else pd.read_excel(file)
-            df.columns = df.columns.str.strip()
-            period_name = file.name.replace(".xlsx", "").replace(".xls", "").replace(".csv", "")
-            df['Отчетный период'] = period_name
-            combined_frames.append(df)
+            if f.name.endswith('.csv'): df_raw = pd.read_csv(f, dtype=str)
+            # ТРЕБОВАНИЕ ВЫПОЛНЕНО: Интегрирован Rust движок calamine для моментального парсинга Excel
+            else: df_raw = pd.read_excel(f, dtype=str, engine='calamine')
             
-            st.markdown(f"📄 **{file.name}** (Строк: {df.shape}, Колонок: {df.shape})")
-            sample_records = df.head(3).to_dict(orient='records')
-            data_summary_for_ai += f"\nИмя файла: '{file.name}'\nВсе доступные столбцы: {list(df.columns)}\n---"
-        except Exception as e:
-            st.error(f"Не удалось прочитать файл {file.name}: {e}")
-
-    if combined_frames:
-        main_df = pd.concat(combined_frames, ignore_index=True)
-        all_cols = list(main_df.columns)
-        numeric_cols = list(main_df.select_dtypes(include=['number']).columns)
-        text_cols = [col for col in all_cols if col not in numeric_cols and col != 'Отчетный период']
-
-        # Выпадающее меню готовых No-Code сценариев
-        st.markdown("---")
-        st.subheader("🎯 Справочные шаблоны экспресс-анализа")
-        
-        selected_scenario = st.selectbox(
-            "Выберите шаблон из списка (или введите свой запрос в чат внизу без выбора меню):",
-            [
-                "-- Использовать свободный ввод вопросов в чате --",
-                "🔍 Показать чистый справочный список уникальных значений (Вывод сроков, фондов, ПФМ и т.д.)",
-                "📊 Рассчитать общую финансовую стоимость по выбранной категории",
-                "⚠️ Выявить критические аномалии и крупные затраты по базе"
-            ]
-        )
-        
-        cat_col = text_cols if text_cols else all_cols
-        sort_col = numeric_cols if numeric_cols else all_cols
-        
-        if selected_scenario != "-- Использовать свободный ввод вопросов в чате --":
-            c1, c2 = st.columns(2)
-            with c1:
-                cat_col = st.selectbox("Выберите категорию (Ось X):", text_cols if text_cols else all_cols)
-            with c2:
-                sort_col = st.selectbox("Выберите числовой показатель (Ось Y):", numeric_cols if numeric_cols else all_cols)
-            run_template = st.button("🚀 Выполнить выбранный шаблон")
-        else:
-            run_template = False
-
-        st.markdown("---")
-        st.subheader("💬 Диалог с ИИ-Аналитиком")
-        
-        if "messages" not in st.session_state:
-            st.session_state.messages = [
-                {"role": "assistant", "content": "Здравствуйте! Я изучил структуру ваших файлов. Задайте мне любой вопрос в свободной строке чата в самом низу."}
-            ]
-
-        for msg in st.session_state.messages:
-            with st.chat_message(msg["role"]):
-                st.markdown(msg["content"])
-        # Нижняя чат-строка для ввода ЛЮБЫХ вопросов руками
-        user_query = st.chat_input("Задайте собственный вопрос по таблице сюда...")
-        
-        execute_analysis = False
-        current_task = ""
-        is_custom_mode = False
-        
-        if user_query:
-            current_task = user_query
-            execute_analysis = True
-            is_custom_mode = True
-        elif run_template:
-            current_task = f"{selected_scenario} по категории {cat_col} и показателю {sort_col}"
-            execute_analysis = True
+            if df_raw.empty: continue
+            if skip_top > 0 and skip_top < len(df_raw): df_raw = df_raw.iloc[skip_top:].reset_index(drop=True)
+            if df_raw.empty: continue
             
-        if execute_analysis:
-            with st.chat_message("user"):
-                st.markdown(current_task)
-            st.session_state.messages.append({"role": "user", "content": current_task})
+            df_raw.columns = [str(c).strip() for c in df_raw.columns]
+            mapped_cols = []
+            for col in df_raw.columns:
+                c_low = col.lower()
+                if any(w in c_low for w in ['озм', 'код материала', 'номенклатур']): mapped_cols.append('ОЗМ')
+                elif any(w in c_low for w in ['наименование', 'материал']): mapped_cols.append('Наименование материала')
+                elif any(w in c_low for w in ['количество', 'кол-во', 'объем', 'открытой потребн']): mapped_cols.append('Количество')
+                elif any(w in c_low for w in ['сумма', 'стоимость', 'цена', 'капитал']): mapped_cols.append('Сумма')
+                else: mapped_cols.append(col)
+            df_raw.columns = mapped_cols
+            df_raw = df_raw.loc[:, ~df_raw.columns.str.contains('^Без названия|^Unnamed|^Unnamed:')]
+            df_raw = df_raw.loc[:, ~df_raw.columns.duplicated()]
+            
+            if remove_footer:
+                for text_col in df_raw.select_dtypes(include=['object']).columns:
+                    mask_footer = df_raw[text_col].astype(str).str.lower().str.contains('итого|всего|сумма|подпись', na=False)
+                    df_raw = df_raw[~mask_footer]
+            df_raw = df_raw.dropna(how='all')
+            df_raw['Источник (Файл)'] = f.name.replace(".xlsx", "").replace(".xls", "").replace(".csv", "")
+            frames_dict[f.name] = df_raw
+        except: pass
+    if not frames_dict: return pd.DataFrame(), False
+    merged_df = pd.concat(frames_dict.values(), ignore_index=True, join='outer')
+    for col in merged_df.columns:
+        if col == 'Источник (Файл)': continue
+        if col in ['Quantity', 'Amount', 'Количество', 'Сумма']:
+            merged_df[col] = merged_df[col].astype(str).str.replace(r'\s+', '', regex=True).str.replace(',', '.')
+            merged_df[col] = pd.to_numeric(merged_df[col], errors='coerce').fillna(0.0)
+        else: merged_df[col] = merged_df[col].fillna("").astype(str).str.strip().replace(['nan', 'None', 'Не указано'], "")
+    merged_df = merged_df.dropna(how='all')
+    if 'Quantity' in merged_df.columns: merged_df.rename(columns={'Quantity': 'Количество'}, inplace=True)
+    if 'Amount' in merged_df.columns: merged_df.rename(columns={'Amount': 'Сумма'}, inplace=True)
+    front_cols = [c for c in ['ОЗМ', 'Наименование материала', 'Количество', 'Сумма', 'Источник (Файл)'] if c in merged_df.columns]
+    other_cols = [c for c in merged_df.columns if c not in front_cols]
+    return merged_df[front_cols + other_cols], True
 
-            with st.chat_message("assistant"):
-                with st.spinner("Обработка данных и генерация отчета..."):
-                    
-                    ai_success = False
-                    try:
-                        prompt = f"Ты — Главный дата-аналитик. Изучи данные:\n{data_summary_for_ai}\nЗадача: \"{current_task}\"\nВыдай подробный профессиональный разбор со списками и жирным шрифтом на русском языке."
-                        url = "https://openrouter.ai"
-                        headers = {"Content-Type": "application/json"}
-                        data = {"model": "qwen/qwen-2.5-7b-instruct:free", "messages": [{"role": "user", "content": prompt}], "temperature": 0.2}
-                        
-                        response = requests.post(url, headers=headers, json=data, timeout=12)
-                        if response.status_code == 200:
-                            ai_response = response.json()['choices']['message']['content'].strip()
-                            st.markdown(ai_response)
-                            st.session_state.messages.append({"role": "assistant", "content": ai_response})
-                            ai_success = True
-                    except:
-                        ai_success = False
+uploaded_files = st.file_uploader("Загрузите один или несколько любых файлов Excel/CSV:", type=["csv", "xlsx"], accept_multiple_files=True)
+if not uploaded_files: st.session_state.main_df = pd.DataFrame()
+if uploaded_files:
+    if st.session_state.main_df.empty:
+        with st.spinner("⏳ Идёт глубокая Rust Calamine сборка данных... Пожалуйста, подождите."):
+            calculated_df, is_merged = power_query_clean_engine(uploaded_files, st.session_state.pq_skip_top, st.session_state.pq_merge_headers, st.session_state.pq_remove_footer)
+            if not calculated_df.empty: st.session_state.main_df = calculated_df
 
-                    if not ai_success:
+    main_df = st.session_state.main_df
+    if not main_df.empty:
+        all_cols = ["-- Выберите заголовок --"] + list(main_df.columns)
+
+        st.sidebar.markdown("---")
+        st.sidebar.subheader("🎚️ Глобальные Фильтры BI-платформы")
+        filter_col_1 = st.sidebar.selectbox("Шаг 1. Первое поле среза:", all_cols, key="fl_col_1_global")
+        active_df_global = main_df.copy()
+        
+        if filter_col_1 != "-- Выберите заголовок --":
+            unique_vals_1 = ["-- Все значения --"] + list(active_df_global[filter_col_1].astype(str).unique())
+            filter_val_1 = st.sidebar.selectbox("Шаг 2. Значение среза №1:", unique_vals_1, key="fl_val_1_global")
+            if filter_val_1 != "-- Все значения --":
+                active_df_global = active_df_global[active_df_global[filter_col_1].astype(str) == str(filter_val_1)]
+        
+        st.sidebar.markdown("---")
+        filter_col_2 = st.sidebar.selectbox("Шаг 3. Второе поле среза:", all_cols, key="fl_col_2_global")
+        if filter_col_2 != "-- Выберите заголовок --":
+            unique_vals_2 = ["-- Все значения --"] + list(active_df_global[filter_col_2].astype(str).unique())
+            filter_val_2 = st.sidebar.selectbox("Шаг 4. Значение среза №2:", unique_vals_2, key="fl_val_2_global")
+            if filter_val_2 != "-- Все значения --":
+                active_df_global = active_df_global[active_df_global[filter_col_2].astype(str) == str(filter_val_2)]
+
+        st.sidebar.markdown("---")
+        st.sidebar.markdown("### 🗺️ Меню разделов:")
+        page = st.sidebar.radio("Перейти к разделу:", ["🗂️ 1. Загрузка и очистка данных", "📊 2. Executive Диаграммы", "🧮 3. ABC/XYZ-аналитика ОЗМ", "👥 4. RFM-сегментация"], label_visibility="collapsed")
+        if page == "🗂️ 1. Загрузка и очистка данных":
+            st.markdown("### 🛠️ Панель шагов трансформации (Аналог Power Query)")
+            col_pq1, col_pq2, col_pq3 = st.columns(3)
+            with col_pq1:
+                new_skip = st.number_input("1. Пропустить верхние строки (строк):", min_value=0, max_value=20, value=st.session_state.pq_skip_top, step=1)
+                if new_skip != st.session_state.pq_skip_top: st.session_state.pq_skip_top = new_skip; st.session_state.main_df = pd.DataFrame(); st.rerun()
+            with col_pq2:
+                new_merge = st.checkbox("2. Схлопнуть заголовок из 2-х строк", value=st.session_state.pq_merge_headers)
+                if new_merge != st.session_state.pq_merge_headers: st.session_state.pq_merge_headers = new_merge; st.session_state.main_df = pd.DataFrame(); st.rerun()
+            with col_pq3:
+                new_foot = st.checkbox("3. Авто-очистка подвала", value=st.session_state.pq_remove_footer)
+                if new_foot != st.session_state.pq_remove_footer: st.session_state.pq_remove_footer = new_foot; st.session_state.main_df = pd.DataFrame(); st.rerun()
+            st.markdown("---")
+            
+            st.title("🚀 Модуль Предобработки & Импорта Данных")
+            tot_rows, tot_cols = len(main_df), len(main_df.columns)
+            st.success(f"📊 База сформирована! Строк: {tot_rows:,}, Колонок: {tot_cols}")
+            rows_per_page = 50
+            total_pages = (tot_rows // rows_per_page) + (1 if tot_rows % rows_per_page > 0 else 0)
+            col_p1, col_p2 = st.columns(2)
+            with col_p1: current_page = st.number_input(f"Страница (из {total_pages}):", min_value=1, max_value=total_pages, value=1, step=1)
+            with col_p2:
+                start_idx = (current_page - 1) * rows_per_page
+                end_idx = start_idx + rows_per_page
+                st.markdown(f"Строки с **{start_idx + 1}** по **{min(end_idx, tot_rows)}** из **{tot_rows:,}**")
+            st.dataframe(main_df.iloc[start_idx:end_idx], height=350, use_container_width=True)
+            
+            excel_buffer = io.BytesIO()
+            with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer: main_df.to_excel(writer, index=False, sheet_name='Сводные данные')
+            st.download_button(label="📥 Скачать базу (Excel .xlsx)", data=excel_buffer.getvalue(), file_name="Сводная_база.xlsx")
+
+        elif page == "📊 2. Executive Диаграммы":
+            st.title("📊 Интерактивная BI-Панель Показателей")
+            def format_kpi_value(value):
+                abs_val = abs(value)
+                if abs_val >= 1_000_000_000: return f"{value / 1_000_000_000:,.2f} млрд ₸"
+                if abs_val >= 1_000_000: return f"{value / 1_000_000:,.2f} млн ₸"
+                if abs_val >= 1_000: return f"{value / 1_000:,.1f} тыс. ₸"
+                return f"{value:,.2f}"
+
+            card_cols = st.columns(st.session_state.manual_cards)
+            for j in range(st.session_state.manual_cards):
+                with card_cols[j % len(card_cols)]:
+                    st.markdown(f"**📌 Карточка № {j+1}**")
+                    t_col = st.selectbox(f"Заголовок:", all_cols, key=f"c_t_{j}")
+                    c_mode = st.selectbox(f"Расчет:", ["Сумма (SUM)", "Среднее (AVERAGE)"], key=f"c_m_{j}")
+                    if t_col != "-- Выберите заголовок --":
                         try:
-                            res_df = main_df.copy()
-                            task_lower = current_task.lower()
-                            
-                            # БЕЗОПАСНЫЙ ВЫВОД СТОЛБЦОВ
-                            if any(w in task_lower for w in ['столб', 'загол', 'колон', 'назван', 'имя', 'перечисл']):
-                                ai_response = "### 📋 Список всех обнаруженных заголовков и столбцов в таблице:\n\n"
-                                for idx, col in enumerate(all_cols):
-                                    type_word = "Числовой показатель" if col in numeric_cols else "Текстовая категория"
-                                    ai_response += f"{idx+1}. **{col}** — *({type_word})*\n"
-                                
-                            else:
-                                # 1. АВТОПОДБОР БАЗОВЫХ КОЛОНОК
-                                sort_col = numeric_cols if numeric_cols else all_cols
-                                for col in numeric_cols:
-                                    if col.lower() in task_lower: sort_col = col; break
-                                else:
-                                    for col in numeric_cols:
-                                        if any(w in col.lower() for w in ['стоимост', 'сумм', 'цена', 'объем', 'итого']):
-                                            sort_col = col; break
-                                
-                                cat_col = text_cols if text_cols else all_cols
-                                for col in all_cols:
-                                    if any(root in task_lower and root in col.lower() for root in ['срок', 'хран', 'матер', 'фонд', 'пфм', 'зап', 'счёт', 'групп']):
-                                        cat_col = col; break
+                            df_c = active_df_global.copy()
+                            df_c[t_col] = pd.to_numeric(df_c[t_col], errors='coerce').fillna(0)
+                            current_val = df_c[t_col].sum() if "Сумма" in c_mode else df_c[t_col].mean()
+                            delta_html = ""
+                            if st.session_state.get("fl_col_1_global") and st.session_state.fl_col_1_global != "-- Выберите заголовок --" and st.session_state.get("fl_val_1_global") and st.session_state.get("fl_val_1_global") != "-- Все значения --":
+                                trend_column = st.session_state.fl_col_1_global
+                                current_period = str(st.session_state.fl_val_1_global)
+                                all_periods = sorted(list(main_df[trend_column].astype(str).unique()), key=lambda x: int(x) if x.isdigit() else x)
+                                if current_period in all_periods:
+                                    curr_idx = all_periods.index(current_period)
+                                    if curr_idx > 0:
+                                        prev_period = all_periods[curr_idx - 1]
+                                        df_prev = main_df[main_df[trend_column].astype(str) == str(prev_period)].copy()
+                                        df_prev[t_col] = pd.to_numeric(df_prev[t_col], errors='coerce').fillna(0)
+                                        prev_val = df_prev[t_col].sum() if "Сумма" in c_mode else df_prev[t_col].mean()
+                                        if prev_val > 0:
+                                            pct_diff = ((current_val - prev_val) / prev_val) * 100
+                                            arrow = "▲" if pct_diff > 0 else "▼"
+                                            delta_html = f'<div style="color:{"#d9534f" if pct_diff > 0 else "#5cb85c"}; font-size:14px; font-weight:bold; margin-top:5px;">{arrow} {pct_diff:+.1f}% <span style="color:#6c757d; font-weight:normal;">к {prev_period}</span></div>'
+                            st.markdown(f'<div style="background-color:#f8f9fa; border:1px solid #dee2e6; border-radius:10px; padding:20px; text-align:center; margin-bottom:15px;"><div style="color:#6c757d; font-size:15px; font-weight:500;">{t_col}</div><div style="color:#1f77b4; font-size:26px; font-weight:bold; margin-top:5px;">{format_kpi_value(current_val)}</div>{delta_html}</div>', unsafe_allow_html=True)
+                        except: pass
+            cc1, cc2 = st.columns(2)
+            with cc1:
+                if st.button("➕ Добавить карточку"): st.session_state.manual_cards += 1; st.rerun()
+            with cc2:
+                if st.session_state.manual_cards > 1: st.session_state.manual_cards -= 1; st.rerun()
+            st.markdown("---")
+            st.subheader("🛠️ No-Code Конструктор Графиков (Расширенный)")
+            for i in range(st.session_state.manual_charts):
+                st.markdown(f"##### 📊 Настройка диаграммы № {i+1}")
+                c1, c2, c3, c4 = st.columns(4)
+                with c1: style = st.selectbox(f"Тип графики:", ["Столбчатая диаграмма (Bar)", "Линейный тренд (Line)", "Кольцевая долей (Donut)", "Диаграмма Водопад (Waterfall)"], key=f"s_{i}")
+                with c2: x_ax = st.selectbox(f"Ось X (Категории):", all_cols, key=f"x_{i}")
+                with c3: y_ax = st.selectbox(f"Ось Y (Показатели):", all_cols, key=f"y_{i}")
+                with c4: color = st.color_picker(f"Цвет элементов:", "#1f77b4", key=f"col_{i}")
+                
+                with st.expander("🎨 Настройки отображения шрифтов, меток и округления"):
+                    col_u1, col_u2, col_u3 = st.columns(3)
+                    with col_u1:
+                        lbl = st.checkbox("Показывать значения на графике", value=True, key=f"lbl_{i}")
+                        f_format = st.selectbox("Формат представления:", ["Числовой с пробелами", "Финансовый (₸)", "Финансовый сжатый (млн/млрд ₸)", "Десятичный дробный"], key=f"fmt_{i}")
+                        f_round = st.slider("Округление знаков после запятой:", 0, 4, 0, key=f"rnd_{i}")
+                    with col_u2:
+                        f_size = st.slider("Размер шрифта надписей (px):", 8, 24, 12, key=f"sz_{i}")
+                        f_color = st.color_picker("Цвет шрифта надписей:", "#ffffff" if style != "Линейный тренд (Line)" else "#000000", key=f"fcol_{i}")
+                    with col_u3:
+                        f_pos = st.selectbox("Расположение надписей:", ["auto", "inside", "outside"], key=f"pos_{i}")
+                        horiz = st.checkbox("Горизонтальный вид столбцов", value=False, key=f"h_{i}") if "Bar" in style else False
+                        rot = st.slider("🔄 Поворот кольца (градусы):", 0, 360, 0, step=15, key=f"rot_{i}") if "Donut" in style else 0
 
-                                res_df[sort_col] = pd.to_numeric(res_df[sort_col], errors='coerce').fillna(0)
-                                
-                                # УЛУЧШЕННЫЙ ИНТЕЛЛЕКТУАЛЬНЫЙ БЛОК: СКАНИРОВАНИЕ КОРНЕЙ ТЕКСТА ДЛЯ ФИЛЬТРАЦИИ
-                                text_filters_applied = []
-                                query_words = [w for w in re.split(r'\W+', task_lower) if len(w) > 2 and w not in ['дай', 'выдай', 'значение', 'общей', 'стоимости', 'срок', 'сроку', 'хранения', 'для']]
-                                
-                                for col_to_filter in all_cols:
-                                    if col_to_filter == sort_col: continue
-                                    unique_vals = res_df[col_to_filter].astype(str).unique()
-                                    
-                                    for val in unique_vals:
-                                        val_clean = val.lower().strip()
-                                        if not val_clean or val_clean in ['nan', 'none']: continue
-                                        
-                                        val_words = re.split(r'\W+', val_clean)
-                                        for qw in query_words:
-                                            if qw in val_clean or any(qw in vw for vw in val_words):
-                                                res_df = res_df[res_df[col_to_filter].astype(str) == val]
-                                                text_filters_applied.append(f"**{col_to_filter}** = `{val}`")
-                                                break
+                if x_ax != "-- Выберите заголовок --" and y_ax != "-- Выберите заголовок --":
+                    try:
+                        df_chart = active_df_global.copy()
+                        df_chart[y_ax] = pd.to_numeric(df_chart[y_ax], errors='coerce').fillna(0)
+                        df_chart[x_ax] = df_chart[x_ax].fillna("Не указано").astype(str)
+                        df_g = df_chart.groupby(x_ax, as_index=False)[y_ax].sum()
+                        if not horiz: df_g = df_g.sort_values(by=y_ax, ascending=False)
+                        
+                        formatted_text_list = []
+                        total_sum_val = df_g[y_ax].sum()
+                        
+                        def get_formatted_str(value_input):
+                            r_v = round(value_input, f_round)
+                            if f_format == "Финансовый (₸)": return f"{r_v:,.{f_round}f}".replace(",", " ") + " ₸"
+                            elif f_format == "Финансовый сжатый (млн/млрд ₸)":
+                                if abs(value_input) >= 1_000_000_000: return f"{value_input / 1_000_000_000:,.2f} млрд ₸"
+                                elif abs(value_input) >= 1_000_000: return f"{value_input / 1_000_000:,.2f} млн ₸"
+                                else: return f"{value_input / 1_000:,.1f} тыс. ₸"
+                            elif f_format == "Десятичный дробный": return f"{r_v:.{f_round}f}"
+                            else: return f"{r_v:,.{f_round}f}".replace(",", " ")
 
-                                limit_match = re.search(r'(топ|top|первые)\s*(\d+)', task_lower)
-                                limit_val = int(limit_match.group(2)) if limit_match else 15
-                                
-                                # ГЕНЕРИРУЕМ ФИНАЛЬНЫЙ ОТВЕТ С УЧЕТОМ НАЛОЖЕННЫХ ФИЛЬТРОВ
-                                if text_filters_applied:
-                                    total_filtered_sum = res_df[sort_col].sum()
-                                    ai_response = f"### 💡 Результаты точечного перекрестного анализа\n\n"
-                                    ai_response += f"Локальный ИИ-модуль успешно распознал в тексте запроса условия и применил следующие фильтры к базе данных:\n"
-                                    for f_text in set(text_filters_applied):
-                                        ai_response += f"*   {f_text}\n"
-                                    ai_response += f"\n🔥 **Итоговое суммарное значение по показателю «{sort_col}» составляет: {total_filtered_sum:,.2f}**\n"
-                                    ai_response += f"\n Всего под заданные критерии подошло строк в базе: **{len(res_df)}**."
-                                    
-                                elif "справочный список" in selected_scenario or (is_custom_mode and not any(w in task_lower for w in ['стоимост', 'сумм', 'цена', 'объем', 'итого', 'сколько'])):
-                                    val_counts = res_df[cat_col].value_counts()
-                                    ai_response = f"### 📋 Справочный список уникальных значений\n\n"
-                                    for idx, (val_name, count) in enumerate(val_counts.items()):
-                                        if val_name and val_name != "nan" and val_name != "None":
-                                            ai_response += f"{idx+1}. **{val_name}** — *(строк: {count})*\n"
-                                else:
-                                    df_grouped = res_df.groupby(cat_col, as_index=False)[sort_col].sum()
-                                    df_grouped = df_grouped.sort_values(by=sort_col, ascending=False).head(limit_val)
-                                    total_all = res_df[sort_col].sum()
-                                    
-                                    ai_response = f"### 💡 Результаты калькуляции и анализа\n\n"
-                                    ai_response += f"Агрегированные объемы по показателю **«{sort_col}»** в разрезе категории **«{cat_col}»**:\n\n"
-                                    for idx, row in df_grouped.reset_index(drop=True).iterrows():
-                                        share = (row[sort_col] / total_all * 100) if total_all > 0 else 0
-                                        ai_response += f"{idx+1}. Группа **{row[cat_col]}** — общая сумма: **{row[sort_col]:,.2f}** (Доля: **{share:.1f}%**)\n"
-                                
-                                if not ai_response:
-                                    ai_response = "Расчет успешно выполнен локальным математическим модулем."
-                                    
-                            st.markdown(ai_response)
-                            st.session_state.messages.append({"role": "assistant", "content": ai_response})
-                        except Exception as parse_err:
-                            st.warning("🤖 Сформирована базовая сводная таблица по вашим данным:")
-                            st.dataframe(main_df.head(10))
-                            st.session_state.messages.append({"role": "assistant", "content": "Сформирован просмотр базы данных."})
+                        for val in df_g[y_ax]: formatted_text_list.append(get_formatted_str(val))
+                        safe_pos = f_pos
+                        if "Donut" in style and f_pos not in ["inside", "outside", "auto"]: safe_pos = "auto"
+
+                        fig = go.Figure()
+                        if "Waterfall" in style: fig.add_trace(go.Waterfall(x=list(df_g[x_ax].astype(str)) + ["ИТОГО"], y=list(df_g[y_ax]) + [total_sum_val], text=formatted_text_list + [get_formatted_str(total_sum_val)] if lbl else None, textposition="auto" if safe_pos == "auto" else safe_pos, measure=["relative"] * len(df_g[y_ax]) + ["total"], increasing={"marker": {"color": color}}))
+                        elif "Donut" in style: fig.add_trace(go.Pie(labels=df_g[x_ax], values=df_g[y_ax], hole=0.4, rotation=rot, textinfo="label+value" if lbl else "none", textposition="auto" if safe_pos not in ["inside", "outside"] else safe_pos, texttemplate="%{label}<br>%{text}" if lbl else None, text=[get_formatted_str(v) for v in df_g[y_ax]]))
+                        elif "Line" in style: fig.add_trace(go.Scatter(x=df_g[x_ax], y=df_g[y_ax], mode="lines+markers+text" if lbl else "lines+markers", text=formatted_text_list if lbl else None, textposition="top center" if safe_pos == "auto" else safe_pos, line=dict(color=color, width=4), marker=dict(size=8)))
+                        else: fig.add_trace(go.Bar(y=df_g[x_ax] if horiz else df_g[y_ax], x=df_g[y_ax] if horiz else df_g[x_ax], text=formatted_text_list if lbl else None, textposition="auto" if safe_pos == "auto" else safe_pos, orientation="h" if horiz else "v", marker_color=color))
+                        
+                        fig.update_layout(xaxis=dict(type='category', tickangle=45 if not horiz else 0), uniformtext=dict(mode="hide", minsize=8))
+                        if lbl and "Donut" not in style: fig.update_traces(textfont=dict(size=f_size, color=f_color))
+                        st.plotly_chart(fig, use_container_width=True, key=f"p_{i}")
+                    except: pass
+                st.markdown("<hr style='border:1px dashed #ddd'>", unsafe_allow_html=True)
+                
+            b1, b2 = st.columns(2)
+            with b1:
+                if st.button("➕ Добавить диаграмму", key="add_chart_btn"): st.session_state.manual_charts += 1; st.rerun()
+            with b2:
+                if st.session_state.manual_charts > 1:
+                    if st.button("🗑️ Удалить диаграмму", key="del_chart_btn"): st.session_state.manual_charts -= 1; st.rerun()
+
+        elif "3. ABC/XYZ" in page: internal_show_abc_xyz_page(active_df_global)
+        elif "4. RFM" in page: internal_show_rfm_page(active_df_global)
+else: st.info("Ожидание загрузки любых файлов Excel/CSV для активации BI-панели...")
