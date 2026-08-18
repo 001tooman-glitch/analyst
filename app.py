@@ -8,7 +8,7 @@ import plotly.graph_objects as go
 
 # АВТОНОМНЫЙ БЛОК 1: УНИВЕРСАЛЬНЫЙ No-Code КОНСТРУКТОР ABC/XYZ
 def internal_show_abc_xyz_page(filtered_df):
-    st.title("🧮 Универсальный Конструктор матриц ABC/XYZ")
+    st.title("🧮 Универсальный Конструктор matrix ABC/XYZ")
     if filtered_df.empty:
         st.info("ℹ️ Текущая выборка пуста. Пожалуйста, загрузите файлы.")
         return
@@ -74,20 +74,29 @@ def internal_show_abc_xyz_page(filtered_df):
         st.dataframe(df_matrix.sort_values(by=abc_value, ascending=False), use_container_width=True)
     except Exception as e: st.error(f"❌ Ошибка вычисления матрицы: {e}")
 
-# АВТОНОМНЫЙ БЛОК 2: RFM СЕГМЕНТАЦИЯ
+# АВТОНОМНЫЙ БЛОК 2: ЖЕЛЕЗОБЕТОННАЯ АДАПТИВНАЯ RFM СЕГМЕНТАЦИЯ
 def internal_show_rfm_page(filtered_df):
     st.title("👥 Модуль RFM-сегментации номенклатуры")
-    if filtered_df.empty: return
+    if filtered_df.empty: 
+        st.info("ℹ️ Текущая выборка пуста. Пожалуйста, загрузите файлы.")
+        return
     df = filtered_df.copy()
-    if not all(col in df.columns for col in ['ОЗМ', 'Сумма', 'Источник (Файл)']): return
-    rfm_df = df.groupby('ОЗМ').agg(Frequency=('Источник (Файл)', 'count'), Monetary=('Сумма', 'sum')).reset_index()
-    if len(rfm_df) >= 3:
-        rfm_df['F_Score'] = pd.qcut(rfm_df['Frequency'].rank(method='first'), 3, labels=['3', '2', '1']).astype(str)
-        rfm_df['M_Score'] = pd.qcut(rfm_df['Monetary'].rank(method='first'), 3, labels=['3', '2', '1']).astype(str)
-    else: rfm_df['F_Score'], rfm_df['M_Score'] = '1', '1'
-    rfm_df['RFM_Segment'] = rfm_df['F_Score'] + rfm_df['M_Score']
-    seg_counts = rfm_df.groupby('RFM_Segment').size().reset_index(name='Количество ОЗМ')
-    st.plotly_chart(px.bar(seg_counts, x='RFM_Segment', y='Количество ОЗМ', text_auto=True, color='RFM_Segment'), use_container_width=True)
+    if not all(col in df.columns for col in ['ОЗМ', 'Сумма', 'Источник (Файл)']):
+        st.error("❌ Для RFM-анализа требуются столбцы 'ОЗМ', 'Сумма' и 'Источник (Файл)'.")
+        return
+    try:
+        rfm = df.groupby('ОЗМ').agg(F=('Источник (Файл)', 'count'), M=('Сумма', 'sum')).reset_index()
+        if len(rfm) >= 3 and rfm['F'].nunique() > 1:
+            rfm['F_Score'] = pd.qcut(rfm['F'].rank(method='first'), 3, labels=['3', '2', '1']).astype(str)
+        else: rfm['F_Score'] = '1'
+        if len(rfm) >= 3 and rfm['M'].nunique() > 1:
+            rfm['M_Score'] = pd.qcut(rfm['M'].rank(method='first'), 3, labels=['3', '2', '1']).astype(str)
+        else: rfm['M_Score'] = '1'
+        rfm['RFM'] = rfm['F_Score'] + rfm['M_Score']
+        seg_counts = rfm.groupby('RFM').size().reset_index(name='Количество ОЗМ')
+        st.plotly_chart(px.bar(seg_counts, x='RFM', y='Количество ОЗМ', text_auto=True, title="📊 Матрица плотности RFM-сегментов номенклатуры", color='RFM', color_continuous_scale="Purples"), use_container_width=True)
+        st.dataframe(rfm.sort_values(by='M', ascending=False), use_container_width=True)
+    except Exception as rfm_err: st.error(f"❌ Ошибка расчета сегментов: {rfm_err}")
 # АВТОНОМНЫЙ БЛОК 3: ПОЛНОСТЬЮ КАСТОМИЗИРУЕМЫЙ ГРАФИЧЕСКИЙ ДВИЖОК PLOTLY
 def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_round, f_size, f_color, f_pos, horiz, rot, top_limit, i):
     try:
@@ -123,7 +132,6 @@ def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_ro
         if lbl and "Donut" not in style: fig.update_traces(textfont=dict(size=f_size, color=f_color))
         st.plotly_chart(fig, use_container_width=True, key=f"p_{i}")
     except: pass
-
 # АВТОНОМНЫЙ БЛОК 4: ИМПОРТ И ПРЕДОБРАБОТКА ДАННЫХ RUST CALAMINE
 def power_query_clean_engine(uploaded_files_list, skip_top, merge_headers, remove_footer):
     frames_dict = {}
@@ -231,36 +239,30 @@ if uploaded_files:
                     st.markdown(f"**📌 Карточка № {j+1}**")
                     t_col = st.selectbox(f"Поле для расчета:", all_cols, key=f"c_t_{j}")
                     c_mode = st.selectbox(f"Тип агрегации:", ["Сумма (SUM)", "Среднее (AVERAGE)"], key=f"c_m_{j}")
-                    
                     with st.expander("🎨 Тонкие настройки карточки"):
                         c_fmt = st.selectbox("Формат отображения:", ["Числовой с пробелами", "Финансовый (₸)", "Финансовый сжатый (млн/млрд ₸)"], key=f"c_f_{j}")
                         c_rnd = st.slider("Округление знаков:", 0, 4, 2, key=f"c_r_{j}")
                         c_sz = st.slider("Размер шрифта цифр (px):", 16, 48, 28, key=f"c_s_{j}")
                         c_pad = st.slider("Вертикальный отступ плашки (px):", 10, 50, 20, key=f"c_p_{j}")
-                    
                     if t_col != "-- Выберите заголовок --":
-                        df_c = act_df.copy()
-                        df_c[t_col] = pd.to_numeric(df_c[t_col], errors='coerce').fillna(0)
-                        cv = df_c[t_col].sum() if "Сумма" in c_mode else df_c[t_col].mean()
-                        
-                        if c_fmt == "Финансовый (₸)":
-                            lbl_text = f"{round(cv, c_rnd):,.{c_rnd}f}".replace(",", " ") + " ₸"
-                        elif c_fmt == "Финансовый сжатый (млн/млрд ₸)":
-                            abs_v = abs(cv)
-                            if abs_v >= 1_000_000_000: lbl_text = f"{cv / 1_000_000_000:,.2f} млрд ₸"
-                            elif abs_v >= 1_000_000: lbl_text = f"{cv / 1_000_000:,.2f} млн ₸"
-                            else: lbl_text = f"{cv / 1_000:,.1f} тыс. ₸"
-                        else:
-                            lbl_text = f"{round(cv, c_rnd):,.{c_rnd}f}".replace(",", " ")
-                            
-                        st.markdown(f'<div style="background-color:#f8f9fa; border:1px solid #dee2e6; border-radius:10px; padding:{c_pad}px 20px; text-align:center; margin-bottom:15px;"><div style="color:#6c757d; font-size:14px; font-weight:500; margin-bottom:5px;">{t_col}</div><div style="color:#1f77b4; font-size:{c_sz}px; font-weight:bold; line-height:1.2;">{lbl_text}</div></div>', unsafe_allow_html=True)
-            
+                        try:
+                            df_c = act_df.copy()
+                            df_c[t_col] = pd.to_numeric(df_c[t_col], errors='coerce').fillna(0)
+                            cv = df_c[t_col].sum() if "Сумма" in c_mode else df_c[t_col].mean()
+                            if c_fmt == "Финансовый (₸)": lbl_text = f"{round(cv, c_rnd):,.{c_rnd}f}".replace(",", " ") + " ₸"
+                            elif c_fmt == "Финансовый сжатый (млн/млрд ₸)":
+                                abs_v = abs(cv)
+                                if abs_v >= 1_000_000_000: lbl_text = f"{cv / 1_000_000_000:,.2f} млрд ₸"
+                                elif abs_v >= 1_000_000: lbl_text = f"{cv / 1_000_000:,.2f} млн ₸"
+                                else: lbl_text = f"{cv / 1_000:,.1f} тыс. ₸"
+                            else: lbl_text = f"{round(cv, c_rnd):,.{c_rnd}f}".replace(",", " ")
+                            st.markdown(f'<div style="background-color:#f8f9fa; border:1px solid #dee2e6; border-radius:10px; padding:{c_pad}px 20px; text-align:center; margin-bottom:15px;"><div style="color:#6c757d; font-size:14px; font-weight:500; margin-bottom:5px;">{t_col}</div><div style="color:#1f77b4; font-size:{c_sz}px; font-weight:bold; line-height:1.2;">{lbl_text}</div></div>', unsafe_allow_html=True)
+                        except: pass
             cc1, cc2 = st.columns(2)
             with cc1:
                 if st.button("➕ Добавить карточку"): st.session_state.manual_cards += 1; st.rerun()
             with cc2:
                 if st.session_state.manual_cards > 1: st.session_state.manual_cards -= 1; st.rerun()
-            
             st.markdown("---")
             st.subheader("🛠️ No-Code Конструктор Графиков")
             for i in range(st.session_state.manual_charts):
@@ -268,7 +270,7 @@ if uploaded_files:
                 with c1: style = st.selectbox(f"Тип графики №{i+1}:", ["Столбчатая диаграмма (Bar)", "Линейный тренд (Line)", "Кольцевая долей (Donut)", "Диаграмма Водопад (Waterfall)"], key=f"s_{i}")
                 with c2: x_ax = st.selectbox(f"Ось X №{i+1}:", all_cols, key=f"x_{i}")
                 with c3: y_ax = st.selectbox(f"Ось Y №{i+1}:", all_cols, key=f"y_{i}")
-                with c4: color = st.color_picker(f"Цвет элементов №{i+1}:", "#1f77b4", key=f"col_{i}")
+                with c4: color = st.color_picker(f"Цвет №{i+1}:", "#1f77b4", key=f"col_{i}")
                 with st.expander("🎨 Настройки надписей"):
                     cu1, cu2, cu3 = st.columns(3)
                     with cu1:
