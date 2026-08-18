@@ -134,18 +134,6 @@ def power_query_clean_engine(uploaded_files_list, gemini_key):
     for c in ['Количество', 'Сумма']:
         if c in res.columns: res[c] = pd.to_numeric(res[c].astype(str).str.replace(r'\s+', '', regex=True).str.replace(',', '.'), errors='coerce').fillna(0.0)
     return res.dropna(how='all')
-# ИНИЦИАЛИЗАЦИЯ СЕССИИ И ИНТЕРФЕЙС КРОСС-РОУТИНГА СТРАНИЦ
-if "manual_charts" not in st.session_state: st.session_state.manual_charts = 1
-if "manual_cards" not in st.session_state: st.session_state.manual_cards = 1
-if "main_df" not in st.session_state: st.session_state.main_df = pd.DataFrame()
-
-# ИНТЕРФЕЙС НАСТРОЙКИ AI-ДВИЖКА В САЙДБАРЕ
-st.sidebar.markdown("### 🤖 Интеллектуальный ИИ-Ассистент")
-gemini_api_key = st.sidebar.text_input("Введите Gemini API Key (для автомаппинга):", type="password")
-
-uploaded_files = st.file_uploader("Загрузите файлы Excel/CSV:", type=["csv", "xlsx"], accept_multiple_files=True)
-if not uploaded_files: st.session_state.main_df = pd.DataFrame()
-
 if uploaded_files:
     if st.session_state.main_df.empty:
         with st.spinner("⏳ Идёт глубокая Rust Calamine сборка данных..."):
@@ -163,32 +151,35 @@ if uploaded_files:
         
         page = st.sidebar.radio("Навигация:", ["🗂️ 1. Загрузка и очистка данных", "📊 2. Executive Диаграммы", "🧮 3. ABC/XYZ-аналитика ОЗМ", "👥 4. RFM-сегментация"])
         
-        def show_page_1(act_df, all_cols):
-            st.success(f"📊 База сформирована! Строк: {len(main_df):,}")
-            cp = st.number_input(f"Страница (из {(len(main_df) // 50) + 1}):", min_value=1, max_value=(len(main_df) // 50) + 1, value=1, step=1)
-            st.dataframe(main_df.iloc[(cp - 1) * 50: cp * 50], height=350, use_container_width=True)
-        def show_page_2(act_df, all_cols):
+        def show_page_1(dataframe_input, columns_input):
+            st.success(f"📊 База сформирована! Строк: {len(dataframe_input):,}")
+            cp = st.number_input(f"Страница (из {(len(dataframe_input) // 50) + 1}):", min_value=1, max_value=(len(dataframe_input) // 50) + 1, value=1, step=1)
+            st.dataframe(dataframe_input.iloc[(cp - 1) * 50: cp * 50], height=350, use_container_width=True)
+            
+        def show_page_2(dataframe_input, columns_input):
             st.title("📊 Интерактивная BI-Панель Показателей")
             card_cols = st.columns(st.session_state.manual_cards)
             for j in range(st.session_state.manual_cards):
                 with card_cols[j % len(card_cols)]:
                     st.markdown(f"**📌 Карточка № {j+1}**")
-                    t_col = st.selectbox(f"Поле:", all_cols, key=f"c_t_{j}")
+                    t_col = st.selectbox(f"Поле:", columns_input, key=f"c_t_{j}")
                     c_mode = st.selectbox(f"Агрегация:", ["Сумма", "Среднее"], key=f"c_m_{j}")
                     with st.expander("🎨 Настройки"):
                         c_fmt = st.selectbox("Формат:", ["Числовой", "Финансовый (₸)", "Сжатый (млн/млрд)"], key=f"c_f_{j}")
                         c_rnd = st.slider("Округление:", 0, 4, 2, key=f"c_r_{j}")
                         c_sz = st.slider("Шрифт (px):", 16, 48, 28, key=f"c_s_{j}")
                     if t_col != "-- Выберите заголовок --":
-                        df_c = act_df.copy()
-                        df_c[t_col] = pd.to_numeric(df_c[t_col], errors='coerce').fillna(0)
-                        cv = df_c[t_col].sum() if "Сумма" in c_mode else df_c[t_col].mean()
-                        if c_fmt == "Финансовый (₸)": lbl = f"{round(cv, c_rnd):,}".replace(",", " ") + " ₸"
-                        elif c_fmt == "Сжатый (млн/млрд)":
-                            if abs(cv) >= 1_000_000_000: lbl = f"{cv / 1_000_000_000:,.2f} млрд ₸"
-                            else: lbl = f"{cv / 1_000_000:,.2f} млн ₸"
-                        else: lbl = f"{round(cv, c_rnd):,}".replace(",", " ")
-                        st.markdown(f'<div style="background-color:#f8f9fa; border:1px solid #dee2e6; border-radius:10px; padding:20px; text-align:center; margin-bottom:15px;"><div style="color:#6c757d; font-size:14px;">{t_col}</div><div style="color:#1f77b4; font-size:{c_sz}px; font-weight:bold;">{lbl}</div></div>', unsafe_allow_html=True)
+                        try:
+                            df_c = dataframe_input.copy()
+                            df_c[t_col] = pd.to_numeric(df_c[t_col], errors='coerce').fillna(0)
+                            cv = df_c[t_col].sum() if "Сумма" in c_mode else df_c[t_col].mean()
+                            if c_fmt == "Финансовый (₸)": lbl = f"{round(cv, c_rnd):,}".replace(",", " ") + " ₸"
+                            elif c_fmt == "Сжатый (млн/млрд)":
+                                if abs(cv) >= 1_000_000_000: lbl = f"{cv / 1_000_000_000:,.2f} млрд ₸"
+                                else: lbl = f"{cv / 1_000_000:,.2f} млн ₸"
+                            else: lbl = f"{round(cv, c_rnd):,}".replace(",", " ")
+                            st.markdown(f'<div style="background-color:#f8f9fa; border:1px solid #dee2e6; border-radius:10px; padding:20px; text-align:center; margin-bottom:15px;"><div style="color:#6c757d; font-size:14px;">{t_col}</div><div style="color:#1f77b4; font-size:{c_sz}px; font-weight:bold;">{lbl}</div></div>', unsafe_allow_html=True)
+                        except: pass
             cc1, cc2 = st.columns(2)
             with cc1:
                 if st.button("➕ Добавить карточку"): st.session_state.manual_cards += 1; st.rerun()
@@ -199,8 +190,8 @@ if uploaded_files:
             for i in range(st.session_state.manual_charts):
                 c1, c2, c3, c4 = st.columns(4)
                 with c1: style = st.selectbox(f"Тип №{i+1}:", ["Столбчатая диаграмма (Bar)", "Линейный тренд (Line)", "Кольцевая долей (Donut)", "Диаграмма Водопад (Waterfall)"], key=f"s_{i}")
-                with c2: x_ax = st.selectbox(f"Ось X №{i+1}:", all_cols, key=f"x_{i}")
-                with c3: y_ax = st.selectbox(f"Ось Y №{i+1}:", all_cols, key=f"y_{i}")
+                with c2: x_ax = st.selectbox(f"Ось X №{i+1}:", columns_input, key=f"x_{i}")
+                with c3: y_ax = st.selectbox(f"Ось Y №{i+1}:", columns_input, key=f"y_{i}")
                 with c4: color = st.color_picker(f"Цвет №{i+1}:", "#1f77b4", key=f"col_{i}")
                 with st.expander("🎨 Настройки надписей"):
                     cu1, cu2, cu3 = st.columns(3)
@@ -217,7 +208,7 @@ if uploaded_files:
                         rot = st.slider("🔄 Поворот:", 0, 360, 0, step=15, key=f"rot_{i}") if "Donut" in style else 0
                         top_limit = st.slider("🔝 ТОП позиций:", 5, 200, 15, key=f"top_{i}")
                 if x_ax != "-- Выберите заголовок --" and y_ax != "-- Выберите заголовок --":
-                    render_custom_chart(act_df, x_ax, y_ax, style, color, lbl_g, f_format, f_round, f_size, f_color, f_pos, horiz, rot, top_limit, i)
+                    render_custom_chart(dataframe_input, x_ax, y_ax, style, color, lbl_g, f_format, f_round, f_size, f_color, f_pos, horiz, rot, top_limit, i)
                 st.markdown("<hr style='border:1px dashed #ddd'>", unsafe_allow_html=True)
             b1, b2 = st.columns(2)
             with b1:
@@ -226,11 +217,12 @@ if uploaded_files:
                 if st.session_state.manual_charts > 1:
                     if st.button("🗑️ Удалить диаграмму"): st.session_state.manual_charts -= 1; st.rerun()
 
+        # ИСПРАВЛЕННЫЙ СЛОВАРНЫЙ РОУТЕР: Переменные строго согласованы с областями видимости
         router = {
-            "🗂️ 1. Загрузка и очистка данных": lambda: show_page_1(active_df_global, all_cols),
-            "📊 2. Executive Диаграммы": lambda: show_page_2(active_df_global, all_cols),
-            "🧮 3. ABC/XYZ-аналитика ОЗМ": lambda: internal_show_abc_xyz_page(active_df_global),
-            "👥 4. RFM-сегментация": lambda: internal_show_rfm_page(active_df_global)
+            "🗂️ 1. Загрузка и очистка данных": lambda: show_page_1(main_df, all_cols),
+            "📊 2. Executive Диаграммы": lambda: show_page_2(act_df, all_cols),
+            "🧮 3. ABC/XYZ-аналитика ОЗМ": lambda: internal_show_abc_xyz_page(act_df),
+            "👥 4. RFM-сегментация": lambda: internal_show_rfm_page(act_df)
         }
         router[page]()
 else: st.info("Ожидание загрузки любых файлов Excel/CSV...")
