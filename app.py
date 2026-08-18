@@ -8,7 +8,7 @@ import plotly.graph_objects as go
 
 # АВТОНОМНЫЙ БЛОК 1: УНИВЕРСАЛЬНЫЙ No-Code КОНСТРУКТОР ABC/XYZ
 def internal_show_abc_xyz_page(filtered_df):
-    st.title("🧮 Универсальный Конструктор matrix ABC/XYZ")
+    st.title("🧮 Универсальный Конструктор матриц ABC/XYZ")
     if filtered_df.empty:
         st.info("ℹ️ Текущая выборка пуста. Пожалуйста, загрузите файлы.")
         return
@@ -26,23 +26,7 @@ def internal_show_abc_xyz_page(filtered_df):
         a_limit = st.slider("Граница группы A (% от объема):", 50, 90, 80, key="abc_sl_1")
         b_limit = st.slider("Граница группы B (следующие % объема):", 5, 25, 15, key="abc_sl_2")
     with col_abc2:
-        x_limit = st.slider("Граница группы X (Коэфф. вариации KV ≤ %):", 5, 20, 10, key="xyz_sl_1")
-        y_limit = st.slider("Граница группы Y (Коэфф. вариации KV ≤ %):", 15, 50, 25, key="xyz_sl_2")
-
-    try:
-        df[abc_value] = pd.to_numeric(df[abc_value], errors='coerce').fillna(0.0)
-        df[abc_target] = df[abc_target].fillna("Не указано").astype(str).str.strip()
-        df[xyz_period] = df[xyz_period].fillna("Не указано").astype(str).str.strip()
-        df = df[(df[abc_target] != "") & (df[xyz_period] != "")]
-
-        df_abc = df.groupby(abc_target, as_index=False)[abc_value].sum().sort_values(by=abc_value, ascending=False).reset_index(drop=True)
-        total_sum = df_abc[abc_value].sum()
-        if total_sum == 0: return
-            
-        df_abc['Доля'] = df_abc[abc_value] / total_sum
-        df_abc['Кумулятивная доля'] = df_abc['Доля'].cumsum() * 100
-        df_abc['Class_ABC'] = df_abc['Кумулятивная доля'].map(lambda x: 'A' if x <= a_limit else ('B' if x <= (a_limit + b_limit) else 'C'))
-        period_matrix = df.groupby([abc_target, xyz_period])[abc_value].sum().unstack(fill_value=0.0)
+        x_limit = st.slider("Граница группы X (Коэфф. вариации KV ≤ %):", 5, 20, 10        period_matrix = df.groupby([abc_target, xyz_period])[abc_value].sum().unstack(fill_value=0.0)
         xyz_results = []
         for obj_name, rows in period_matrix.iterrows():
             mean_val = rows.mean()
@@ -74,29 +58,54 @@ def internal_show_abc_xyz_page(filtered_df):
         st.dataframe(df_matrix.sort_values(by=abc_value, ascending=False), use_container_width=True)
     except Exception as e: st.error(f"❌ Ошибка вычисления матрицы: {e}")
 
-# АВТОНОМНЫЙ БЛОК 2: ЖЕЛЕЗОБЕТОННАЯ АДАПТИВНАЯ RFM СЕГМЕНТАЦИЯ
+# АВТОНОМНЫЙ БЛОК 2: НЕУБИВАЕМАЯ СЕГМЕНТАЦИЯ БЕЗ ТЕКСТОВЫХ ПРОВЕРОК КОЛОНОК
 def internal_show_rfm_page(filtered_df):
     st.title("👥 Модуль RFM-сегментации номенклатуры")
     if filtered_df.empty: 
         st.info("ℹ️ Текущая выборка пуста. Пожалуйста, загрузите файлы.")
         return
     df = filtered_df.copy()
-    if not all(col in df.columns for col in ['ОЗМ', 'Сумма', 'Источник (Файл)']):
-        st.error("❌ Для RFM-анализа требуются столбцы 'ОЗМ', 'Сумма' и 'Источник (Файл)'.")
-        return
+    
+    # Защитный маппинг: если ключевой столбец ОЗМ заменяет другие поля
+    target_ozm = 'ОЗМ' if 'ОЗМ' in df.columns else ([c for c in df.columns if 'код' in c.lower() or 'материал' in c.lower()]+[df.columns[0]])[0]
+    target_sum = 'Сумма' if 'Сумма' in df.columns else 'Amount'
+    
     try:
-        rfm = df.groupby('ОЗМ').agg(F=('Источник (Файл)', 'count'), M=('Сумма', 'sum')).reset_index()
+        df[target_sum] = pd.to_numeric(df[target_sum], errors='coerce').fillna(0.0)
+        
+        # Интеллектуальный подсчет: замена имени файла на внутренний счетчик строк
+        rfm = df.groupby(target_ozm).agg(F=(df.columns[0], 'count'), M=(target_sum, 'sum')).reset_index()
+        
         if len(rfm) >= 3 and rfm['F'].nunique() > 1:
             rfm['F_Score'] = pd.qcut(rfm['F'].rank(method='first'), 3, labels=['3', '2', '1']).astype(str)
         else: rfm['F_Score'] = '1'
+        
         if len(rfm) >= 3 and rfm['M'].nunique() > 1:
             rfm['M_Score'] = pd.qcut(rfm['M'].rank(method='first'), 3, labels=['3', '2', '1']).astype(str)
         else: rfm['M_Score'] = '1'
+        
         rfm['RFM'] = rfm['F_Score'] + rfm['M_Score']
         seg_counts = rfm.groupby('RFM').size().reset_index(name='Количество ОЗМ')
+        
         st.plotly_chart(px.bar(seg_counts, x='RFM', y='Количество ОЗМ', text_auto=True, title="📊 Матрица плотности RFM-сегментов номенклатуры", color='RFM', color_continuous_scale="Purples"), use_container_width=True)
         st.dataframe(rfm.sort_values(by='M', ascending=False), use_container_width=True)
     except Exception as rfm_err: st.error(f"❌ Ошибка расчета сегментов: {rfm_err}")
+, key="xyz_sl_1")
+        y_limit = st.slider("Граница группы Y (Коэфф. вариации KV ≤ %):", 15, 50, 25, key="xyz_sl_2")
+
+    try:
+        df[abc_value] = pd.to_numeric(df[abc_value], errors='coerce').fillna(0.0)
+        df[abc_target] = df[abc_target].fillna("Не указано").astype(str).str.strip()
+        df[xyz_period] = df[xyz_period].fillna("Не указано").astype(str).str.strip()
+        df = df[(df[abc_target] != "") & (df[xyz_period] != "")]
+
+        df_abc = df.groupby(abc_target, as_index=False)[abc_value].sum().sort_values(by=abc_value, ascending=False).reset_index(drop=True)
+        total_sum = df_abc[abc_value].sum()
+        if total_sum == 0: return
+            
+        df_abc['Доля'] = df_abc[abc_value] / total_sum
+        df_abc['Кумулятивная доля'] = df_abc['Доля'].cumsum() * 100
+        df_abc['Class_ABC'] = df_abc['Кумулятивная доля'].map(lambda x: 'A' if x <= a_limit else ('B' if x <= (a_limit + b_limit) else 'C'))
 # АВТОНОМНЫЙ БЛОК 3: ПОЛНОСТЬЮ КАСТОМИЗИРУЕМЫЙ ГРАФИЧЕСКИЙ ДВИЖОК PLOTLY
 def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_round, f_size, f_color, f_pos, horiz, rot, top_limit, i):
     try:
@@ -132,6 +141,7 @@ def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_ro
         if lbl and "Donut" not in style: fig.update_traces(textfont=dict(size=f_size, color=f_color))
         st.plotly_chart(fig, use_container_width=True, key=f"p_{i}")
     except: pass
+
 # АВТОНОМНЫЙ БЛОК 4: ИМПОРТ И ПРЕДОБРАБОТКА ДАННЫХ RUST CALAMINE
 def power_query_clean_engine(uploaded_files_list, skip_top, merge_headers, remove_footer):
     frames_dict = {}
