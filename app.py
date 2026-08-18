@@ -8,19 +8,19 @@ import plotly.graph_objects as go
 from google import genai
 from google.genai import types
 
-# МОДУЛЬ ИИ-АНАЛИЗА СИНОНИМОВ ЗАГОЛОВКОВ (НОВАЯ ОФИЦИАЛЬНАЯ БИБЛИОТЕКА GOOGLE)
+# 🤖 МОДУЛЬ ИИ-АНАЛИЗА СИНОНИМОВ ЗАГОЛОВКОВ (GOOGLE GENAI API)
 def ai_column_mapper_engine(raw_columns_list, api_key):
     if not api_key: return {}
     try:
         client = genai.Client(api_key=api_key)
         system_instruction = """
-        Ты — BI-аналитик. Твоя задача — сопоставить заголовки закупщика с 4 полями:
+        Ты — BI-аналитик. Сопоставь заголовки закупщика с 4 системными BI-полями:
         1. 'ОЗМ' (код материала, номенклатурный номер, артикул, ID)
-        2. 'Наименование материала' (название ТМЦ, описание, позиция)
+        2. 'Наименование材料' -> 'Наименование материала' (название ТМЦ, описание, позиция)
         3. 'Количество' (объем, штуки, вес, кол-во)
         4. 'Сумма' (стоимость, затраты, бюджет, прайс с ндс)
         Верни СТРОГО JSON-объект, где КЛЮЧ - старый заголовок, ЗНАЧЕНИЕ - системное поле. 
-        Пример: {"Номенклатура": "ОЗМ", "Прайс": "Сумма"}
+        Пример ответа: {"Номенклатура": "ОЗМ", "Прайс": "Сумма"}
         """
         response = client.models.generate_content(
             model='gemini-2.5-flash',
@@ -33,8 +33,7 @@ def ai_column_mapper_engine(raw_columns_list, api_key):
         )
         return json.loads(response.text)
     except: return {}
-
-# МОДУЛЬ ABC/XYZ АНАЛИТИКИ
+# 🧮 МОДУЛЬ УНИВЕРСАЛЬНОЙ ABC/XYZ МАТРИЦЫ С ТЕПЛОВОЙ КАРТОЙ
 def internal_show_abc_xyz_page(filtered_df):
     st.title("🧮 Универсальный Конструктор матриц ABC/XYZ")
     if filtered_df.empty: return st.info("ℹ️ Выборка пуста. Загрузите файлы.")
@@ -71,7 +70,7 @@ def internal_show_abc_xyz_page(filtered_df):
         with mc2: st.plotly_chart(px.imshow(pivot_m, text_auto=True, color_continuous_scale="Blues"), use_container_width=True)
         st.dataframe(df_m.sort_values(by=abc_value, ascending=False), use_container_width=True)
     except Exception as e: st.error(f"Ошибка ABC: {e}")
-
+# 👥 МОДУЛЬ НЕУБИВАЕМОЙ АДАПТИВНОЙ RFM СЕГМЕНТАЦИИ И ДВИЖОК PLOTLY
 def internal_show_rfm_page(filtered_df):
     st.title("👥 Модуль RFM-сегментации номенклатуры")
     if filtered_df.empty: return st.info("ℹ️ Выборка пуста. Загрузите файлы.")
@@ -88,6 +87,7 @@ def internal_show_rfm_page(filtered_df):
         st.plotly_chart(px.bar(seg_counts, x='RFM', y='Количество ОЗМ', text_auto=True, title="📊 Распределение RFM-сегментов", color='RFM', color_continuous_scale="Purples"), use_container_width=True)
         st.dataframe(rfm.sort_values(by='M', ascending=False), use_container_width=True)
     except Exception as rfe: st.error(f"Ошибка RFM: {rfe}")
+
 def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_round, f_size, f_color, f_pos, horiz, rot, top_limit, i):
     try:
         df_c = active_df.copy()
@@ -103,25 +103,22 @@ def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_ro
         fig.update_layout(xaxis=dict(type='category', tickangle=45 if not horiz else 0))
         st.plotly_chart(fig, use_container_width=True, key=f"p_{i}")
     except: pass
-
-# СВЕРХСКОРОСТНОЙ ДВИЖОК POWER QUERY С АВТОМАТИЧЕСКИМ ИИ-МАППИНГОМ КОЛОНОК
+# ⚡ СКОРОСТНОЙ ДВИЖОК POWER QUEEN С CALAMINE НА RUST
 def power_query_clean_engine(uploaded_files_list, gemini_key):
     frames = {}
     for f in uploaded_files_list:
         try:
             df = pd.read_csv(f, dtype=str) if f.name.endswith('.csv') else pd.read_excel(f, dtype=str, engine='calamine')
             raw_cols = [str(c).strip() for c in df.columns]
-            
-            # Запускаем интеллектуальный ИИ-маппинг
             ai_map = ai_column_mapper_engine(raw_cols, gemini_key)
             mapped = []
             for col in raw_cols:
-                if col in ai_map: mapped.append(ai_map[col]) # Приоритет ИИ-модели
+                if col in ai_map: mapped.append(ai_map[col])
                 else:
                     c_low = col.lower()
                     if any(w in c_low for w in ['озм', 'код материала', 'номенклатур']): mapped.append('ОЗМ')
                     elif any(w in c_low for w in ['наименование', 'материал']): mapped.append('Наименование материала')
-                    elif any(w in c_low for w in ['количество', 'кол-во', 'объем']): mapped.append('Количество')
+                    elif any(w in c_low for w in ['количество', 'кол-во', 'объем']): mapped.append('Quantity' if 'Quantity' in df.columns else 'Количество')
                     elif any(w in c_low for w in ['сумма', 'стоимость', 'цена']): mapped.append('Сумма')
                     else: mapped.append(col)
             df.columns = mapped
@@ -131,9 +128,20 @@ def power_query_clean_engine(uploaded_files_list, gemini_key):
         except: pass
     if not frames: return pd.DataFrame()
     res = pd.concat(frames.values(), ignore_index=True, join='outer')
-    for c in ['Количество', 'Сумма']:
+    for c in ['Количество', 'Сумма', 'Quantity']:
         if c in res.columns: res[c] = pd.to_numeric(res[c].astype(str).str.replace(r'\s+', '', regex=True).str.replace(',', '.'), errors='coerce').fillna(0.0)
+    if 'Quantity' in res.columns: res.rename(columns={'Quantity': 'Количество'}, inplace=True)
     return res.dropna(how='all')
+
+if "manual_charts" not in st.session_state: st.session_state.manual_charts = 1
+if "manual_cards" not in st.session_state: st.session_state.manual_cards = 1
+if "main_df" not in st.session_state: st.session_state.main_df = pd.DataFrame()
+st.sidebar.markdown("### 🤖 Интеллектуальный ИИ-Ассистент")
+gemini_api_key = st.sidebar.text_input("Введите Gemini API Key:", type="password")
+
+uploaded_files = st.file_uploader("Загрузите файлы Excel/CSV:", type=["csv", "xlsx"], accept_multiple_files=True)
+if not uploaded_files: st.session_state.main_df = pd.DataFrame()
+
 if uploaded_files:
     if st.session_state.main_df.empty:
         with st.spinner("⏳ Идёт глубокая Rust Calamine сборка данных..."):
@@ -149,7 +157,7 @@ if uploaded_files:
             f_v1 = st.sidebar.selectbox("Значение среза №1:", u_v1, key="fl_v1")
             if f_v1 != "-- Все значения --": act_df = act_df[act_df[f_col1].astype(str) == str(f_v1)]
         
-        page = st.sidebar.radio("Навигация:", ["🗂️ 1. Загрузка и очистка данных", "📊 2. Executive Диаграммы", "🧮 3. ABC/XYZ-аналитика ОЗМ", "👥 4. RFM-сегментация"])
+        page = st.sidebar.radio("Перейти к разделу:", ["🗂️ 1. Загрузка и очистка данных", "📊 2. Executive Диаграммы", "🧮 3. ABC/XYZ-аналитика ОЗМ", "👥 4. RFM-сегментация"])
         
         def show_page_1(dataframe_input, columns_input):
             st.success(f"📊 База сформирована! Строк: {len(dataframe_input):,}")
@@ -208,7 +216,7 @@ if uploaded_files:
                         rot = st.slider("🔄 Поворот:", 0, 360, 0, step=15, key=f"rot_{i}") if "Donut" in style else 0
                         top_limit = st.slider("🔝 ТОП позиций:", 5, 200, 15, key=f"top_{i}")
                 if x_ax != "-- Выберите заголовок --" and y_ax != "-- Выберите заголовок --":
-                    render_custom_chart(dataframe_input, x_ax, y_ax, style, color, lbl_g, f_format, f_round, f_size, f_color, f_pos, horiz, rot, top_limit, i)
+                    render_custom_chart(act_df, x_ax, y_ax, style, color, lbl_g, f_format, f_round, f_size, f_color, f_pos, horiz, rot, top_limit, i)
                 st.markdown("<hr style='border:1px dashed #ddd'>", unsafe_allow_html=True)
             b1, b2 = st.columns(2)
             with b1:
@@ -217,7 +225,6 @@ if uploaded_files:
                 if st.session_state.manual_charts > 1:
                     if st.button("🗑️ Удалить диаграмму"): st.session_state.manual_charts -= 1; st.rerun()
 
-        # ИСПРАВЛЕННЫЙ СЛОВАРНЫЙ РОУТЕР: Переменные строго согласованы с областями видимости
         router = {
             "🗂️ 1. Загрузка и очистка данных": lambda: show_page_1(main_df, all_cols),
             "📊 2. Executive Диаграммы": lambda: show_page_2(act_df, all_cols),
