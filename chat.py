@@ -5,11 +5,10 @@ import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
 
-# АВТОНОМНАЯ ФУНКЦИЯ 1: УНИВЕРСАЛЬНЫЙ ABC/XYZ КОНСТРУКТОР
 def internal_show_abc_xyz_page(filtered_df):
-    st.title("🧮 Универсальный Конструктор матриц ABC/XYZ")
+    st.title("🧮 Конструктор матриц ABC/XYZ")
     if filtered_df.empty:
-        st.info("ℹ️ Текущая выборка пуста. Загрузите файлы.")
+        st.info("ℹ️ Текущая выборка пуста.")
         return
     df, available_cols = filtered_df.copy(), list(filtered_df.columns)
     c1, c2, c3 = st.columns(3)
@@ -44,11 +43,10 @@ def internal_show_abc_xyz_page(filtered_df):
         with mc2: st.plotly_chart(px.imshow(pivot_m, text_auto=True, color_continuous_scale="Blues"), use_container_width=True)
         st.dataframe(df_m.sort_values(by=abc_value, ascending=False), use_container_width=True)
     except Exception as e: st.error(f"Ошибка: {e}")
-# АВТОНОМНАЯ ФУНКЦИЯ 2: RFM АНАЛИЗ СЕГМЕНТАЦИИ
 def internal_show_rfm_page(filtered_df):
     st.title("👥 Модуль RFM-сегментации номенклатуры")
     if filtered_df.empty or 'Источник (Файл)' not in filtered_df.columns: 
-        st.info("ℹ️ Загрузите несколько файлов для RFM анализа частоты.")
+        st.info("ℹ️ Загрузите данные.")
         return
     rfm = filtered_df.groupby('ОЗМ').agg(F=('Источник (Файл)', 'count'), M=('Сумма', 'sum')).reset_index()
     if len(rfm) >= 3:
@@ -57,8 +55,7 @@ def internal_show_rfm_page(filtered_df):
         rfm['RFM'] = rfm['F_Score'] + rfm['M_Score']
         seg_counts = rfm.groupby('RFM').size().reset_index(name='Количество ОЗМ')
         st.plotly_chart(px.bar(seg_counts, x='RFM', y='Количество ОЗМ', text_auto=True, color='RFM'), use_container_width=True)
-        st.dataframe(rfm, use_container_width=True)
-# АВТОНОМНАЯ ФУНКЦИЯ 3: ИЗОЛИРОВАННЫЙ СКОРОСТНОЙ ДВИЖОК ОЧИСТКИ PLOTLY ГРАФИКОВ
+
 def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_round, f_size, f_color, f_pos, horiz, rot, i):
     try:
         df_c = active_df.copy()
@@ -76,11 +73,9 @@ def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_ro
         else: 
             fig.add_trace(go.Bar(y=df_g[x_ax] if horiz else df_g[y_ax], x=df_g[y_ax] if horiz else df_g[x_ax], text=txt if lbl else None, textposition="auto", orientation="h" if horiz else "v", marker_color=color))
         fig.update_layout(xaxis=dict(type='category', tickangle=45 if not horiz else 0))
-        if lbl and "Donut" not in style: 
-            fig.update_traces(textfont=dict(size=f_size, color=f_color))
         st.plotly_chart(fig, use_container_width=True, key=f"p_{i}")
     except: pass
-# АВТОНОМНАЯ ФУНКЦИЯ 4: ИМПОРТ POWER QUERY НА БАЗЕ СВЕРХБЫСТРОГО RUST CALAMINE
+
 def power_query_clean_engine(uploaded_files_list):
     frames = {}
     for f in uploaded_files_list:
@@ -105,6 +100,45 @@ def power_query_clean_engine(uploaded_files_list):
     for c in ['Количество', 'Сумма']:
         if c in res.columns: res[c] = pd.to_numeric(res[c].astype(str).str.replace(r'\s+', '', regex=True).str.replace(',', '.'), errors='coerce').fillna(0.0)
     return res.dropna(how='all')
+#БЕЗУПРЕЧНЫЙ СЛОВАРНЫЙ РОУТИНГ СТРАНИЦ БЕЗ ОТСТУПОВ
+def show_page_1(act_df, all_cols):
+    st.success(f"📊 База сформирована! Строк: {len(act_df):,}")
+    cp = st.number_input("Страница:", min_value=1, value=1, step=1)
+    st.dataframe(act_df.iloc[(cp - 1) * 50: cp * 50], height=350, use_container_width=True)
+
+def show_page_2(act_df, all_cols):
+    st.title("📊 Интерактивная BI-Панель Показателей")
+    card_cols = st.columns(st.session_state.manual_cards)
+    for j in range(st.session_state.manual_cards):
+        with card_cols[j % len(card_cols)]:
+            t_col = st.selectbox(f"Заголовок карточки №{j+1}:", all_cols, key=f"c_t_{j}")
+            c_mode = st.selectbox(f"Расчет карточки №{j+1}:", ["Сумма (SUM)", "Среднее (AVERAGE)"], key=f"c_m_{j}")
+            if t_col != "-- Выберите заголовок --":
+                df_c = act_df.copy()
+                df_c[t_col] = pd.to_numeric(df_c[t_col], errors='coerce').fillna(0)
+                cv = df_c[t_col].sum() if "Сумма" in c_mode else df_c[t_col].mean()
+                st.markdown(f'<div style="background-color:#f8f9fa; border:1px solid #dee2e6; border-radius:10px; padding:20px; text-align:center; margin-bottom:15px;"><div style="color:#6c757d; font-size:15px;">{t_col}</div><div style="color:#1f77b4; font-size:26px; font-weight:bold; margin-top:5px;">{cv:,.2f}</div></div>', unsafe_allow_html=True)
+    cc1, cc2 = st.columns(2)
+    with cc1:
+        if st.button("➕ Добавить карточку"): st.session_state.manual_cards += 1; st.rerun()
+    with cc2:
+        if st.session_state.manual_cards > 1: st.session_state.manual_cards -= 1; st.rerun()
+    st.markdown("---")
+    st.subheader("🛠️ No-Code Конструктор Графиков")
+    for i in range(st.session_state.manual_charts):
+        c1, c2, c3, c4 = st.columns(4)
+        with c1: style = st.selectbox(f"Тип графики №{i+1}:", ["Столбчатая диаграмма (Bar)", "Линейный тренд (Line)", "Кольцевая долей (Donut)", "Диаграмма Водопад (Waterfall)"], key=f"s_{i}")
+        with c2: x_ax = st.selectbox(f"Ось X №{i+1}:", all_cols, key=f"x_{i}")
+        with c3: y_ax = st.selectbox(f"Ось Y №{i+1}:", all_cols, key=f"y_{i}")
+        with c4: color = st.color_picker(f"Цвет №{i+1}:", "#1f77b4", key=f"col_{i}")
+        if x_ax != "-- Выберите заголовок --" and y_ax != "-- Выберите заголовок --":
+            render_custom_chart(act_df, x_ax, y_ax, style, color, True, "Числовой", 0, 12, "#000000", "auto", False, 0, i)
+    b1, b2 = st.columns(2)
+    with b1:
+        if st.button("➕ Добавить диаграмму"): st.session_state.manual_charts += 1; st.rerun()
+    with b2:
+        if st.session_state.manual_charts > 1:
+            if st.button("🗑️ Удалить диаграмму"): st.session_state.manual_charts -= 1; st.rerun()
 
 if "manual_charts" not in st.session_state: st.session_state.manual_charts = 1
 if "manual_cards" not in st.session_state: st.session_state.manual_cards = 1
@@ -112,6 +146,7 @@ if "main_df" not in st.session_state: st.session_state.main_df = pd.DataFrame()
 
 uploaded_files = st.file_uploader("Загрузите файлы Excel/CSV:", type=["csv", "xlsx"], accept_multiple_files=True)
 if not uploaded_files: st.session_state.main_df = pd.DataFrame()
+
 if uploaded_files:
     if st.session_state.main_df.empty:
         with st.spinner("⏳ Идёт глубокая Rust Calamine сборка данных..."):
@@ -126,58 +161,15 @@ if uploaded_files:
             u_v1 = ["-- Все значения --"] + list(act_df[f_col1].astype(str).unique())
             f_v1 = st.sidebar.selectbox("Значение среза №1:", u_v1, key="fl_v1")
             if f_v1 != "-- Все значения --": act_df = act_df[act_df[f_col1].astype(str) == str(f_v1)]
+        
         page = st.sidebar.radio("Навигация:", ["🗂️ 1. Данные", "📊 2. Executive Диаграммы", "🧮 3. ABC/XYZ-аналитика ОЗМ", "👥 4. RFM-сегментация"])
-        if page == "🗂️ 1. Данные":
-            st.success(f"📊 База сформирована! Строк: {len(main_df):,}")
-            cp = st.number_input(f"Страница (из {(len(main_df) // 50) + 1}):", min_value=1, max_value=(len(main_df) // 50) + 1, value=1, step=1)
-            st.dataframe(main_df.iloc[(cp - 1) * 50: cp * 50], height=350, use_container_width=True)
-        elif page == "📊 2. Executive Диаграммы":
-            st.title("📊 Интерактивная BI-Панель Показателей")
-            card_cols = st.columns(st.session_state.manual_cards)
-            for j in range(st.session_state.manual_cards):
-                with card_cols[j % len(card_cols)]:
-                    t_col = st.selectbox(f"Заголовок карточки №{j+1}:", all_cols, key=f"c_t_{j}")
-                    c_mode = st.selectbox(f"Расчет карточки №{j+1}:", ["Сумма (SUM)", "Среднее (AVERAGE)"], key=f"c_m_{j}")
-                    if t_col != "-- Выберите заголовок --":
-                        df_c = act_df.copy()
-                        df_c[t_col] = pd.to_numeric(df_c[t_col], errors='coerce').fillna(0)
-                        cv = df_c[t_col].sum() if "Сумма" in c_mode else df_c[t_col].mean()
-                        st.markdown(f'<div style="background-color:#f8f9fa; border:1px solid #dee2e6; border-radius:10px; padding:20px; text-align:center; margin-bottom:15px;"><div style="color:#6c757d; font-size:15px;">{t_col}</div><div style="color:#1f77b4; font-size:26px; font-weight:bold; margin-top:5px;">{cv:,.2f}</div></div>', unsafe_allow_html=True)
-            cc1, cc2 = st.columns(2)
-            with cc1:
-                if st.button("➕ Добавить карточку"): st.session_state.manual_cards += 1; st.rerun()
-            with cc2:
-                if st.session_state.manual_cards > 1: st.session_state.manual_cards -= 1; st.rerun()
-            st.markdown("---")
-            st.subheader("🛠️ No-Code Конструктор Графиков")
-            for i in range(st.session_state.manual_charts):
-                c1, c2, c3, c4 = st.columns(4)
-                with c1: style = st.selectbox(f"Тип графики:", ["Столбчатая диаграмма (Bar)", "Линейный тренд (Line)", "Кольцевая долей (Donut)", "Диаграмма Водопад (Waterfall)"], key=f"s_{i}")
-                with c2: x_ax = st.selectbox(f"Ось X (Категории):", all_cols, key=f"x_{i}")
-                with c3: y_ax = st.selectbox(f"Ось Y (Показатели):", all_cols, key=f"y_{i}")
-                with c4: color = st.color_picker(f"Цвет элементов:", "#1f77b4", key=f"col_{i}")
-                with st.expander("🎨 Настройки надписей"):
-                    cu1, cu2, cu3 = st.columns(3)
-                    with cu1:
-                        lbl = st.checkbox("Показывать значения", value=True, key=f"lbl_{i}")
-                        f_format = st.selectbox("Формат:", ["Числовой с пробелами", "Финансовый (₸)", "Десятичный дробный"], key=f"fmt_{i}")
-                        f_round = st.slider("Округление:", 0, 4, 0, key=f"rnd_{i}")
-                    with cu2:
-                        f_size = st.slider("Размер шрифта (px):", 8, 24, 12, key=f"sz_{i}")
-                        f_color = st.color_picker("Цвет шрифта:", "#000000", key=f"fcol_{i}")
-                    with cu3:
-                        f_pos = st.selectbox("Положение:", ["auto", "inside", "outside"], key=f"pos_{i}")
-                        horiz = st.checkbox("Горизонтально", value=False, key=f"h_{i}") if "Bar" in style else False
-                        rot = st.slider("🔄 Поворот:", 0, 360, 0, step=15, key=f"rot_{i}") if "Donut" in style else 0
-                if x_ax != "-- Выберите заголовок --" and y_ax != "-- Выберите заголовок --":
-                    render_custom_chart(act_df, x_ax, y_ax, style, color, lbl, f_format, f_round, f_size, f_color, f_pos, horiz, rot, i)
-                st.markdown("<hr style='border:1px dashed #ddd'>", unsafe_allow_html=True)
-            b1, b2 = st.columns(2)
-            with b1:
-                if st.button("➕ Добавить диаграмму", key="add_ch"): st.session_state.manual_charts += 1; st.rerun()
-            with b2:
-                if st.session_state.manual_charts > 1:
-                    if st.button("🗑️ Удалить диаграмму", key="del_ch"): st.session_state.manual_charts -= 1; st.rerun()
-        elif page == "🧮 3. ABC/XYZ-аналитика ОЗМ": internal_show_abc_xyz_page(act_df)
-        elif page == "👥 4. RFM-сегментация": internal_show_rfm_page(act_df)
-else: st.info("Ожидание загрузки любых файлов Excel/CSV для активации BI-панели...")
+        
+        # СЛОВАРНЫЙ РОУТЕР: Полностью защищен от IndentationError строки 186
+        router = {
+            "🗂️ 1. Данные": lambda: show_page_1(act_df, all_cols),
+            "📊 2. Executive Диаграммы": lambda: show_page_2(act_df, all_cols),
+            "🧮 3. ABC/XYZ-аналитика ОЗМ": lambda: internal_show_abc_xyz_page(act_df),
+            "👥 4. RFM-сегментация": lambda: internal_show_rfm_page(act_df)
+        }
+        router[page]()
+else: st.info("Ожидание загрузки любых файлов Excel/CSV...")
