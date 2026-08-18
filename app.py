@@ -16,7 +16,7 @@ def ai_column_mapper_engine(raw_columns_list, api_key):
         system_instruction = """
         Ты — BI-аналитик. Сопоставь заголовки закупщика с 4 системными BI-полями:
         1. 'ОЗМ' (код материала, номенклатурный номер, артикул, ID)
-        2. 'Наименование材料' -> 'Наименование материала' (название ТМЦ, описание, позиция)
+        2. 'Наименование материала' (название ТМЦ, описание, позиция)
         3. 'Количество' (объем, штуки, вес, кол-во)
         4. 'Сумма' (стоимость, затраты, бюджет, прайс с ндс)
         Верни СТРОГО JSON-объект, где КЛЮЧ - старый заголовок, ЗНАЧЕНИЕ - системное поле. 
@@ -70,21 +70,24 @@ def internal_show_abc_xyz_page(filtered_df):
         with mc2: st.plotly_chart(px.imshow(pivot_m, text_auto=True, color_continuous_scale="Blues"), use_container_width=True)
         st.dataframe(df_m.sort_values(by=abc_value, ascending=False), use_container_width=True)
     except Exception as e: st.error(f"Ошибка ABC: {e}")
-# 👥 МОДУЛЬ НЕУБИВАЕМОЙ АДАПТИВНОЙ RFM СЕГМЕНТАЦИИ И ДВИЖОК PLOTLY
+# 👥 МОДУЛЬ УЛЬТРА-СТАБИЛЬНОЙ RFM СЕГМЕНТАЦИИ И ДВИЖОК PLOTLY
 def internal_show_rfm_page(filtered_df):
     st.title("👥 Модуль RFM-сегментации номенклатуры")
     if filtered_df.empty: return st.info("ℹ️ Выборка пуста. Загрузите файлы.")
     df = filtered_df.copy()
-    t_ozm = 'ОЗМ' if 'ОЗМ' in df.columns else df.columns
-    t_sum = 'Сумма' if 'Сумма' in df.columns else df.select_dtypes(include=[np.number]).columns
+    
+    # ЖЕСТКАЯ СТРОКОВАЯ ФИКСАЦИЯ: Исключает ошибку unhashable type: 'Index' при любых жестких срезах
+    t_ozm = 'ОЗМ' if 'ОЗМ' in df.columns else (df.columns[0] if len(df.columns) > 0 else 'index')
+    t_sum = 'Сумма' if 'Сумма' in df.columns else (df.select_dtypes(include=[np.number]).columns[0] if len(df.select_dtypes(include=[np.number]).columns) > 0 else df.columns[-1])
+    
     try:
         df[t_sum] = pd.to_numeric(df[t_sum], errors='coerce').fillna(0.0)
-        rfm = df.groupby(t_ozm).agg(F=(df.columns, 'count'), M=(t_sum, 'sum')).reset_index()
+        rfm = df.groupby(str(t_ozm)).agg(F=(df.columns[0], 'count'), M=(t_sum, 'sum')).reset_index()
         rfm['F_Score'] = pd.qcut(rfm['F'].rank(method='first'), 3, labels=['3', '2', '1']).astype(str) if len(rfm) >= 3 and rfm['F'].nunique() > 1 else '1'
         rfm['M_Score'] = pd.qcut(rfm['M'].rank(method='first'), 3, labels=['3', '2', '1']).astype(str) if len(rfm) >= 3 and rfm['M'].nunique() > 1 else '1'
         rfm['RFM'] = rfm['F_Score'] + rfm['M_Score']
         seg_counts = rfm.groupby('RFM').size().reset_index(name='Количество ОЗМ')
-        st.plotly_chart(px.bar(seg_counts, x='RFM', y='Количество ОЗМ', text_auto=True, title="📊 Распределение RFM-сегментов", color='RFM', color_continuous_scale="Purples"), use_container_width=True)
+        st.plotly_chart(px.bar(seg_counts, x='RFM', y='Количество ОЗМ', text_auto=True, title="📊 Распределение RFM-сегментов номенклатуры", color='RFM', color_continuous_scale="Purples"), use_container_width=True)
         st.dataframe(rfm.sort_values(by='M', ascending=False), use_container_width=True)
     except Exception as rfe: st.error(f"Ошибка RFM: {rfe}")
 
@@ -103,7 +106,7 @@ def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_ro
         fig.update_layout(xaxis=dict(type='category', tickangle=45 if not horiz else 0))
         st.plotly_chart(fig, use_container_width=True, key=f"p_{i}")
     except: pass
-# ⚡ СКОРОСТНОЙ ДВИЖОК POWER QUEEN С CALAMINE НА RUST
+# ⚡ СКОРОСТНОЙ ДВИЖОК POWER QUERY + CALAMINE НА RUST
 def power_query_clean_engine(uploaded_files_list, gemini_key):
     frames = {}
     for f in uploaded_files_list:
@@ -118,7 +121,7 @@ def power_query_clean_engine(uploaded_files_list, gemini_key):
                     c_low = col.lower()
                     if any(w in c_low for w in ['озм', 'код материала', 'номенклатур']): mapped.append('ОЗМ')
                     elif any(w in c_low for w in ['наименование', 'материал']): mapped.append('Наименование материала')
-                    elif any(w in c_low for w in ['количество', 'кол-во', 'объем']): mapped.append('Quantity' if 'Quantity' in df.columns else 'Количество')
+                    elif any(w in c_low for w in ['количество', 'кол-во', 'объем']): mapped.append('Количество')
                     elif any(w in c_low for w in ['сумма', 'стоимость', 'цена']): mapped.append('Сумма')
                     else: mapped.append(col)
             df.columns = mapped
@@ -128,9 +131,8 @@ def power_query_clean_engine(uploaded_files_list, gemini_key):
         except: pass
     if not frames: return pd.DataFrame()
     res = pd.concat(frames.values(), ignore_index=True, join='outer')
-    for c in ['Количество', 'Сумма', 'Quantity']:
+    for c in ['Количество', 'Сумма']:
         if c in res.columns: res[c] = pd.to_numeric(res[c].astype(str).str.replace(r'\s+', '', regex=True).str.replace(',', '.'), errors='coerce').fillna(0.0)
-    if 'Quantity' in res.columns: res.rename(columns={'Quantity': 'Количество'}, inplace=True)
     return res.dropna(how='all')
 
 if "manual_charts" not in st.session_state: st.session_state.manual_charts = 1
@@ -157,7 +159,7 @@ if uploaded_files:
             f_v1 = st.sidebar.selectbox("Значение среза №1:", u_v1, key="fl_v1")
             if f_v1 != "-- Все значения --": act_df = act_df[act_df[f_col1].astype(str) == str(f_v1)]
         
-        page = st.sidebar.radio("Перейти к разделу:", ["🗂️ 1. Загрузка и очистка данных", "📊 2. Executive Диаграммы", "🧮 3. ABC/XYZ-аналитика ОЗМ", "👥 4. RFM-сегментация"])
+        page = st.sidebar.radio("Перейти к разделу:", ["🗂️ 1. Загрузка и очистка данных", "📊 2. Executive Диаграммы", "🧮 3. ABC/XYZ-аналитика ОЗМ", "👥 4. RFM-сегментация"], label_visibility="collapsed")
         
         def show_page_1(dataframe_input, columns_input):
             st.success(f"📊 База сформирована! Строк: {len(dataframe_input):,}")
@@ -194,7 +196,7 @@ if uploaded_files:
             with cc2:
                 if st.session_state.manual_cards > 1: st.session_state.manual_cards -= 1; st.rerun()
             st.markdown("---")
-            st.subheader("🛠️ No-Code Конструктор Графиков")
+            st.subheader("🛠️ No-Codebadge Конструктор Графиков")
             for i in range(st.session_state.manual_charts):
                 c1, c2, c3, c4 = st.columns(4)
                 with c1: style = st.selectbox(f"Тип №{i+1}:", ["Столбчатая диаграмма (Bar)", "Линейный тренд (Line)", "Кольцевая долей (Donut)", "Диаграмма Водопад (Waterfall)"], key=f"s_{i}")
@@ -216,7 +218,7 @@ if uploaded_files:
                         rot = st.slider("🔄 Поворот:", 0, 360, 0, step=15, key=f"rot_{i}") if "Donut" in style else 0
                         top_limit = st.slider("🔝 ТОП позиций:", 5, 200, 15, key=f"top_{i}")
                 if x_ax != "-- Выберите заголовок --" and y_ax != "-- Выберите заголовок --":
-                    render_custom_chart(act_df, x_ax, y_ax, style, color, lbl_g, f_format, f_round, f_size, f_color, f_pos, horiz, rot, top_limit, i)
+                    render_custom_chart(dataframe_input, x_ax, y_ax, style, color, lbl_g, f_format, f_round, f_size, f_color, f_pos, horiz, rot, top_limit, i)
                 st.markdown("<hr style='border:1px dashed #ddd'>", unsafe_allow_html=True)
             b1, b2 = st.columns(2)
             with b1:
