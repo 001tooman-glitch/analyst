@@ -1,4 +1,6 @@
 google-genai
 plotly
 openpyxl
-
+python-calamine
+numpy
+pandas
