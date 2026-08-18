@@ -6,7 +6,7 @@ import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
 
-# АВТОНОМНЫЙ БЛОК 1: УНИВЕРСАЛЬНЫЙ No-Code КОНСТРУКТОР ABC/XYZ
+# АВТОНОМНЫЙ БЛОК 1: УНИВЕРСАЛЬНЫЙ No-Code КОНСТРУКТОР ABC/XYZ (ИСПРАВЛЕННЫЙ)
 def internal_show_abc_xyz_page(filtered_df):
     st.title("🧮 Универсальный Конструктор матриц ABC/XYZ")
     if filtered_df.empty:
@@ -26,37 +26,23 @@ def internal_show_abc_xyz_page(filtered_df):
         a_limit = st.slider("Граница группы A (% от объема):", 50, 90, 80, key="abc_sl_1")
         b_limit = st.slider("Граница группы B (следующие % объема):", 5, 25, 15, key="abc_sl_2")
     with col_abc2:
-        x_limit = st.slider("Граница группы X (Коэфф. вариации KV ≤ %):", 5, 20, 10        period_matrix = df.groupby([abc_target, xyz_period])[abc_value].sum().unstack(fill_value=0.0)
-        xyz_results = []
-        for obj_name, rows in period_matrix.iterrows():
-            mean_val = rows.mean()
-            st_val = rows.std(ddof=1) if len(rows) > 1 else 0.0
-            if mean_val > 0 and np.count_nonzero(rows) > 1:
-                kv = (st_val / mean_val) * 100
-                класс_xyz = 'X' if kv <= x_limit else ('Y' if kv <= y_limit else 'Z')
-            else: kv, класс_xyz = 999.0, 'Z'
-            xyz_results.append({abc_target: obj_name, 'KV': kv, 'Класс XYZ': класс_xyz})
-            
-        df_xyz = pd.DataFrame(xyz_results)
-        df_matrix = pd.merge(df_abc[[abc_target, abc_value, 'Class_ABC']], df_xyz, on=abc_target)
-        df_matrix['Матрица ABC/XYZ'] = df_matrix['Class_ABC'] + df_matrix['Класс XYZ']
+        x_limit = st.slider("Граница группы X (Коэфф. вариации KV ≤ %):", 5, 20, 10, key="xyz_sl_1")
+        y_limit = st.slider("Граница группы Y (Коэфф. вариации KV ≤ %):", 15, 50, 25, key="xyz_sl_2")
 
-        st.subheader("📊 Итоговая 9-польная матрица управления закупками")
-        pivot_matrix = df_matrix.pivot_table(index='Class_ABC', columns='Класс XYZ', values=abc_target, aggfunc='count', fill_value=0)
-        for letter in ['A', 'B', 'C']:
-            if letter not in pivot_matrix.index: pivot_matrix.loc[letter] = 0
-        for letter in ['X', 'Y', 'Z']:
-            if letter not in pivot_matrix.columns: pivot_matrix[letter] = 0
-        pivot_matrix = pivot_matrix.loc[['A', 'B', 'C'], ['X', 'Y', 'Z']]
-        
-        col_m1, col_m2 = st.columns(2)
-        with col_m1: st.dataframe(pivot_matrix, use_container_width=True)
-        with col_m2:
-            fig_heat = px.imshow(pivot_matrix, text_auto=True, x=['X', 'Y', 'Z'], y=['A', 'B', 'C'], color_continuous_scale="Blues")
-            fig_heat.update_layout(height=220, margin=dict(l=5, r=5, t=5, b=5))
-            st.plotly_chart(fig_heat, use_container_width=True)
-        st.dataframe(df_matrix.sort_values(by=abc_value, ascending=False), use_container_width=True)
-    except Exception as e: st.error(f"❌ Ошибка вычисления матрицы: {e}")
+    try:
+        df[abc_value] = pd.to_numeric(df[abc_value], errors='coerce').fillna(0.0)
+        df[abc_target] = df[abc_target].fillna("Не указано").astype(str).str.strip()
+        df[xyz_period] = df[xyz_period].fillna("Не указано").astype(str).str.strip()
+        df = df[(df[abc_target] != "") & (df[xyz_period] != "")]
+
+        df_abc = df.groupby(abc_target, as_index=False)[abc_value].sum().sort_values(by=abc_value, ascending=False).reset_index(drop=True)
+        total_sum = df_abc[abc_value].sum()
+        if total_sum == 0: return
+            
+        df_abc['Доля'] = df_abc[abc_value] / total_sum
+        df_abc['Кумулятивная доля'] = df_abc['Доля'].cumsum() * 100
+        df_abc['Class_ABC'] = df_abc['Кумулятивная доля'].map(lambda x: 'A' if x <= a_limit else ('B' if x <= (a_limit + b_limit) else 'C'))
+
 
 # АВТОНОМНЫЙ БЛОК 2: НЕУБИВАЕМАЯ СЕГМЕНТАЦИЯ БЕЗ ТЕКСТОВЫХ ПРОВЕРОК КОЛОНОК
 def internal_show_rfm_page(filtered_df):
