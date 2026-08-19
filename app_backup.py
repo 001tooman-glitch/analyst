@@ -8,28 +8,48 @@ import plotly.graph_objects as go
 from google import genai
 from google.genai import types
 
-# 🤖 МОДУЛЬ ИИ-АНАЛИЗА СИНОНИМОВ ЗАГОЛОВКОВ (GOOGLE GENAI API)
+# 🤖 МОДУЛЬ ИИ-АНАЛИЗА СИНОНИМОВ ЗАГОЛОВКОВ (GEMINI-3.5-FLASH)
 def ai_column_mapper_engine(raw_columns_list, api_key):
     if not api_key: return {}
     try:
         client = genai.Client(api_key=api_key)
-        system_instruction = """
-        Ты — BI-аналитик. Сопоставь заголовки закупщика с 4 системными BI-полями:
-        1. 'ОЗМ' (код материала, номенклатурный номер, артикул, ID)
-        2. 'Наименование материала' (название ТМЦ, описание, позиция)
-        3. 'Количество' (объем, штуки, вес, кол-во)
-        4. 'Сумма' (стоимость, затраты, бюджет, прайс с ндс)
-        Верни СТРОГО JSON-объект, где КЛЮЧ - старый заголовок, ЗНАЧЕНИЕ - системное поле.
-        """
+        sys_instruction = "Ты — BI-аналитик. Сопоставь заголовки закупщика с полями: 'ОЗМ', 'Наименование материала', 'Количество', 'Сумма'. Верни СТРОГО JSON-объект вида {\"Номенклатура\": \"ОЗМ\", \"Прайс\": \"Сумма\"}"
         response = client.models.generate_content(
-            model='gemini-2.5-flash',
-            contents=f"Выполни маппинг списка: {str(raw_columns_list)}",
-            config=types.GenerateContentConfig(system_instruction=system_instruction, response_mime_type="application/json", temperature=0.1),
+            model='gemini-3.5-flash',
+            contents=f"Выполни маппинг списка заголовков: {str(raw_columns_list)}",
+            config=types.GenerateContentConfig(system_instruction=sys_instruction, response_mime_type="application/json", temperature=0.1),
         )
         return json.loads(response.text)
     except: return {}
-# 🧮 МОДУЛЬ УНИВЕРСАЛЬНОЙ ABC/XYZ МАТРИЦЫ С ТЕПЛОВОЙ КАРТОЙ
-def internal_show_abc_xyz_page(filtered_df):
+
+# 🧠 УЛЬТРА-ГИБКИЙ ИИ-АНАЛИЗАТОР 4-Х ФУНДАМЕНТАЛЬНЫХ БИЗНЕС-ПРОЦЕССОВ
+def ai_generate_text_report(pivot_matrix_df, report_type="ABC/XYZ", data_context="Расход", api_key=None):
+    if not api_key: return st.warning("⚠️ Введите API Key Gemini в сайдбаре.")
+    try:
+        client = genai.Client(api_key=api_key)
+        context_rules = ""
+        if "Закупки" in data_context:
+            context_rules = "Данные — это ПЛАНИРУЕМЫЕ ЗАКУПКИ / БИЗНЕС-ПЛАНЫ. Группа AZ — это стратегические контракты (риск срыва сроков проектов). Группа CZ — мелкая операционная текучка (риск бюрократии, недоосвоения бюджета)."
+        elif "Запасы" in data_context:
+            context_rules = "Данные — это СУЩЕСТВУЮЩИЕ СКЛАДСКИЕ ЗАПАСЫ. Группа AZ — это жестко замороженный рабочий капитал предприятия (дорогие ТМЦ без движения). Группа CZ — складской хлам, неликвиды, забивающие полки."
+        elif "Расход" in data_context:
+            context_rules = "Данные — это РЕАЛЬНЫЙ ФАКТИЧЕСКИЙ РАСХОД / ПОТРЕБЛЕНИЕ. Группа AZ — это внеплановые, аварийные ремонты оборудования, сжигающие огромный бюджет. Группа CZ — ситуативные заявки цехов 'по требованию'."
+        else:
+            context_rules = "Данные — это КОММЕРЧЕСКИЕ ПРОДАЖИ / СБЫТ / РИТЕЙЛ. Группа AZ — это товары-локомотивы, генерирующие 80% выручки (риск упущенной прибыли). Группа CZ — длинный хвост ассортимента с низким чеком."
+
+        system_instruction = f"""
+        Ты — директор по логистике и снабжению комбината. Напиши жесткий аналитический отчет для генерального директора по матрице {report_type}.
+        БИЗНЕС-КОНТЕКСТ ДАННЫХ: {context_rules}
+        Структура отчета: 1. Анализ текущего процесса ({data_context}). 2. Выявление скрытых аномалий и рисков (оцени группы AZ и CZ). 3. Рекомендации. Пиши емко, списками Markdown. Используй деловой сленг.
+        """
+        with st.spinner(f"🔮 ИИ генерирует отчет для контекста '{data_context}'..."):
+            response = client.models.generate_content(model='gemini-3.5-flash', contents=f"Матрица плотности ({data_context}):\n{pivot_matrix_df.to_string()}", config=types.GenerateContentConfig(system_instruction=system_instruction, temperature=0.2))
+            st.markdown("---")
+            st.markdown(f"### 📝 Аналитический ИИ-Отчет: {data_context} ({report_type})")
+            st.info(response.text)
+    except Exception as report_err: st.error(f"❌ Ошибка ИИ: {report_err}")
+# 🧮 МОДУЛЬ УНИВЕРСАЛЬНОЙ ABC/XYZ МАТРИЦЫ (ЖЕЛЕЗОБЕТОННОЕ ИСПРАВЛЕНИЕ ОШИБКИ NOT IN INDEX)
+def internal_show_abc_xyz_page(filtered_df, api_key, data_context):
     st.title("🧮 Универсальный Конструктор матриц ABC/XYZ")
     if filtered_df.empty: return st.info("ℹ️ Выборка пуста. Загрузите файлы.")
     df, available_cols = filtered_df.copy(), list(filtered_df.columns)
@@ -47,32 +67,39 @@ def internal_show_abc_xyz_page(filtered_df):
         if total_sum == 0: return
         df_abc['Cum'] = (df_abc[abc_value] / total_sum).cumsum() * 100
         df_abc['Class_ABC'] = df_abc['Cum'].map(lambda x: 'A' if x <= a_lim else ('B' if x <= a_lim + 15 else 'C'))
+        
         p_matrix = df.groupby([abc_target, xyz_period])[abc_value].sum().unstack(fill_value=0.0)
         xyz_res = []
         for name, rows in p_matrix.iterrows():
             m, s = rows.mean(), rows.std(ddof=1) if len(rows) > 1 else 0.0
             kv = (s / m) * 100 if m > 0 and np.count_nonzero(rows) > 1 else 999.0
             xyz_res.append({abc_target: name, 'KV': kv, 'Класс XYZ': 'X' if kv <= x_lim else ('Y' if kv <= x_lim + 15 else 'Z')})
+        
         df_m = pd.merge(df_abc[[abc_target, abc_value, 'Class_ABC']], pd.DataFrame(xyz_res), on=abc_target)
-        pivot_m = df_m.pivot_table(index='Class_ABC', columns='Класс XYZ', values=abc_target, aggfunc='count', fill_value=0)
-        for l in ['A','B','C']: 
-            if l not in pivot_m.index: pivot_m.loc[l] = 0
-        for l in ['X','Y','Z']: 
-            if l not in pivot_m.columns: pivot_m[l] = 0
-        pivot_m = pivot_m.loc[['A','B','C'], ['X','Y','Z']]
+        
+        # РЕШЕНИЕ ПРОБЛЕМЫ: Безопасное динамическое перестроение сводника с заполнением пустых колонок нулями
+        raw_pivot = df_m.pivot_table(index='Class_ABC', columns='Класс XYZ', values=abc_target, aggfunc='count', fill_value=0)
+        pivot_m = pd.DataFrame(0, index=['A', 'B', 'C'], columns=['X', 'Y', 'Z'])
+        for idx in pivot_m.index:
+            for col in pivot_m.columns:
+                if idx in raw_pivot.index and col in raw_pivot.columns:
+                    pivot_m.loc[idx, col] = raw_pivot.loc[idx, col]
+                    
         mc1, mc2 = st.columns(2)
         with mc1: st.dataframe(pivot_m, use_container_width=True)
         with mc2: st.plotly_chart(px.imshow(pivot_m, text_auto=True, color_continuous_scale="Blues"), use_container_width=True)
+        
+        if st.button("✍️ Сгенерировать ИИ-отчет по матрице ABC/XYZ", key="ai_report_abc_btn"):
+            ai_generate_text_report(pivot_m, report_type="ABC/XYZ", data_context=data_context, api_key=api_key)
+            
         st.dataframe(df_m.sort_values(by=abc_value, ascending=False), use_container_width=True)
     except Exception as e: st.error(f"Ошибка ABC: {e}")
-
-# 👥 МОДУЛЬ НЕУБИВАЕМОЙ RFM СЕГМЕНТАЦИИ
-def internal_show_rfm_page(filtered_df):
+# 👥 МОДУЛЬ 4: СЕГМЕНТАЦИЯ RFM И СИСТЕМА No-Code ВИЗУАЛИЗАЦИИ PLOTLY
+def internal_show_rfm_page(filtered_df, api_key, data_context):
     st.title("👥 Модуль RFM-сегментации номенклатуры")
-    if filtered_df.empty: return st.info("ℹ| Выборка пуста. Загрузите файлы.")
+    if filtered_df.empty: return st.info("ℹ️ Выборка пуста. Загрузите файлы.")
     df = filtered_df.copy()
-    t_ozm = 'ОЗМ' if 'ОЗМ' in df.columns else df.columns
-    t_sum = 'Сумма' if 'Сумма' in df.columns else df.select_dtypes(include=[np.number]).columns
+    t_ozm, t_sum = 'ОЗМ' if 'ОЗМ' in df.columns else df.columns, 'Сумма' if 'Сумма' in df.columns else df.select_dtypes(include=[np.number]).columns
     try:
         df[t_sum] = pd.to_numeric(df[t_sum], errors='coerce').fillna(0.0)
         rfm = df.groupby(str(t_ozm)).agg(F=(df.columns, 'count'), M=(t_sum, 'sum')).reset_index()
@@ -81,42 +108,31 @@ def internal_show_rfm_page(filtered_df):
         rfm['RFM'] = rfm['F_Score'] + rfm['M_Score']
         seg_counts = rfm.groupby('RFM').size().reset_index(name='Количество ОЗМ')
         st.plotly_chart(px.bar(seg_counts, x='RFM', y='Количество ОЗМ', text_auto=True, title="📊 Распределение RFM-сегментов номенклатуры", color='RFM', color_continuous_scale="Purples"), use_container_width=True)
+        if st.button("👥 Сгенерировать ИИ-отчет по матрице RFM", key="ai_report_rfm_btn"):
+            ai_generate_text_report(seg_counts, report_type="RFM-Сегментации", data_context=data_context, api_key=api_key)
         st.dataframe(rfm.sort_values(by='M', ascending=False), use_container_width=True)
     except Exception as rfe: st.error(f"Ошибка RFM: {rfe}")
-# 🛠️ ГРАФИЧЕСКИЙ ДВИЖОК PLOTLY С РЕАКТИВНЫМ ОТКЛИКОМ НАДПИСЕЙ И ШРИФТОВ
+
 def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_round, f_size, f_color, f_pos, horiz, rot, top_limit, i):
     try:
         df_c = active_df.copy()
         df_c[y_ax] = pd.to_numeric(df_c[y_ax], errors='coerce').fillna(0)
         df_g = df_c.groupby(x_ax, as_index=False)[y_ax].sum().sort_values(by=y_ax, ascending=False).head(top_limit)
         if horiz: df_g = df_g.sort_values(by=y_ax, ascending=True)
-        
         txt = [f"{round(v, f_round):,}".replace(",", " ") + (" ₸" if "Финанс" in f_format else "") for v in df_g[y_ax]]
-        
         safe_pos = f_pos if ("Donut" not in style or f_pos in ["inside", "outside", "auto"]) else "auto"
         if "Line" in style: safe_pos = "top center"
-
         fig = go.Figure()
-        if "Waterfall" in style:
-            fig.add_trace(go.Waterfall(x=list(df_g[x_ax].astype(str)) + ["ИТОГО"], y=list(df_g[y_ax]) + [df_g[y_ax].sum()], text=txt + [f"{df_g[y_ax].sum():,}"], textposition=safe_pos, measure=["relative"] * len(df_g[y_ax]) + ["total"], increasing={"marker": {"color": color}}))
-        elif "Donut" in style:
-            fig.add_trace(go.Pie(labels=df_g[x_ax], values=df_g[y_ax], hole=0.4, rotation=rot, textinfo="label+value" if lbl else "none", textposition=safe_pos, texttemplate="%{label}<br>%{text}" if lbl else None, text=txt))
-        elif "Line" in style:
-            fig.add_trace(go.Scatter(x=df_g[x_ax], y=df_g[y_ax], mode="lines+markers+text" if lbl else "lines+markers", text=txt, textposition=safe_pos, line=dict(color=color, width=4), marker=dict(size=8)))
-        else:
-            fig.add_trace(go.Bar(y=df_g[x_ax] if horiz else df_g[y_ax], x=df_g[y_ax] if horiz else df_g[x_ax], text=txt if lbl else None, textposition=safe_pos, orientation="h" if horiz else "v", marker_color=color))
-        
+        if "Waterfall" in style: fig.add_trace(go.Waterfall(x=list(df_g[x_ax].astype(str)) + ["ИТОГО"], y=list(df_g[y_ax]) + [df_g[y_ax].sum()], text=txt + [f"{df_g[y_ax].sum():,}"], textposition=safe_pos, measure=["relative"] * len(df_g[y_ax]) + ["total"], increasing={"marker": {"color": color}}))
+        elif "Donut" in style: fig.add_trace(go.Pie(labels=df_g[x_ax], values=df_g[y_ax], hole=0.4, rotation=rot, textinfo="label+value" if lbl else "none", textposition=safe_pos, texttemplate="%{label}<br>%{text}" if lbl else None, text=txt))
+        elif "Line" in style: fig.add_trace(go.Scatter(x=df_g[x_ax], y=df_g[y_ax], mode="lines+markers+text" if lbl else "lines+markers", text=txt, textposition=safe_pos, line=dict(color=color, width=4), marker=dict(size=8)))
+        else: fig.add_trace(go.Bar(y=df_g[x_ax] if horiz else df_g[y_ax], x=df_g[y_ax] if horiz else df_g[x_ax], text=txt if lbl else None, textposition=safe_pos, orientation="h" if horiz else "v", marker_color=color))
         fig.update_layout(xaxis=dict(type='category', tickangle=45 if not horiz else 0))
-        
-        # РЕШЕНИЕ: Применяем пользовательский цвет, размер и положение шрифтов во все типы графиков реактивно
         if lbl:
             fig.update_traces(textfont=dict(size=f_size, color=f_color))
             if "Donut" in style: fig.update_traces(insidetextfont=dict(size=f_size, color=f_color), outsidetextfont=dict(size=f_size, color=f_color))
-            
         st.plotly_chart(fig, use_container_width=True, key=f"p_{i}")
     except: pass
-
-# ⚡ СКОРОСТНОЙ ДВИЖОК POWER QUERY + CALAMINE НА RUST
 def power_query_clean_engine(uploaded_files_list, gemini_key):
     frames = {}
     for f in uploaded_files_list:
@@ -144,12 +160,20 @@ def power_query_clean_engine(uploaded_files_list, gemini_key):
     for c in ['Количество', 'Сумма']:
         if c in res.columns: res[c] = pd.to_numeric(res[c].astype(str).str.replace(r'\s+', '', regex=True).str.replace(',', '.'), errors='coerce').fillna(0.0)
     return res.dropna(how='all')
+
 if "manual_charts" not in st.session_state: st.session_state.manual_charts = 1
 if "manual_cards" not in st.session_state: st.session_state.manual_cards = 1
 if "main_df" not in st.session_state: st.session_state.main_df = pd.DataFrame()
 
 st.sidebar.markdown("### 🤖 Интеллектуальный ИИ-Ассистент")
 gemini_api_key = st.sidebar.text_input("Введите Gemini API Key:", type="password")
+
+ai_context_mode = st.sidebar.selectbox("Тип данных (Контекст для AI):", [
+    "📅 Закупки (Планируемые) / Бизнес-планы материалов и услуг", 
+    "📦 Запасы (Складские остатки / ТМЦ без движения)", 
+    "📉 Расход (Реальное потребление / Выдача в производство)", 
+    "💰 Продажи / Сбыт (Коммерческий оборот и ритейл)"
+])
 
 uploaded_files = st.file_uploader("Загрузите файлы Excel/CSV:", type=["csv", "xlsx"], accept_multiple_files=True)
 if not uploaded_files: st.session_state.main_df = pd.DataFrame()
@@ -173,7 +197,7 @@ if uploaded_files:
         
         def show_page_1(dataframe_input, columns_input):
             st.success(f"📊 База сформирована! Строк: {len(dataframe_input):,}")
-            cp = st.number_input(f"Страница (из {(len(dataframe_input) // 50) + 1}):", min_value=1, max_value=(len(dataframe_input) // 50) + 1, value=1, step=1)
+            cp = st.number_input(f"Страница (из {(len(dataframe_input) // 50) + 1}):", min_value=1, value=1, step=1)
             st.dataframe(dataframe_input.iloc[(cp - 1) * 50: cp * 50], height=350, use_container_width=True)
             
         def show_page_2(dataframe_input, columns_input):
@@ -182,7 +206,7 @@ if uploaded_files:
             for j in range(st.session_state.manual_cards):
                 with card_cols[j % len(card_cols)]:
                     st.markdown(f"**📌 Карточка № {j+1}**")
-                    t_col = st.selectbox(f"Поле:", columns_input, key=f"c_t_{j}")
+                    t_col = st.selectbox(f"Поле:", all_cols, key=f"c_t_{j}")
                     c_mode = st.selectbox(f"Агрегация:", ["Сумма", "Среднее"], key=f"c_m_{j}")
                     with st.expander("🎨 Настройки"):
                         c_fmt = st.selectbox("Формат:", ["Числовой", "Финансовый (₸)", "Сжатый (млн/млрд)"], key=f"c_f_{j}")
@@ -190,7 +214,7 @@ if uploaded_files:
                         c_sz = st.slider("Шрифт (px):", 16, 48, 28, key=f"c_s_{j}")
                     if t_col != "-- Выберите заголовок --":
                         try:
-                            df_c = dataframe_input.copy()
+                            df_c = act_df.copy()
                             df_c[t_col] = pd.to_numeric(df_c[t_col], errors='coerce').fillna(0)
                             cv = df_c[t_col].sum() if "Сумма" in c_mode else df_c[t_col].mean()
                             if c_fmt == "Финансовый (₸)": lbl = f"{round(cv, c_rnd):,}".replace(",", " ") + " ₸"
@@ -240,8 +264,8 @@ if uploaded_files:
         router = {
             "🗂️ 1. Загрузка и очистка данных": lambda: show_page_1(main_df, all_cols),
             "📊 2. Executive Диаграммы": lambda: show_page_2(act_df, all_cols),
-            "🧮 3. ABC/XYZ-аналитика ОЗМ": lambda: internal_show_abc_xyz_page(act_df),
-            "👥 4. RFM-сегментация": lambda: internal_show_rfm_page(act_df)
+            "🧮 3. ABC/XYZ-аналитика ОЗМ": lambda: internal_show_abc_xyz_page(act_df, gemini_api_key, ai_context_mode),
+            "👥 4. RFM-сегментация": lambda: internal_show_rfm_page(act_df, gemini_api_key, ai_context_mode)
         }
         router[page]()
 else: st.info("Ожидание загрузки любых файлов Excel/CSV...")
