@@ -8,7 +8,7 @@ import plotly.graph_objects as go
 from google import genai
 from google.genai import types
 
-# 🤖 МОДУЛЬ 1: ИИ-АВТОМАППИНГ ЗАГОЛОВКОВ ТАБЛИЦ (АКТУАЛЬНЫЙ СТАНДАРТ GEMINI-3.5-FLASH)
+# 🤖 МОДУЛЬ 1: ИИ-АВТОМАППИНГ ЗАГОЛОВКОВ ТАБЛИЦ (СТАНДАРТ GEMINI-3.5-FLASH)
 def ai_column_mapper_engine(raw_columns_list, api_key):
     if not api_key: return {}
     try:
@@ -93,7 +93,7 @@ def internal_show_abc_xyz_page(filtered_df, api_key, data_context):
             
         st.dataframe(df_m.sort_values(by=abc_value, ascending=False), use_container_width=True)
     except Exception as e: st.error(f"Ошибка ABC: {e}")
-# 👥 МОДУЛЬ 4: УНИВЕРСАЛЬНЫЙ КОНСТРУКТОР RFM ПО ЛЮБЫМ КАТЕГОРИЯМ СНАБЖЕНИЯ
+# 👥 МОДУЛЬ 4: УНИВЕРСАЛЬНЫЙ КОНСТРУКТОР RFM ПО ЛЮБЫМ КАТЕГОРИЯМ
 def internal_show_rfm_page(filtered_df, api_key, data_context):
     st.title("👥 Модуль RFM-сегментации номенклатуры и категорий")
     if filtered_df.empty: return st.info("ℹ️ Текущий срез пуст. Выберите другие фильтры в сайдбаре.")
@@ -121,7 +121,7 @@ def internal_show_rfm_page(filtered_df, api_key, data_context):
         st.dataframe(rfm.sort_values(by='M', ascending=False), use_container_width=True)
     except Exception as rfe: st.error(f"❌ Ошибка расчета RFM: {rfe}")
 
-# ФУНКЦИЯ 5: ГРАФИЧЕСКИЙ ДВИЖОК PLOTLY (ЖЕСТКО ЗАФИКСИРОВАНЫ ОБЛАСТИ ВИДИМОСТИ ПЕРЕМЕННЫХ НАДПИСЕЙ)
+# ФУНКЦИЯ 5: ГРАФИЧЕСКИЙ ДВИЖОК PLOTLY (ЖЕСТКО КОНТРОЛИРУЮТСЯ ОБЛАСТИ ВИДИМОСТИ ПЕРЕМЕННЫХ НАДПИСЕЙ)
 def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_round, f_size, f_color, f_pos, horiz, rot, top_limit, i):
     try:
         df_c = active_df.copy()
@@ -269,9 +269,18 @@ if uploaded_files:
             with b2:
                 if st.session_state.manual_charts > 1:
                     if st.button("🗑️ Удалить диаграмму"): st.session_state.manual_charts -= 1; st.rerun()
-        elif "3. ABC/XYZ" in page: internal_show_abc_xyz_page(act_df, gemini_api_key, ai_context_mode)
-        elif "4. RFM" in page: internal_show_rfm_page(act_df, gemini_api_key, ai_context_mode)
+
+        # ИСПРАВЛЕННЫЙ СЛОВАРНЫЙ РОУТЕР: Полностью защищен от синтаксических конфликтов if/elif
+        router_pages = {
+            "🗂️ 1. Загрузка и очистка данных": lambda: show_page_1(main_df, all_cols),
+            "📊 2. Executive Диаграммы": lambda: show_page_2(act_df, all_cols),
+            "🧮 3. ABC/XYZ-аналитика ОЗМ": lambda: internal_show_abc_xyz_page(act_df, gemini_api_key, ai_context_mode),
+            "👥 4. RFM-сегментация": lambda: internal_show_rfm_page(act_df, gemini_api_key, ai_context_mode)
+        }
+        router_pages[page]()
 else:
     st.info("📊 Ожидание загрузки любых файлов Excel/CSV...")
     with st.expander("ℹ️ Краткое руководство пользователя (ИИ-Ассистент)"):
-        st.markdown("1. **Вставьте ИИ-ключ** в поле 'Введите Gemini API Key' слева.\\n2. **Выберите контекст** (Закупки, Остатки, Расход или Продажи) в сайдбаре.\\n3. **Загрузите файлы** Excel/CSV выше.")
+        st.write("1. Вставьте ИИ-ключ в поле 'Введите Gemini API Key' слева.")
+        st.write("2. Выберите контекст данных в сайдбаре.")
+        st.write("3. Загрузите файлы Excel/CSV выше.")
