@@ -8,12 +8,12 @@ import plotly.graph_objects as go
 from google import genai
 from google.genai import types
 
-# 🤖 МОДУЛЬ ИИ-АНАЛИЗА СИНОНИМОВ ЗАГОЛОВКОВ (БЕЗОПАСНЫЙ СВЕЖИЙ ВЫЗОВ)
+# 🤖 МОДУЛЬ 1: ИИ-АВТОМАППИНГ ЗАГОЛОВКОВ (ЖЕСТКИЙ ПЕРЕВОД НА GEMINI-2.5-FLASH)
 def ai_column_mapper_engine(raw_columns_list, api_key):
     if not api_key: return {}
     try:
         client = genai.Client(api_key=api_key)
-        system_instruction = "Ты — BI-аналитик. Сопоставь заголовки закупщика с полями: 'ОЗМ', 'Наименование材料', 'Количество', 'Сумма'. Верни СТРОГО JSON вида {\"Прайс\": \"Сумма\"}"
+        system_instruction = "Ты — BI-аналитик. Сопоставь заголовки закупщика с полями: 'ОЗМ', 'Наименование материала', 'Количество', 'Сумма'. Верни СТРОГО JSON-объект вида {\"Номенклатура\": \"ОЗМ\", \"Прайс\": \"Сумма\"}"
         response = client.models.generate_content(
             model='gemini-2.5-flash',
             contents=f"Выполни маппинг списка: {str(raw_columns_list)}",
@@ -22,12 +22,14 @@ def ai_column_mapper_engine(raw_columns_list, api_key):
         return json.loads(response.text)
     except: return {}
 
-# ✍️ МОДУЛЬ АВТОРЕФЕРАТА И ГЕНЕРАЦИЯ ОТЧЕТОВ ИИ (ЖЕЛЕЗОБЕТОННОЕ ИСПРАВЛЕНИЕ НА МОДЕЛЬ FLASH)
+# ✍️ МОДУЛЬ 2: ИНТЕЛЛЕКТУАЛЬНЫЙ АВТОРЕФЕРАТ И ГЕНЕРАЦИЯ ТЕКСТОВЫХ ОТЧЕТОВ ИИ (ОТЛАДКА НА GEMINI-2.5-FLASH)
 def ai_generate_text_report(pivot_matrix_df, report_type="ABC/XYZ", api_key=None):
-    if not api_key: return st.warning("⚠️ Введите Gemini API Key в сайдбаре.")
+    if not api_key: 
+        st.warning("⚠️ Введите Gemini API Key в сайдбаре.")
+        return
     try:
         client = genai.Client(api_key=api_key)
-        system_instruction = f"Ты — директор по снабжению. Напиши краткий, жесткий аналитический отчет для генерального директора по матрице плотности {report_type}. Структура: 1. Краткое резюме. 2. Критические риски. 3. Рекомендации. Пиши емко, списком."
+        system_instruction = f"Ты — директор по снабжению. Напиши краткий, жесткий аналитический отчет для генерального директора по матрице плотности {report_type}. Структура: 1. Краткое резюме. 2. Критические риски и аномалии. 3. Пошаговые рекомендации (контракты, склады, оптимизация). Пиши емко, списком, используя сленг закупок."
         with st.spinner("🔮 ИИ пишет отчет для руководства..."):
             response = client.models.generate_content(
                 model='gemini-2.5-flash',
@@ -38,7 +40,7 @@ def ai_generate_text_report(pivot_matrix_df, report_type="ABC/XYZ", api_key=None
             st.markdown(f"### 📝 Аналитический ИИ-Отчет по матрице {report_type}")
             st.info(response.text)
     except Exception as report_err: st.error(f"❌ Не удалось сгенерировать ИИ-отчет: {report_err}")
-# 🧮 МОДУЛЬ УНИВЕРСАЛЬНОЙ ABC/XYZ МАТРИЦЫ С КНОПКОЙ ИИ-ОТЧЕТА
+# 🧮 МОДУЛЬ 3: УНИВЕРСАЛЬНЫЙ КОНСТРУКТОР ABC/XYZ С КНОПКОЙ ИИ-ОТЧЕТА
 def internal_show_abc_xyz_page(filtered_df, api_key):
     st.title("🧮 Универсальный Конструктор матриц ABC/XYZ")
     if filtered_df.empty: return st.info("ℹ️ Выборка пуста. Загрузите файлы.")
@@ -79,7 +81,7 @@ def internal_show_abc_xyz_page(filtered_df, api_key):
             
         st.dataframe(df_m.sort_values(by=abc_value, ascending=False), use_container_width=True)
     except Exception as e: st.error(f"Ошибка ABC: {e}")
-# 👥 МОДУЛЬ RFM С КНОПКОЙ ИИ-ОТЧЕТА И ГРАФИЧЕСКИЙ ДВИЖОК PLOTLY
+# 👥 МОДУЛЬ 4: СЕГМЕНТАЦИЯ RFM С КНОПКОЙ ИИ-ОТЧЕТА И ГРАФИЧЕСКИЙ ДВИЖОК PLOTLY
 def internal_show_rfm_page(filtered_df, api_key):
     st.title("👥 Модуль RFM-сегментации номенклатуры")
     if filtered_df.empty: return st.info("ℹ️ Выборка пуста. Загрузите файлы.")
@@ -187,7 +189,7 @@ if uploaded_files:
             for j in range(st.session_state.manual_cards):
                 with card_cols[j % len(card_cols)]:
                     st.markdown(f"**📌 Карточка № {j+1}**")
-                    t_col = st.selectbox(f"Поле:", columns_input, key=f"c_t_{j}")
+                    t_col = st.selectbox(f"Поле:", all_cols, key=f"c_t_{j}")
                     c_mode = st.selectbox(f"Агрегация:", ["Сумма", "Среднее"], key=f"c_m_{j}")
                     with st.expander("🎨 Настройки"):
                         c_fmt = st.selectbox("Формат:", ["Числовой", "Финансовый (₸)", "Сжатый (млн/млрд)"], key=f"c_f_{j}")
