@@ -30,9 +30,9 @@ def ai_column_mapper_engine(raw_columns_list, api_key):
             "должны мапиться в 'Сумма', а 'Units', 'Volume' — в 'Количество')."
         )
         
-        # Передаем правильную модель
+        # ИСПРАВЛЕНО: Установлена актуальная модель gemini-3.5-flash
         response = client.models.generate_content(
-            model='gemini-2.5-flash',
+            model='gemini-3.5-flash',
             contents=f"Выполни маппинг списка заголовков: {str(raw_columns_list)}",
             config=types.GenerateContentConfig(
                 system_instruction=sys_instruction,
@@ -69,8 +69,9 @@ def ai_generate_text_report(pivot_matrix_df, report_type="ABC/XYZ", data_context
         Структура отчета: 1. Анализ текущего процесса ({data_context}). 2. Выявление скрытых аномалий и рисков (оцени группы AZ и CZ). 3. Рекомендации. Пиши емко, списками Markdown. Используй деловой сленг.
         """
         with st.spinner(f"🔮 ИИ генерирует отчет для контекста '{data_context}'..."):
+            # ИСПРАВЛЕНО: Установлена актуальная модель gemini-3.5-flash
             response = client.models.generate_content(
-                model='gemini-2.5-flash', 
+                model='gemini-3.5-flash', 
                 contents=f"Матрица плотности ({data_context}):\n{pivot_matrix_df.to_string()}", 
                 config=types.GenerateContentConfig(system_instruction=system_instruction, temperature=0.2)
             )
@@ -292,11 +293,9 @@ if uploaded_files:
                 with card_cols[j % len(card_cols)]:
                     st.markdown(f"**📌 Карточка № {j+1}**")
                     
-                    # 1. ВЫБОР ЦЕЛЕВОЙ МЕТРИКИ (что считаем - числовой столбец)
                     t_col = st.selectbox(f"Поле метрики (Числовое):", columns_input, key=f"c_t_{j}")
                     c_mode = st.selectbox(f"Агрегация:", ["Сумма", "Среднее"], key=f"c_m_{j}")
                     
-                    # 2. ДИНАМИЧЕСКИЙ КРОСС-ФИЛЬТР (разрез группировки)
                     st.markdown("---")
                     group_col = st.selectbox(f"Группировать по полю:", ["-- Без фильтра --"] + columns_input, key=f"c_g_{j}")
                     
@@ -308,7 +307,7 @@ if uploaded_files:
                     with st.expander("🎨 Настройки отображения"):
                         c_fmt = st.selectbox("Формат:", ["Числовой", "Финансовый", "Сжатый (млн/млрд)"], key=f"c_f_{j}")
                         c_curr = st.selectbox("Валюта:", ["₸ (Тенге)", "₽ (Рубль)", "$ (Доллар)", "€ (Евро)", "Без валюты"], key=f"c_cur_{j}")
-                        curr_sym = "" if c_curr == "Без валюты" else " " + c_curr.split(" ")[0]
+                        curr_sym = "" if c_curr == "Без валюты" else " " + c_curr.split(" ")
                         c_rnd = st.slider("Округление:", 0, 4, 2, key=f"c_r_{j}")
                         c_sz = st.slider("Шрифт (px):", 16, 48, 26, key=f"c_s_{j}")
                     
@@ -316,7 +315,6 @@ if uploaded_files:
                         try:
                             df_card = act_df.copy()
                             
-                            # Применяем фильтрацию по выбранному элементу разреза
                             if group_col != "-- Без фильтра --" and filter_value is not None:
                                 df_card = df_card[df_card[group_col].astype(str) == str(filter_value)]
                             
@@ -370,13 +368,13 @@ if uploaded_files:
                 st.markdown("<hr style='border:1px dashed #ddd'>", unsafe_allow_html=True)
             b1, b2 = st.columns(2)
             with b1: st.button("➕ Добавить диаграмму", on_click=add_chart_cb)
-            with b2: st.button("🗑️ Удалить диаграмму", on_click=remove_chart_cb)
+            with b2: st.button("🗑️ Удалить диаграмму", on_click=remove_card_cb)
 
         router_pages = {
             "🗂️ 1. Загрузка и очистка данных": lambda: show_page_1(main_df, all_cols),
             "📊 2. Executive Диаграммы": lambda: show_page_2(act_df, all_cols),
             "🧮 3. ABC/XYZ-аналитика ОЗМ": lambda: internal_show_abc_xyz_page(act_df, gemini_api_key, ai_context_mode),
-            "👥 4. RFM-сегментация": lambda: internal_show_rfm_page(act_df, gemini_api_key, api_context_mode)
+            "👥 4. RFM-сегментация": lambda: internal_show_rfm_page(act_df, gemini_api_key, ai_context_mode)
         }
         router_pages[page]()
 else:
