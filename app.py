@@ -9,8 +9,11 @@ from google import genai
 from google.genai import types
 from pydantic import BaseModel, Field
 
-# Схема для гарантированного JSON-ответа от Gemini Structured Outputs
+# Схема для гарантированного JSON-ответа от Gemini Developer API
 class ColumnMappingSchema(BaseModel):
+    # Явно запрещаем additionalProperties для совместимости с Developer API
+    model_config = {"extra": "forbid"}
+    
     mapping: dict[str, str] = Field(
         description="Словарь, где ключ - исходное имя колонки, а значение - строго одно из полей: 'ОЗМ', 'Наименование материала', 'Количество' или 'Сумма'"
     )
@@ -54,7 +57,7 @@ def ai_generate_text_report(pivot_matrix_df, report_type="ABC/XYZ", data_context
         context_mapping = {
             "Закупки": "Данные — это ПЛАНИРУЕМЫЕ ЗАКУПКИ / БИЗНЕС-ПЛАНЫ. Группа AZ — это стратегические контракты (риск срыва сроков проектов). Группа CZ — мелкая операционная текучка (риск бюрократии, недоосвоения бюджета).",
             "Запасы": "Данные — это СУЩЕСТВУЮЩИЕ СКЛАДСКИЕ ЗАПАСЫ. Группа AZ — это жестко замороженный рабочий капитал предприятия (дорогие ТМЦ без движения). Группа CZ — складской хлам, неликвиды, забивающие полки.",
-            "Расход": "Данные — это РЕАЛЬНЫЙ ФАКТИЧЕСКИЙ РАСХОД / ПОТРЕБЛЕНИЕ. Группа AZ — это внеплановые, аварийные ремонты оборудования, сжигающие огромный бюджет. Группа CZ — административная нагрузка мелких заявок."
+            "Расход": "Данные — это РЕАЛЬНЫЙ ФАКТИЧЕСКИЙ РАСХОД / ПОТРЕБЛЕНИЕ. Группа AZ — это внеплановые, аварийные ремонты оборудования, сжигающие огромный budget. Группа CZ — административная нагрузка мелких заявок."
         }
         
         context_rules = next((v for k, v in context_mapping.items() if k in data_context), 
@@ -141,7 +144,7 @@ def internal_show_abc_xyz_page(filtered_df, api_key, data_context):
 def internal_show_rfm_page(filtered_df, api_key, data_context):
     st.title("👥 Модуль RFM-сегментации номенклатуры и категорий")
     if filtered_df.empty: 
-        return st.info("ℹ) Текущий срез пуст. Выберите другие фильтры в сайдбаре.")
+        return st.info("ℹ️ Текущий срез пуст. Выберите другие фильтры в сайдбаре.")
     df = filtered_df.copy()
     available_cols = list(df.columns)
     
