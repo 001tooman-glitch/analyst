@@ -8,7 +8,7 @@ import plotly.graph_objects as go
 from google import genai
 from google.genai import types
 
-# 🤖 МОДУЛЬ ИИ-АНАЛИЗА СИНОНИМОВ ЗАГОЛОВКОВ (GEMINI-3.5-FLASH)
+# 🤖 МОДУЛЬ 1: ИИ-АВТОМАППИНГ ЗАГОЛОВКОВ ТАБЛИЦ (АКТУАЛЬНЫЙ СТАНДАРТ GEMINI-3.5-FLASH)
 def ai_column_mapper_engine(raw_columns_list, api_key):
     if not api_key: return {}
     try:
@@ -22,7 +22,7 @@ def ai_column_mapper_engine(raw_columns_list, api_key):
         return json.loads(response.text)
     except: return {}
 
-# 🧠 УЛЬТРА-ГИБКИЙ ИИ-АНАЛИЗАТОР 4-Х ФУНДАМЕНТАЛЬНЫХ БИЗНЕС-ПРОЦЕССОВ
+# 🧠 МОДУЛЬ 2: УЛЬТРА-ГИБКИЙ ИИ-АНАЛИЗАТОР 4-Х ФУНДАМЕНТАЛЬНЫХ БИЗНЕС-ПРОЦЕССОВ
 def ai_generate_text_report(pivot_matrix_df, report_type="ABC/XYZ", data_context="Расход", api_key=None):
     if not api_key: return st.warning("⚠️ Введите API Key Gemini в сайдбаре.")
     try:
@@ -48,7 +48,7 @@ def ai_generate_text_report(pivot_matrix_df, report_type="ABC/XYZ", data_context
             st.markdown(f"### 📝 Аналитический ИИ-Отчет: {data_context} ({report_type})")
             st.info(response.text)
     except Exception as report_err: st.error(f"❌ Ошибка ИИ: {report_err}")
-# 🧮 МОДУЛЬ УНИВЕРСАЛЬНОЙ ABC/XYZ МАТРИЦЫ
+# 🧮 МОДУЛЬ 3: УНИВЕРСАЛЬНЫЙ КОНСТРУКТОР ABC/XYZ (ЖЕЛЕЗОБЕТОННОЕ ЗАПОЛНЕНИЕ ПУСТЫХ ЯЧЕЕК НУЛЯМИ)
 def internal_show_abc_xyz_page(filtered_df, api_key, data_context):
     st.title("🧮 Универсальный Конструктор матриц ABC/XYZ")
     if filtered_df.empty: return st.info("ℹ️ Выборка пуста. Загрузите файлы.")
@@ -93,7 +93,7 @@ def internal_show_abc_xyz_page(filtered_df, api_key, data_context):
             
         st.dataframe(df_m.sort_values(by=abc_value, ascending=False), use_container_width=True)
     except Exception as e: st.error(f"Ошибка ABC: {e}")
-# 👥 МОДУЛЬ 4: УНИВЕРСАЛЬНЫЙ КОНСТРУКТОР RFM ПО ЛЮБЫМ КАТЕГОРИЯМ
+# 👥 МОДУЛЬ 4: УНИВЕРСАЛЬНЫЙ КОНСТРУКТОР RFM ПО ЛЮБЫМ КАТЕГОРИЯМ СНАБЖЕНИЯ
 def internal_show_rfm_page(filtered_df, api_key, data_context):
     st.title("👥 Модуль RFM-сегментации номенклатуры и категорий")
     if filtered_df.empty: return st.info("ℹ️ Текущий срез пуст. Выберите другие фильтры в сайдбаре.")
@@ -121,7 +121,7 @@ def internal_show_rfm_page(filtered_df, api_key, data_context):
         st.dataframe(rfm.sort_values(by='M', ascending=False), use_container_width=True)
     except Exception as rfe: st.error(f"❌ Ошибка расчета RFM: {rfe}")
 
-# ФУНКЦИЯ 5: ГРАФИЧЕСКИЙ ДВИЖОК PLOTLY (ИСПРАВЛЕНЫ ОБЛАСТИ ВИДИМОСТИ ПЕРЕМЕННЫХ НАДПИСЕЙ)
+# ФУНКЦИЯ 5: ГРАФИЧЕСКИЙ ДВИЖОК PLOTLY (ЖЕСТКО ЗАФИКСИРОВАНЫ ОБЛАСТИ ВИДИМОСТИ ПЕРЕМЕННЫХ НАДПИСЕЙ)
 def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_round, f_size, f_color, f_pos, horiz, rot, top_limit, i):
     try:
         df_c = active_df.copy()
@@ -243,7 +243,6 @@ if uploaded_files:
             for i in range(st.session_state.manual_charts):
                 c1, c2, c3, c4 = st.columns(4)
                 with c1: style = st.selectbox(f"Тип №{i+1}:", ["Столбчатая диаграмма (Bar)", "Линейный тренд (Line)", "Кольцевая долей (Donut)", "Диаграмма Водопад (Waterfall)"], key=f"s_{i}")
-                # ТРЕБОВАНИЕ ВЫПОЛНЕНО: Замена columns_input на общесистемный all_cols
                 with c2: x_ax = st.selectbox(f"Ось X №{i+1}:", columns_input, key=f"x_{i}")
                 with c3: y_ax = st.selectbox(f"Ось Y №{i+1}:", columns_input, key=f"y_{i}")
                 with c4: color = st.color_picker(f"Цвет №{i+1}:", "#1f77b4", key=f"col_{i}")
@@ -268,20 +267,11 @@ if uploaded_files:
             with b1:
                 if st.button("➕ Добавить диаграмму"): st.session_state.manual_charts += 1; st.rerun()
             with b2:
-                if st.session_state.manual_cards > 1:
+                if st.session_state.manual_charts > 1:
                     if st.button("🗑️ Удалить диаграмму"): st.session_state.manual_charts -= 1; st.rerun()
-
-        router = {
-            "🗂️ 1. Загрузка и очистка данных": lambda: show_page_1(main_df, all_cols),
-            "📊 2. Executive Диаграммы": lambda: show_page_2(act_df, all_cols),
-            "🧮 3. ABC/XYZ-аналитика ОЗМ": lambda: internal_show_abc_xyz_page(act_df, gemini_api_key, ai_context_mode),
-            "👥 4. RFM-сегментация": lambda: internal_show_rfm_page(act_df, gemini_api_key, ai_context_mode)
-        }
-        router[page]()
+        elif "3. ABC/XYZ" in page: internal_show_abc_xyz_page(act_df, gemini_api_key, ai_context_mode)
+        elif "4. RFM" in page: internal_show_rfm_page(act_df, gemini_api_key, ai_context_mode)
 else:
     st.info("📊 Ожидание загрузки любых файлов Excel/CSV...")
     with st.expander("ℹ️ Краткое руководство пользователя (ИИ-Ассистент)"):
-        st.markdown("""
-        ### 🚀 Как начать работу с платформой:
-        1. **Получите ИИ-Ключ**: Перейдите на бесплатный сайт [Google AI Studio](https://google.com) под своей Gmail-почтой и нажмите **Create API Key**.
-        2. **Активируйте ИИ**: Вставьте скопированный ключ в поле **Введите Gemini API Key** в левой панели.
+        st.markdown("1. **Вставьте ИИ-ключ** в поле 'Введите Gemini API Key' слева.\\n2. **Выберите контекст** (Закупки, Остатки, Расход или Продажи) в сайдбаре.\\n3. **Загрузите файлы** Excel/CSV выше.")
