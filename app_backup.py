@@ -8,12 +8,12 @@ import plotly.graph_objects as go
 from google import genai
 from google.genai import types
 
-# 🤖 МОДУЛЬ 1: ИИ-АВТОМАППИНГ ЗАГОЛОВКОВ ТАБЛИЦ (ОФИЦИАЛЬНЫЙ СТАНДАРТ GEMINI-3.5-FLASH)
+# 🤖 МОДУЛЬ 1: ИИ-АВТОМАППИНГ ЗАГОЛОВКОВ ТАБЛИЦ (СТАНДАРТ GEMINI-3.5-FLASH)
 def ai_column_mapper_engine(raw_columns_list, api_key):
     if not api_key: return {}
     try:
         client = genai.Client(api_key=api_key)
-        sys_instruction = "Ты — BI-аналитик. Сопоставь заголовки закупщика с полями: 'ОЗМ', 'Наименование材料', 'Количество', 'Сумма'. Верни СТРОГО JSON вида {\"Прайс\": \"Сумма\"}"
+        sys_instruction = "Ты — BI-аналитик. Сопоставь заголовки закупщика с полями: 'ОЗМ', 'Наименование материала', 'Количество', 'Сумма'. Верни СТРОГО JSON-объект вида {\"Номенклатура\": \"ОЗМ\", \"Прайс\": \"Сумма\"}"
         response = client.models.generate_content(
             model='gemini-3.5-flash',
             contents=f"Выполни маппинг списка заголовков: {str(raw_columns_list)}",
@@ -33,12 +33,12 @@ def ai_generate_text_report(pivot_matrix_df, report_type="ABC/XYZ", data_context
         elif "Запасы" in data_context:
             context_rules = "Данные — это СУЩЕСТВУЮЩИЕ СКЛАДСКИЕ ЗАПАСЫ. Группа AZ — это жестко замороженный рабочий капитал предприятия (дорогие ТМЦ без движения). Группа CZ — складской хлам, неликвиды, забивающие полки."
         elif "Расход" in data_context:
-            context_rules = "Данные — это РЕАЛЬНЫЙ ФАКТИЧЕСКИЙ РАСХОД / ПОТРЕБЛЕНИЕ. Группа AZ — это внеплановые, аварийные ремонты оборудования, сжигающие огромный бюджет. Группа CZ — ситуативные заявки цехов 'по требованию'."
+            context_rules = "Данные — это РЕАЛЬНЫЙ ФАКТИЧЕСКИЙ РАСХОД / ПОТРЕБЛЕНИЕ. Группа AZ — это внеплановые, аварийные ремонты оборудования, сжигающие огромный бюджет. Группа CZ — административная нагрузка мелких заявок."
         else:
             context_rules = "Данные — это КОММЕРЧЕСКИЕ ПРОДАЖИ / СБЫТ / РИТЕЙЛ. Группа AZ — это товары-локомотивы, генерирующие 80% выручки (риск упущенной прибыли). Группа CZ — длинный хвост ассортимента с низким чеком."
 
         system_instruction = f"""
-        Ты — первоклассный BI-консультант и директор по снабжению. Напиши жесткий аналитический отчет для генерального директора по матрице {report_type}.
+        Ты — директор по логистике и снабжению комбината. Напиши жесткий аналитический отчет для генерального директора по матрице {report_type}.
         БИЗНЕС-КОНТЕКСТ ДАННЫХ: {context_rules}
         Структура отчета: 1. Анализ текущего процесса ({data_context}). 2. Выявление скрытых аномалий и рисков (оцени группы AZ и CZ). 3. Рекомендации. Пиши емко, списками Markdown. Используй деловой сленг.
         """
@@ -48,7 +48,7 @@ def ai_generate_text_report(pivot_matrix_df, report_type="ABC/XYZ", data_context
             st.markdown(f"### 📝 Аналитический ИИ-Отчет: {data_context} ({report_type})")
             st.info(response.text)
     except Exception as report_err: st.error(f"❌ Ошибка ИИ: {report_err}")
-# 🧮 МОДУЛЬ 3: УНИВЕРСАЛЬНЫЙ КОНСТРУКТОР ABC/XYZ (ЖЕЛЕЗОБЕТОННОЕ ЗАПОЛНЕНИЕ ПУСТЫХ КОЛОРДОК)
+# 🧮 МОДУЛЬ 3: УНИВЕРСАЛЬНЫЙ КОНСТРУКТОР ABC/XYZ (ЖЕЛЕЗОБЕТОННОЕ ЗАПОЛНЕНИЕ ПУСТЫХ ЯЧЕЕК НУЛЯМИ)
 def internal_show_abc_xyz_page(filtered_df, api_key, data_context):
     st.title("🧮 Универсальный Конструктор матриц ABC/XYZ")
     if filtered_df.empty: return st.info("ℹ️ Выборка пуста. Загрузите файлы.")
@@ -93,7 +93,7 @@ def internal_show_abc_xyz_page(filtered_df, api_key, data_context):
             
         st.dataframe(df_m.sort_values(by=abc_value, ascending=False), use_container_width=True)
     except Exception as e: st.error(f"Ошибка ABC: {e}")
-# 👥 МОДУЛЬ 4: ИЗМЕНЕННЫЙ УЛЬТРА-ГИБКИЙ КОНСТРУКТОР RFM ПО ЛЮБЫМ КАТЕГОРИЯМ И ЖЕСТКИМ СРЕЗАМ
+# 👥 МОДУЛЬ 4: УНИВЕРСАЛЬНЫЙ КОНСТРУКТОР RFM ПО ЛЮБЫМ КАТЕГОРИЯМ
 def internal_show_rfm_page(filtered_df, api_key, data_context):
     st.title("👥 Модуль RFM-сегментации номенклатуры и категорий")
     if filtered_df.empty: return st.info("ℹ️ Текущий срез пуст. Выберите другие фильтры в сайдбаре.")
@@ -105,15 +105,9 @@ def internal_show_rfm_page(filtered_df, api_key, data_context):
     
     try:
         df['Сумма'] = pd.to_numeric(df['Сумма'], errors='coerce').fillna(0.0)
-        
-        # Группировка строго по выбранному пользователем объекту и отфильтрованному срезу цеха
-        rfm = df.groupby(str(rfm_target)).agg(
-            F=('Сумма', 'count'), 
-            M=('Сумма', 'sum')
-        ).reset_index()
+        rfm = df.groupby(str(rfm_target)).agg(F=('Сумма', 'count'), M=('Сумма', 'sum')).reset_index()
         rfm.columns = ['Объект Анализа', 'F', 'M']
         
-        # Адаптивное деление на 3 корзины (с ранжированием)
         rfm['F_Score'] = pd.qcut(rfm['F'].rank(method='first'), 3, labels=['3', '2', '1']).astype(str) if len(rfm) >= 3 and rfm['F'].nunique() > 1 else '1'
         rfm['M_Score'] = pd.qcut(rfm['M'].rank(method='first'), 3, labels=['3', '2', '1']).astype(str) if len(rfm) >= 3 and rfm['M'].nunique() > 1 else '1'
         rfm['RFM'] = rfm['F_Score'] + rfm['M_Score']
@@ -127,6 +121,7 @@ def internal_show_rfm_page(filtered_df, api_key, data_context):
         st.dataframe(rfm.sort_values(by='M', ascending=False), use_container_width=True)
     except Exception as rfe: st.error(f"❌ Ошибка расчета RFM: {rfe}")
 
+# ФУНКЦИЯ 5: ГРАФИЧЕСКИЙ ДВИЖОК PLOTLY (ЖЕСТКО КОНТРОЛИРУЮТСЯ ОБЛАСТИ ВИДИМОСТИ ПЕРЕМЕННЫХ НАДПИСЕЙ)
 def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_round, f_size, f_color, f_pos, horiz, rot, top_limit, i):
     try:
         df_c = active_df.copy()
@@ -220,7 +215,7 @@ if uploaded_files:
             for j in range(st.session_state.manual_cards):
                 with card_cols[j % len(card_cols)]:
                     st.markdown(f"**📌 Карточка № {j+1}**")
-                    t_col = st.selectbox(f"Поле:", all_cols, key=f"c_t_{j}")
+                    t_col = st.selectbox(f"Поле:", columns_input, key=f"c_t_{j}")
                     c_mode = st.selectbox(f"Агрегация:", ["Сумма", "Среднее"], key=f"c_m_{j}")
                     with st.expander("🎨 Настройки"):
                         c_fmt = st.selectbox("Формат:", ["Числовой", "Финансовый (₸)", "Сжатый (млн/млрд)"], key=f"c_f_{j}")
@@ -275,11 +270,17 @@ if uploaded_files:
                 if st.session_state.manual_charts > 1:
                     if st.button("🗑️ Удалить диаграмму"): st.session_state.manual_charts -= 1; st.rerun()
 
-        router = {
+        # ИСПРАВЛЕННЫЙ СЛОВАРНЫЙ РОУТЕР: Полностью защищен от синтаксических конфликтов if/elif
+        router_pages = {
             "🗂️ 1. Загрузка и очистка данных": lambda: show_page_1(main_df, all_cols),
             "📊 2. Executive Диаграммы": lambda: show_page_2(act_df, all_cols),
             "🧮 3. ABC/XYZ-аналитика ОЗМ": lambda: internal_show_abc_xyz_page(act_df, gemini_api_key, ai_context_mode),
             "👥 4. RFM-сегментация": lambda: internal_show_rfm_page(act_df, gemini_api_key, ai_context_mode)
         }
-        router[page]()
-else: st.info("Ожидание загрузки любых файлов Excel/CSV...")
+        router_pages[page]()
+else:
+    st.info("📊 Ожидание загрузки любых файлов Excel/CSV...")
+    with st.expander("ℹ️ Краткое руководство пользователя (ИИ-Ассистент)"):
+        st.write("1. Вставьте ИИ-ключ в поле 'Введите Gemini API Key' слева.")
+        st.write("2. Выберите контекст данных в сайдбаре.")
+        st.write("3. Загрузите файлы Excel/CSV выше.")
