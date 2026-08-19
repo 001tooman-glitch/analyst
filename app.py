@@ -8,12 +8,12 @@ import plotly.graph_objects as go
 from google import genai
 from google.genai import types
 
-# 🤖 МОДУЛЬ ИИ-АНАЛИЗА СИНОНИМОВ ЗАГОЛОВКОВ (АКТУАЛИЗИРОВАНА МОДЕЛЬ GEMINI)
+# 🤖 МОДУЛЬ ИИ-АНАЛИЗА СИНОНИМОВ ЗАГОЛОВКОВ (БЕЗОПАСНЫЙ СВЕЖИЙ ВЫЗОВ)
 def ai_column_mapper_engine(raw_columns_list, api_key):
     if not api_key: return {}
     try:
         client = genai.Client(api_key=api_key)
-        system_instruction = "Ты — BI-аналитик. Сопоставь заголовки закупщика с полями: 'ОЗМ', 'Наименование материала', 'Количество', 'Сумма'. Верни СТРОГО JSON-объект вида {\"Номенклатура\": \"ОЗМ\", \"Прайс\": \"Сумма\"}"
+        system_instruction = "Ты — BI-аналитик. Сопоставь заголовки закупщика с полями: 'ОЗМ', 'Наименование材料', 'Количество', 'Сумма'. Верни СТРОГО JSON вида {\"Прайс\": \"Сумма\"}"
         response = client.models.generate_content(
             model='gemini-2.5-flash',
             contents=f"Выполни маппинг списка: {str(raw_columns_list)}",
@@ -22,14 +22,12 @@ def ai_column_mapper_engine(raw_columns_list, api_key):
         return json.loads(response.text)
     except: return {}
 
-# ✍️ МОДУЛЬ АВТОРЕФЕРАТА И ГЕНЕРАЦИЯ ОТЧЕТОВ ИИ (ОБНОВЛЕНО НА GEMINI-2.5-FLASH)
+# ✍️ МОДУЛЬ АВТОРЕФЕРАТА И ГЕНЕРАЦИЯ ОТЧЕТОВ ИИ (ЖЕЛЕЗОБЕТОННОЕ ИСПРАВЛЕНИЕ НА МОДЕЛЬ FLASH)
 def ai_generate_text_report(pivot_matrix_df, report_type="ABC/XYZ", api_key=None):
-    if not api_key:
-        st.warning("⚠️ Введите Gemini API Key в сайдбаре.")
-        return
+    if not api_key: return st.warning("⚠️ Введите Gemini API Key в сайдбаре.")
     try:
         client = genai.Client(api_key=api_key)
-        system_instruction = f"Ты — директор по снабжению. Напиши краткий, жесткий аналитический отчет для генерального директора по матрице плотности {report_type}. Структура: 1. Краткое резюме. 2. Критические риски. 3. Пошаговые рекомендации (контракты, склады, оптимизация). Пиши емко, списком."
+        system_instruction = f"Ты — директор по снабжению. Напиши краткий, жесткий аналитический отчет для генерального директора по матрице плотности {report_type}. Структура: 1. Краткое резюме. 2. Критические риски. 3. Рекомендации. Пиши емко, списком."
         with st.spinner("🔮 ИИ пишет отчет для руководства..."):
             response = client.models.generate_content(
                 model='gemini-2.5-flash',
@@ -178,17 +176,18 @@ if uploaded_files:
         
         page = st.sidebar.radio("Перейти к разделу:", ["🗂️ 1. Загрузка и очистка данных", "📊 2. Executive Диаграммы", "🧮 3. ABC/XYZ-аналитика ОЗМ", "👥 4. RFM-сегментация"], label_visibility="collapsed")
         
-        if "1. Загрузка" in page:
-            st.success(f"📊 База сформирована! Строк: {len(main_df):,}")
-            cp = st.number_input(f"Страница (из {(len(main_df) // 50) + 1}):", min_value=1, max_value=(len(main_df) // 50) + 1, value=1, step=1)
-            st.dataframe(main_df.iloc[(cp - 1) * 50: cp * 50], height=350, use_container_width=True)
-        elif "2. Executive" in page:
+        def show_page_1(dataframe_input, columns_input):
+            st.success(f"📊 База сформирована! Строк: {len(dataframe_input):,}")
+            cp = st.number_input(f"Страница (из {(len(dataframe_input) // 50) + 1}):", min_value=1, max_value=(len(dataframe_input) // 50) + 1, value=1, step=1)
+            st.dataframe(dataframe_input.iloc[(cp - 1) * 50: cp * 50], height=350, use_container_width=True)
+            
+        def show_page_2(dataframe_input, columns_input):
             st.title("📊 Интерактивная BI-Панель Показателей")
             card_cols = st.columns(st.session_state.manual_cards)
             for j in range(st.session_state.manual_cards):
                 with card_cols[j % len(card_cols)]:
                     st.markdown(f"**📌 Карточка № {j+1}**")
-                    t_col = st.selectbox(f"Поле:", all_cols, key=f"c_t_{j}")
+                    t_col = st.selectbox(f"Поле:", columns_input, key=f"c_t_{j}")
                     c_mode = st.selectbox(f"Агрегация:", ["Сумма", "Среднее"], key=f"c_m_{j}")
                     with st.expander("🎨 Настройки"):
                         c_fmt = st.selectbox("Формат:", ["Числовой", "Финансовый (₸)", "Сжатый (млн/млрд)"], key=f"c_f_{j}")
@@ -216,8 +215,8 @@ if uploaded_files:
             for i in range(st.session_state.manual_charts):
                 c1, c2, c3, c4 = st.columns(4)
                 with c1: style = st.selectbox(f"Тип №{i+1}:", ["Столбчатая диаграмма (Bar)", "Линейный тренд (Line)", "Кольцевая долей (Donut)", "Диаграмма Водопад (Waterfall)"], key=f"s_{i}")
-                with c2: x_ax = st.selectbox(f"Ось X №{i+1}:", all_cols, key=f"x_{i}")
-                with c3: y_ax = st.selectbox(f"Ось Y №{i+1}:", all_cols, key=f"y_{i}")
+                with c2: x_ax = st.selectbox(f"Ось X №{i+1}:", columns_input, key=f"x_{i}")
+                with c3: y_ax = st.selectbox(f"Ось Y №{i+1}:", columns_input, key=f"y_{i}")
                 with c4: color = st.color_picker(f"Цвет №{i+1}:", "#1f77b4", key=f"col_{i}")
                 with st.expander("🎨 Настройки надписей"):
                     cu1, cu2, cu3 = st.columns(3)
@@ -242,6 +241,12 @@ if uploaded_files:
             with b2:
                 if st.session_state.manual_charts > 1:
                     if st.button("🗑️ Удалить диаграмму"): st.session_state.manual_charts -= 1; st.rerun()
-        elif "3. ABC/XYZ" in page: internal_show_abc_xyz_page(act_df, gemini_api_key)
-        elif "4. RFM" in page: internal_show_rfm_page(act_df, gemini_api_key)
+
+        router = {
+            "🗂️ 1. Загрузка и очистка данных": lambda: show_page_1(main_df, all_cols),
+            "📊 2. Executive Диаграммы": lambda: show_page_2(act_df, all_cols),
+            "🧮 3. ABC/XYZ-аналитика ОЗМ": lambda: internal_show_abc_xyz_page(act_df, gemini_api_key),
+            "👥 4. RFM-сегментация": lambda: internal_show_rfm_page(act_df, gemini_api_key)
+        }
+        router[page]()
 else: st.info("Ожидание загрузки любых файлов Excel/CSV...")
