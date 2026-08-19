@@ -8,7 +8,7 @@ import plotly.graph_objects as go
 from google import genai
 from google.genai import types
 
-# 🤖 МОДУЛЬ ИИ-АНАЛИЗА СИНОНИМОВ ЗАГОЛОВКОВ (GOOGLE GENAI API)
+# 🤖 МОДУЛЬ 1: ИИ-АВТОМАППИНГ ЗАГОЛОВКОВ КАНАЛОВ СНАБЖЕНИЯ
 def ai_column_mapper_engine(raw_columns_list, api_key):
     if not api_key: return {}
     try:
@@ -28,8 +28,37 @@ def ai_column_mapper_engine(raw_columns_list, api_key):
         )
         return json.loads(response.text)
     except: return {}
-# 🧮 МОДУЛЬ УНИВЕРСАЛЬНОЙ ABC/XYZ МАТРИЦЫ С ТЕПЛОВОЙ КАРТОЙ
-def internal_show_abc_xyz_page(filtered_df):
+
+# ✍️ МОДУЛЬ 2: ИНТЕЛЛЕКТУАЛЬНЫЙ АВТОРЕФЕРАТ И ГЕНЕРАЦИЯ ОТЧЕТОВ ИИ ДЛЯ ДИРЕКТОРА
+def ai_generate_text_report(pivot_matrix_df, report_type="ABC/XYZ", api_key=None):
+    if not api_key:
+        st.warning("⚠️ Для генерации ИИ-отчета, пожалуйста, введите Gemini API Key в сайдбаре.")
+        return
+    try:
+        client = genai.Client(api_key=api_key)
+        matrix_str = pivot_matrix_df.to_string()
+        system_instruction = f"""
+        Ты — главный директор по снабжению и первоклассный BI-консультант.
+        Твоя задача — проанализировать входящую матрицу плотности {report_type} и написать краткий, жесткий, профессиональный аналитический отчет для генерального директора.
+        Формат отчета:
+        1. 🎯 Краткое резюме (Какова общая ситуация с закупками на основе плотности секторов).
+        2. 🚨 Критические риски и аномалии (На какие группы снабжения уходит больше всего денег или где творится хаос).
+        3. 💡 Пошаговые рекомендации (Что конкретно сделать: зафиксировать цены годовыми контрактами, оптимизировать склады, консолидировать заявки).
+        Пиши емко, без воды, используй списки и профессиональный закупной сленг.
+        """
+        with st.spinner("🔮 Искусственный Интеллект анализирует матрицу и пишет отчет..."):
+            response = client.models.generate_content(
+                model='gemini-2.5-flash',
+                contents=f"Проанализируй следующую матрицу плотности:\n{matrix_str}",
+                config=types.GenerateContentConfig(system_instruction=system_instruction, temperature=0.3),
+            )
+            st.markdown("---")
+            st.markdown(f"### 📝 Аналитический ИИ-Отчет по матрице {report_type}")
+            st.info(response.text)
+    except Exception as report_err:
+        st.error(f"❌ Не удалось сгенерировать ИИ-отчет: {report_err}")
+# 🧮 МОДУЛЬ 3: УНИВЕРСАЛЬНЫЙ КОНСТРУКТОР ABC/XYZ С КНОПКОЙ ИИ-ОТЧЕТА
+def internal_show_abc_xyz_page(filtered_df, api_key):
     st.title("🧮 Универсальный Конструктор матриц ABC/XYZ")
     if filtered_df.empty: return st.info("ℹ️ Выборка пуста. Загрузите файлы.")
     df, available_cols = filtered_df.copy(), list(filtered_df.columns)
@@ -63,13 +92,17 @@ def internal_show_abc_xyz_page(filtered_df):
         mc1, mc2 = st.columns(2)
         with mc1: st.dataframe(pivot_m, use_container_width=True)
         with mc2: st.plotly_chart(px.imshow(pivot_m, text_auto=True, color_continuous_scale="Blues"), use_container_width=True)
+        
+        # КНОПКА ГЕНЕРАЦИИ ИИ-ОТЧЕТА ДЛЯ ABC/XYZ
+        if st.button("✍️ Сгенерировать ИИ-отчет по матрице ABC/XYZ", key="ai_report_abc_btn"):
+            ai_generate_text_report(pivot_m, report_type="ABC/XYZ", api_key=api_key)
+            
         st.dataframe(df_m.sort_values(by=abc_value, ascending=False), use_container_width=True)
     except Exception as e: st.error(f"Ошибка ABC: {e}")
-
-# 👥 МОДУЛЬ НЕУБИВАЕМОЙ RFM СЕГМЕНТАЦИИ
-def internal_show_rfm_page(filtered_df):
+# 👥 МОДУЛЬ 4: СЕГМЕНТАЦИЯ RFM С КНОПКОЙ ИИ-ОТЧЕТА
+def internal_show_rfm_page(filtered_df, api_key):
     st.title("👥 Модуль RFM-сегментации номенклатуры")
-    if filtered_df.empty: return st.info("ℹ| Выборка пуста. Загрузите файлы.")
+    if filtered_df.empty: return st.info("ℹ️ Выборка пуста. Загрузите файлы.")
     df = filtered_df.copy()
     t_ozm = 'ОЗМ' if 'ОЗМ' in df.columns else df.columns
     t_sum = 'Сумма' if 'Сумма' in df.columns else df.select_dtypes(include=[np.number]).columns
@@ -81,38 +114,33 @@ def internal_show_rfm_page(filtered_df):
         rfm['RFM'] = rfm['F_Score'] + rfm['M_Score']
         seg_counts = rfm.groupby('RFM').size().reset_index(name='Количество ОЗМ')
         st.plotly_chart(px.bar(seg_counts, x='RFM', y='Количество ОЗМ', text_auto=True, title="📊 Распределение RFM-сегментов номенклатуры", color='RFM', color_continuous_scale="Purples"), use_container_width=True)
+        
+        # КНОПКА ГЕНЕРАЦИИ ИИ-ОТЧЕТА ДЛЯ RFM
+        if st.button("👥 Сгенерировать ИИ-отчет по матрице RFM", key="ai_report_rfm_btn"):
+            ai_generate_text_report(seg_counts, report_type="RFM-Сегментации", api_key=api_key)
+            
         st.dataframe(rfm.sort_values(by='M', ascending=False), use_container_width=True)
     except Exception as rfe: st.error(f"Ошибка RFM: {rfe}")
-# 🛠️ ГРАФИЧЕСКИЙ ДВИЖОК PLOTLY С РЕАКТИВНЫМ ОТКЛИКОМ НАДПИСЕЙ И ШРИФТОВ
+# 🛠️ МОДУЛЬ 5: ГРАФИЧЕСКИЙ ДВИЖОК PLOTLY С КАСТОМИЗАЦИЕЙ НАДПИСЕЙ И ШРИФТОВ
 def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_round, f_size, f_color, f_pos, horiz, rot, top_limit, i):
     try:
         df_c = active_df.copy()
         df_c[y_ax] = pd.to_numeric(df_c[y_ax], errors='coerce').fillna(0)
         df_g = df_c.groupby(x_ax, as_index=False)[y_ax].sum().sort_values(by=y_ax, ascending=False).head(top_limit)
         if horiz: df_g = df_g.sort_values(by=y_ax, ascending=True)
-        
         txt = [f"{round(v, f_round):,}".replace(",", " ") + (" ₸" if "Финанс" in f_format else "") for v in df_g[y_ax]]
-        
         safe_pos = f_pos if ("Donut" not in style or f_pos in ["inside", "outside", "auto"]) else "auto"
         if "Line" in style: safe_pos = "top center"
 
         fig = go.Figure()
-        if "Waterfall" in style:
-            fig.add_trace(go.Waterfall(x=list(df_g[x_ax].astype(str)) + ["ИТОГО"], y=list(df_g[y_ax]) + [df_g[y_ax].sum()], text=txt + [f"{df_g[y_ax].sum():,}"], textposition=safe_pos, measure=["relative"] * len(df_g[y_ax]) + ["total"], increasing={"marker": {"color": color}}))
-        elif "Donut" in style:
-            fig.add_trace(go.Pie(labels=df_g[x_ax], values=df_g[y_ax], hole=0.4, rotation=rot, textinfo="label+value" if lbl else "none", textposition=safe_pos, texttemplate="%{label}<br>%{text}" if lbl else None, text=txt))
-        elif "Line" in style:
-            fig.add_trace(go.Scatter(x=df_g[x_ax], y=df_g[y_ax], mode="lines+markers+text" if lbl else "lines+markers", text=txt, textposition=safe_pos, line=dict(color=color, width=4), marker=dict(size=8)))
-        else:
-            fig.add_trace(go.Bar(y=df_g[x_ax] if horiz else df_g[y_ax], x=df_g[y_ax] if horiz else df_g[x_ax], text=txt if lbl else None, textposition=safe_pos, orientation="h" if horiz else "v", marker_color=color))
-        
+        if "Waterfall" in style: fig.add_trace(go.Waterfall(x=list(df_g[x_ax].astype(str)) + ["ИТОГО"], y=list(df_g[y_ax]) + [df_g[y_ax].sum()], text=txt + [f"{df_g[y_ax].sum():,}"], textposition=safe_pos, measure=["relative"] * len(df_g[y_ax]) + ["total"], increasing={"marker": {"color": color}}))
+        elif "Donut" in style: fig.add_trace(go.Pie(labels=df_g[x_ax], values=df_g[y_ax], hole=0.4, rotation=rot, textinfo="label+value" if lbl else "none", textposition=safe_pos, texttemplate="%{label}<br>%{text}" if lbl else None, text=txt))
+        elif "Line" in style: fig.add_trace(go.Scatter(x=df_g[x_ax], y=df_g[y_ax], mode="lines+markers+text" if lbl else "lines+markers", text=txt, textposition=safe_pos, line=dict(color=color, width=4), marker=dict(size=8)))
+        else: fig.add_trace(go.Bar(y=df_g[x_ax] if horiz else df_g[y_ax], x=df_g[y_ax] if horiz else df_g[x_ax], text=txt if lbl else None, textposition=safe_pos, orientation="h" if horiz else "v", marker_color=color))
         fig.update_layout(xaxis=dict(type='category', tickangle=45 if not horiz else 0))
-        
-        # РЕШЕНИЕ: Применяем пользовательский цвет, размер и положение шрифтов во все типы графиков реактивно
         if lbl:
             fig.update_traces(textfont=dict(size=f_size, color=f_color))
             if "Donut" in style: fig.update_traces(insidetextfont=dict(size=f_size, color=f_color), outsidetextfont=dict(size=f_size, color=f_color))
-            
         st.plotly_chart(fig, use_container_width=True, key=f"p_{i}")
     except: pass
 
@@ -240,8 +268,8 @@ if uploaded_files:
         router = {
             "🗂️ 1. Загрузка и очистка данных": lambda: show_page_1(main_df, all_cols),
             "📊 2. Executive Диаграммы": lambda: show_page_2(act_df, all_cols),
-            "🧮 3. ABC/XYZ-аналитика ОЗМ": lambda: internal_show_abc_xyz_page(act_df),
-            "👥 4. RFM-сегментация": lambda: internal_show_rfm_page(act_df)
+            "🧮 3. ABC/XYZ-аналитика ОЗМ": lambda: internal_show_abc_xyz_page(act_df, gemini_api_key),
+            "👥 4. RFM-сегментация": lambda: internal_show_rfm_page(act_df, gemini_api_key)
         }
         router[page]()
 else: st.info("Ожидание загрузки любых файлов Excel/CSV...")
