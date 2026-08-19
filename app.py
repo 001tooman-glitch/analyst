@@ -8,12 +8,12 @@ import plotly.graph_objects as go
 from google import genai
 from google.genai import types
 
-# 🤖 МОДУЛЬ ИИ-АНАЛИЗА СИНОНИМОВ ЗАГОЛОВКОВ (GEMINI-3.5-FLASH)
+# 🤖 МОДУЛЬ 1: ИИ-АВТОМАППИНГ ЗАГОЛОВКОВ ТАБЛИЦ (ОФИЦИАЛЬНЫЙ СТАНДАРТ GEMINI-3.5-FLASH)
 def ai_column_mapper_engine(raw_columns_list, api_key):
     if not api_key: return {}
     try:
         client = genai.Client(api_key=api_key)
-        sys_instruction = "Ты — BI-аналитик. Сопоставь заголовки закупщика с полями: 'ОЗМ', 'Наименование материала', 'Количество', 'Сумма'. Верни СТРОГО JSON-объект вида {\"Номенклатура\": \"ОЗМ\", \"Прайс\": \"Сумма\"}"
+        sys_instruction = "Ты — BI-аналитик. Сопоставь заголовки закупщика с полями: 'ОЗМ', 'Наименование材料', 'Количество', 'Сумма'. Верни СТРОГО JSON вида {\"Прайс\": \"Сумма\"}"
         response = client.models.generate_content(
             model='gemini-3.5-flash',
             contents=f"Выполни маппинг списка заголовков: {str(raw_columns_list)}",
@@ -22,7 +22,7 @@ def ai_column_mapper_engine(raw_columns_list, api_key):
         return json.loads(response.text)
     except: return {}
 
-# 🧠 УЛЬТРА-ГИБКИЙ ИИ-АНАЛИЗАТОР 4-Х ФУНДАМЕНТАЛЬНЫХ БИЗНЕС-ПРОЦЕССОВ
+# 🧠 МОДУЛЬ 2: УЛЬТРА-ГИБКИЙ ИИ-АНАЛИЗАТОР 4-Х ФУНДАМЕНТАЛЬНЫХ БИЗНЕС-ПРОЦЕССОВ
 def ai_generate_text_report(pivot_matrix_df, report_type="ABC/XYZ", data_context="Расход", api_key=None):
     if not api_key: return st.warning("⚠️ Введите API Key Gemini в сайдбаре.")
     try:
@@ -38,7 +38,7 @@ def ai_generate_text_report(pivot_matrix_df, report_type="ABC/XYZ", data_context
             context_rules = "Данные — это КОММЕРЧЕСКИЕ ПРОДАЖИ / СБЫТ / РИТЕЙЛ. Группа AZ — это товары-локомотивы, генерирующие 80% выручки (риск упущенной прибыли). Группа CZ — длинный хвост ассортимента с низким чеком."
 
         system_instruction = f"""
-        Ты — директор по логистике и снабжению комбината. Напиши жесткий аналитический отчет для генерального директора по матрице {report_type}.
+        Ты — первоклассный BI-консультант и директор по снабжению. Напиши жесткий аналитический отчет для генерального директора по матрице {report_type}.
         БИЗНЕС-КОНТЕКСТ ДАННЫХ: {context_rules}
         Структура отчета: 1. Анализ текущего процесса ({data_context}). 2. Выявление скрытых аномалий и рисков (оцени группы AZ и CZ). 3. Рекомендации. Пиши емко, списками Markdown. Используй деловой сленг.
         """
@@ -48,7 +48,7 @@ def ai_generate_text_report(pivot_matrix_df, report_type="ABC/XYZ", data_context
             st.markdown(f"### 📝 Аналитический ИИ-Отчет: {data_context} ({report_type})")
             st.info(response.text)
     except Exception as report_err: st.error(f"❌ Ошибка ИИ: {report_err}")
-# 🧮 МОДУЛЬ УНИВЕРСАЛЬНОЙ ABC/XYZ МАТРИЦЫ (ЖЕЛЕЗОБЕТОННОЕ ИСПРАВЛЕНИЕ ОШИБКИ NOT IN INDEX)
+# 🧮 МОДУЛЬ 3: УНИВЕРСАЛЬНЫЙ КОНСТРУКТОР ABC/XYZ (ЖЕЛЕЗОБЕТОННОЕ ЗАПОЛНЕНИЕ ПУСТЫХ КОЛОРДОК)
 def internal_show_abc_xyz_page(filtered_df, api_key, data_context):
     st.title("🧮 Универсальный Конструктор матриц ABC/XYZ")
     if filtered_df.empty: return st.info("ℹ️ Выборка пуста. Загрузите файлы.")
@@ -77,7 +77,6 @@ def internal_show_abc_xyz_page(filtered_df, api_key, data_context):
         
         df_m = pd.merge(df_abc[[abc_target, abc_value, 'Class_ABC']], pd.DataFrame(xyz_res), on=abc_target)
         
-        # РЕШЕНИЕ ПРОБЛЕМЫ: Безопасное динамическое перестроение сводника с заполнением пустых колонок нулями
         raw_pivot = df_m.pivot_table(index='Class_ABC', columns='Класс XYZ', values=abc_target, aggfunc='count', fill_value=0)
         pivot_m = pd.DataFrame(0, index=['A', 'B', 'C'], columns=['X', 'Y', 'Z'])
         for idx in pivot_m.index:
@@ -94,24 +93,39 @@ def internal_show_abc_xyz_page(filtered_df, api_key, data_context):
             
         st.dataframe(df_m.sort_values(by=abc_value, ascending=False), use_container_width=True)
     except Exception as e: st.error(f"Ошибка ABC: {e}")
-# 👥 МОДУЛЬ 4: СЕГМЕНТАЦИЯ RFM И СИСТЕМА No-Code ВИЗУАЛИЗАЦИИ PLOTLY
+# 👥 МОДУЛЬ 4: ИЗМЕНЕННЫЙ УЛЬТРА-ГИБКИЙ КОНСТРУКТОР RFM ПО ЛЮБЫМ КАТЕГОРИЯМ И ЖЕСТКИМ СРЕЗАМ
 def internal_show_rfm_page(filtered_df, api_key, data_context):
-    st.title("👥 Модуль RFM-сегментации номенклатуры")
-    if filtered_df.empty: return st.info("ℹ️ Выборка пуста. Загрузите файлы.")
+    st.title("👥 Модуль RFM-сегментации номенклатуры и категорий")
+    if filtered_df.empty: return st.info("ℹ️ Текущий срез пуст. Выберите другие фильтры в сайдбаре.")
     df = filtered_df.copy()
-    t_ozm, t_sum = 'ОЗМ' if 'ОЗМ' in df.columns else df.columns, 'Сумма' if 'Сумма' in df.columns else df.select_dtypes(include=[np.number]).columns
+    available_cols = list(df.columns)
+    
+    st.markdown("### 🎯 Настройка объекта сегментации")
+    rfm_target = st.selectbox("Выберите поле/категорию для RFM-анализа:", [c for c in available_cols if c not in ['Сумма', 'Количество']], key="rfm_target_select")
+    
     try:
-        df[t_sum] = pd.to_numeric(df[t_sum], errors='coerce').fillna(0.0)
-        rfm = df.groupby(str(t_ozm)).agg(F=(df.columns, 'count'), M=(t_sum, 'sum')).reset_index()
+        df['Сумма'] = pd.to_numeric(df['Сумма'], errors='coerce').fillna(0.0)
+        
+        # Группировка строго по выбранному пользователем объекту и отфильтрованному срезу цеха
+        rfm = df.groupby(str(rfm_target)).agg(
+            F=('Сумма', 'count'), 
+            M=('Сумма', 'sum')
+        ).reset_index()
+        rfm.columns = ['Объект Анализа', 'F', 'M']
+        
+        # Адаптивное деление на 3 корзины (с ранжированием)
         rfm['F_Score'] = pd.qcut(rfm['F'].rank(method='first'), 3, labels=['3', '2', '1']).astype(str) if len(rfm) >= 3 and rfm['F'].nunique() > 1 else '1'
         rfm['M_Score'] = pd.qcut(rfm['M'].rank(method='first'), 3, labels=['3', '2', '1']).astype(str) if len(rfm) >= 3 and rfm['M'].nunique() > 1 else '1'
         rfm['RFM'] = rfm['F_Score'] + rfm['M_Score']
-        seg_counts = rfm.groupby('RFM').size().reset_index(name='Количество ОЗМ')
-        st.plotly_chart(px.bar(seg_counts, x='RFM', y='Количество ОЗМ', text_auto=True, title="📊 Распределение RFM-сегментов номенклатуры", color='RFM', color_continuous_scale="Purples"), use_container_width=True)
+        seg_counts = rfm.groupby('RFM').size().reset_index(name='Количество объектов')
+        
+        st.plotly_chart(px.bar(seg_counts, x='RFM', y='Количество объектов', text_auto=True, title=f"📊 Динамическое RFM-распределение по полю: {rfm_target}", color='RFM', color_continuous_scale="Purples"), use_container_width=True)
+        
         if st.button("👥 Сгенерировать ИИ-отчет по матрице RFM", key="ai_report_rfm_btn"):
-            ai_generate_text_report(seg_counts, report_type="RFM-Сегментации", data_context=data_context, api_key=api_key)
+            ai_generate_text_report(seg_counts, report_type=f"RFM-Сегментации ({rfm_target})", data_context=data_context, api_key=api_key)
+            
         st.dataframe(rfm.sort_values(by='M', ascending=False), use_container_width=True)
-    except Exception as rfe: st.error(f"Ошибка RFM: {rfe}")
+    except Exception as rfe: st.error(f"❌ Ошибка расчета RFM: {rfe}")
 
 def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_round, f_size, f_color, f_pos, horiz, rot, top_limit, i):
     try:
