@@ -8,12 +8,12 @@ import plotly.graph_objects as go
 from google import genai
 from google.genai import types
 
-# 🤖 МОДУЛЬ 1: ИИ-АВТОМАППИНГ ЗАГОЛОВКОВ ТАБЛИЦ (ОФИЦИАЛЬНЫЙ СТАНДАРТ GEMINI-3.5-FLASH)
+# 🤖 МОДУЛЬ 1: ИИ-АВТОМАППИНГ ЗАГОЛОВКОВ ТАБЛИЦ (СТАНДАРТ GEMINI-3.5-FLASH)
 def ai_column_mapper_engine(raw_columns_list, api_key):
     if not api_key: return {}
     try:
         client = genai.Client(api_key=api_key)
-        sys_instruction = "Ты — BI-аналитик. Сопоставь заголовки закупщика с полями: 'ОЗМ', 'Наименование材料', 'Количество', 'Сумма'. Верни СТРОГО JSON вида {\"Прайс\": \"Сумма\"}"
+        sys_instruction = "Ты — BI-аналитик. Сопоставь заголовки закупщика с полями: 'ОЗМ', 'Наименование материала', 'Количество', 'Сумма'. Верни СТРОГО JSON-объект вида {\"Номенклатура\": \"ОЗМ\", \"Прайс\": \"Сумма\"}"
         response = client.models.generate_content(
             model='gemini-3.5-flash',
             contents=f"Выполни маппинг списка заголовков: {str(raw_columns_list)}",
@@ -48,7 +48,7 @@ def ai_generate_text_report(pivot_matrix_df, report_type="ABC/XYZ", data_context
             st.markdown(f"### 📝 Аналитический ИИ-Отчет: {data_context} ({report_type})")
             st.info(response.text)
     except Exception as report_err: st.error(f"❌ Ошибка ИИ: {report_err}")
-# 🧮 МОДУЛЬ 3: УНИВЕРСАЛЬНЫЙ КОНСТРУКТОР ABC/XYZ (ЖЕЛЕЗОБЕТОННОЕ ЗАПОЛНЕНИЕ ПУСТЫХ КОЛОРДОК)
+# 🧮 МОДУЛЬ 3: УНИВЕРСАЛЬНЫЙ КОНСТРУКТОР ABC/XYZ (ЖЕЛЕЗОБЕТОННОЕ ЗАПОЛНЕНИЕ ПУСТЫХ ЯЧЕЕК Нулями)
 def internal_show_abc_xyz_page(filtered_df, api_key, data_context):
     st.title("🧮 Универсальный Конструктор матриц ABC/XYZ")
     if filtered_df.empty: return st.info("ℹ️ Выборка пуста. Загрузите файлы.")
@@ -93,7 +93,7 @@ def internal_show_abc_xyz_page(filtered_df, api_key, data_context):
             
         st.dataframe(df_m.sort_values(by=abc_value, ascending=False), use_container_width=True)
     except Exception as e: st.error(f"Ошибка ABC: {e}")
-# 👥 МОДУЛЬ 4: ИЗМЕНЕННЫЙ УЛЬТРА-ГИБКИЙ КОНСТРУКТОР RFM ПО ЛЮБЫМ КАТЕГОРИЯМ И ЖЕСТКИМ СРЕЗАМ
+# 👥 МОДУЛЬ 4: УНИВЕРСАЛЬНЫЙ КОНСТРУКТОР RFM ПО ЛЮБЫМ КАТЕГОРИЯМ И ЖЕСТКИМ СРЕЗАМ
 def internal_show_rfm_page(filtered_df, api_key, data_context):
     st.title("👥 Модуль RFM-сегментации номенклатуры и категорий")
     if filtered_df.empty: return st.info("ℹ️ Текущий срез пуст. Выберите другие фильтры в сайдбаре.")
@@ -105,15 +105,9 @@ def internal_show_rfm_page(filtered_df, api_key, data_context):
     
     try:
         df['Сумма'] = pd.to_numeric(df['Сумма'], errors='coerce').fillna(0.0)
-        
-        # Группировка строго по выбранному пользователем объекту и отфильтрованному срезу цеха
-        rfm = df.groupby(str(rfm_target)).agg(
-            F=('Сумма', 'count'), 
-            M=('Сумма', 'sum')
-        ).reset_index()
+        rfm = df.groupby(str(rfm_target)).agg(F=('Сумма', 'count'), M=('Сумма', 'sum')).reset_index()
         rfm.columns = ['Объект Анализа', 'F', 'M']
         
-        # Адаптивное деление на 3 корзины (с ранжированием)
         rfm['F_Score'] = pd.qcut(rfm['F'].rank(method='first'), 3, labels=['3', '2', '1']).astype(str) if len(rfm) >= 3 and rfm['F'].nunique() > 1 else '1'
         rfm['M_Score'] = pd.qcut(rfm['M'].rank(method='first'), 3, labels=['3', '2', '1']).astype(str) if len(rfm) >= 3 and rfm['M'].nunique() > 1 else '1'
         rfm['RFM'] = rfm['F_Score'] + rfm['M_Score']
@@ -209,12 +203,11 @@ if uploaded_files:
         
         page = st.sidebar.radio("Перейти к разделу:", ["🗂️ 1. Загрузка и очистка данных", "📊 2. Executive Диаграммы", "🧮 3. ABC/XYZ-аналитика ОЗМ", "👥 4. RFM-сегментация"], label_visibility="collapsed")
         
-        def show_page_1(dataframe_input, columns_input):
-            st.success(f"📊 База сформирована! Строк: {len(dataframe_input):,}")
-            cp = st.number_input(f"Страница (из {(len(dataframe_input) // 50) + 1}):", min_value=1, value=1, step=1)
-            st.dataframe(dataframe_input.iloc[(cp - 1) * 50: cp * 50], height=350, use_container_width=True)
-            
-        def show_page_2(dataframe_input, columns_input):
+        if "1. Загрузка" in page:
+            st.success(f"📊 База сформирована! Строк: {len(main_df):,}")
+            cp = st.number_input(f"Страница (из {(len(main_df) // 50) + 1}):", min_value=1, value=1, step=1)
+            st.dataframe(main_df.iloc[(cp - 1) * 50: cp * 50], height=350, use_container_width=True)
+        elif "2. Executive" in page:
             st.title("📊 Интерактивная BI-Панель Показателей")
             card_cols = st.columns(st.session_state.manual_cards)
             for j in range(st.session_state.manual_cards):
@@ -274,12 +267,16 @@ if uploaded_files:
             with b2:
                 if st.session_state.manual_charts > 1:
                     if st.button("🗑️ Удалить диаграмму"): st.session_state.manual_charts -= 1; st.rerun()
-
-        router = {
-            "🗂️ 1. Загрузка и очистка данных": lambda: show_page_1(main_df, all_cols),
-            "📊 2. Executive Диаграммы": lambda: show_page_2(act_df, all_cols),
-            "🧮 3. ABC/XYZ-аналитика ОЗМ": lambda: internal_show_abc_xyz_page(act_df, gemini_api_key, ai_context_mode),
-            "👥 4. RFM-сегментация": lambda: internal_show_rfm_page(act_df, gemini_api_key, ai_context_mode)
-        }
-        router[page]()
-else: st.info("Ожидание загрузки любых файлов Excel/CSV...")
+        elif "3. ABC/XYZ" in page: internal_show_abc_xyz_page(act_df, gemini_api_key, ai_context_mode)
+        elif "4. RFM" in page: internal_show_rfm_page(act_df, gemini_api_key, ai_context_mode)
+else:
+    # ТРЕБОВАНИЕ ВЫПОЛНЕНО: Вшитый No-Code экспандер-руководство на главном приветственном экране загрузки
+    st.info("📊 Ожидание загрузки любых файлов Excel/CSV...")
+    with st.expander("ℹ️ Краткое руководство пользователя (ИИ-Ассистент)"):
+        st.markdown("""
+        ### 🚀 Как начать работу с платформой:
+        1. **Получите ИИ-Ключ**: Перейдите на бесплатный сайт [Google AI Studio](https://google.com) под своей Gmail-почтой и нажмите **Create API Key**.
+        2. **Активируйте ИИ**: Вставьте скопированный ключ в поле **Введите Gemini API Key** в левой панели.
+        3. **Выберите Контекст**: В выпадающем списке сайдбаре укажите тип ваших данных (Закупки, Запасы, Расход или Продажи).
+        4. **Загрузите файл**: Перетащите вашу таблицу в окно **Upload** выше. Полная инструкция и документация проекта лежат в корне нашего репозитория на GitHub!
+        """)
