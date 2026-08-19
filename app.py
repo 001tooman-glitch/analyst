@@ -8,7 +8,7 @@ import plotly.graph_objects as go
 from google import genai
 from google.genai import types
 
-# ФУНКЦИЯ 1: ИИ-АВТОМАППИНГ ЗАГОЛОВКОВ ТАБЛИЦ (GEMINI-3.5-FLASH)
+# 🤖 МОДУЛЬ ИИ-АНАЛИЗА СИНОНИМОВ ЗАГОЛОВКОВ (GEMINI-3.5-FLASH)
 def ai_column_mapper_engine(raw_columns_list, api_key):
     if not api_key: return {}
     try:
@@ -22,26 +22,40 @@ def ai_column_mapper_engine(raw_columns_list, api_key):
         return json.loads(response.text)
     except: return {}
 
-# ФУНКЦИЯ 2: ИНТЕЛЛЕКТУАЛЬНАЯ АВТО-ГЕНЕРАЦИЯ БИЗНЕС-ОТЧЕТОВ ИИ (GEMINI-3.5-FLASH)
-def ai_generate_text_report(pivot_matrix_df, report_type="ABC/XYZ", api_key=None):
-    if not api_key: 
-        st.warning("⚠️ Введите Gemini API Key в сайдбаре.")
-        return
+# 🧠 УЛЬТРА-ГИБКИЙ ИИ-АНАЛИЗАТОР 4-Х ФУНДАМЕНТАЛЬНЫХ БИЗНЕС-ПРОЦЕССОВ
+def ai_generate_text_report(pivot_matrix_df, report_type="ABC/XYZ", data_context="Расход", api_key=None):
+    if not api_key: return st.warning("⚠️ Введите API Key Gemini в сайдбаре.")
     try:
         client = genai.Client(api_key=api_key)
-        sys_instruction = f"Ты — директор по снабжению. Напиши краткий, жесткий аналитический отчет для генерального директора по матрице плотности {report_type}. Структура: 1. Краткое резюме. 2. Критические риски и аномалии. 3. Пошаговые рекомендации. Пиши емко, списком, используя сленг закупок."
-        with st.spinner("🔮 ИИ пишет отчет для руководства..."):
-            response = client.models.generate_content(
-                model='gemini-3.5-flash',
-                contents=f"Проанализируй матрицу плотности:\n{pivot_matrix_df.to_string()}",
-                config=types.GenerateContentConfig(system_instruction=sys_instruction, temperature=0.3),
-            )
+        
+        # Динамическая подмена ТЗ для нейросети на основе глобального селектора
+        context_rules = ""
+        if "Закупки" in data_context:
+            context_rules = "Данные — это ПЛАНИРУЕМЫЕ ЗАКУПКИ / БИЗНЕС-ПЛАНЫ. Группа AZ — это критически важные стратегические контракты (риск срыва сроков проектов). Группа CZ — мелкая операционная текучка (риск бюрократии, недоосвоения бюджета и затягивания процедур)."
+        elif "Запасы" in data_context:
+            context_rules = "Данные — это СУЩЕСТВУЮЩИЕ СКЛАДСКИЕ ЗАПАСЫ. Группа AZ — это жестко замороженный рабочий капитал предприятия (дорогие ТМЦ без движения). Группа CZ — складской хлам, неликвиды, забивающие полки и требующие немедленного списания."
+        elif "Расход" in data_context:
+            context_rules = "Данные — это РЕАЛЬНЫЙ ФАКТИЧЕСКИЙ РАСХОД / ПОТРЕБЛЕНИЕ / ВЫДАЧА В ПРОИЗВОДСТВО. Группа AZ — это внеплановые, аварийные ремонты оборудования, сжигающие огромный бюджет. Группа CZ — ситуативные заявки цехов 'по требованию'."
+        else:
+            context_rules = "Данные — это КОММЕРЧЕСКИЕ ПРОДАЖИ / СБЫТ / РИТЕЙЛ. Группа AZ — это товары-локомотивы, генерирующие 80% выручки (риск упущенной прибыли при дефиците). Группа CZ — длинный хвост ассортимента с низким чеком и хаотичным спросом."
+
+        system_instruction = f"""
+        Ты — первоклассный BI-консультант и директор по управлению эффективностью. Напиши жесткий, структурированный аудит для топ-менеджмента по матрице {report_type}.
+        БИЗНЕС-КОНТЕКСТ ДАННЫХ: {context_rules}
+        Структура отчета: 
+        1. Анализ текущего процесса ({data_context}) — общая оценка структуры и стабильности.
+        2. Выявление скрытых аномалий и рисков (оцени группы AZ и CZ строго сквозь призму указанного контекста).
+        3. Стратегические рекомендации (что сделать директору: консолидировать заявки, почистить склад, скорректировать розничную матрицу или внедрить ТОиР).
+        Пиши емко, списками Markdown, без лишней воды и общих фраз. Используй деловой сленг.
+        """
+        with st.spinner(f"🔮 ИИ перестраивает мышление под контекст '{data_context}'..."):
+            response = client.models.generate_content(model='gemini-3.5-flash', contents=f"Матрица плотности ({data_context}):\n{pivot_matrix_df.to_string()}", config=types.GenerateContentConfig(system_instruction=system_instruction, temperature=0.2))
             st.markdown("---")
-            st.markdown(f"### 📝 Аналитический ИИ-Отчет по матрице {report_type}")
+            st.markdown(f"### 📝 Аналитический ИИ-Отчет: {data_context} ({report_type})")
             st.info(response.text)
-    except Exception as report_err: st.error(f"❌ Ошибка ИИ-генератора отчетов: {report_err}")
-# ФУНКЦИЯ 3: УНИВЕРСАЛЬНЫЙ КОНСТРУКТОР МАТРИЦ ABC/XYZ С КНОПКОЙ ИИ-ОТЧЕТА
-def internal_show_abc_xyz_page(filtered_df, api_key):
+    except Exception as report_err: st.error(f"❌ Ошибка ИИ: {report_err}")
+# 🧮 МОДУЛЬ УНИВЕРСАЛЬНОЙ ABC/XYZ МАТРИЦЫ С КНОПКОЙ ГИБКОГО ИИ-ОТЧЕТА
+def internal_show_abc_xyz_page(filtered_df, api_key, data_context):
     st.title("🧮 Универсальный Конструктор матриц ABC/XYZ")
     if filtered_df.empty: return st.info("ℹ️ Выборка пуста. Загрузите файлы.")
     df, available_cols = filtered_df.copy(), list(filtered_df.columns)
@@ -66,26 +80,22 @@ def internal_show_abc_xyz_page(filtered_df, api_key):
             kv = (s / m) * 100 if m > 0 and np.count_nonzero(rows) > 1 else 999.0
             xyz_res.append({abc_target: name, 'KV': kv, 'Класс XYZ': 'X' if kv <= x_lim else ('Y' if kv <= x_lim + 15 else 'Z')})
         df_m = pd.merge(df_abc[[abc_target, abc_value, 'Class_ABC']], pd.DataFrame(xyz_res), on=abc_target)
-        pivot_m = df_m.pivot_table(index='Class_ABC', columns='Класс XYZ', values=abc_target, aggfunc='count', fill_value=0)
-        for l in ['A','B','C']: 
-            if l not in pivot_m.index: pivot_m.loc[l] = 0
-        for l in ['X','Y','Z']: 
-            if l not in pivot_m.columns: pivot_m[l] = 0
-        pivot_m = pivot_m.loc[['A','B','C'], ['X','Y','Z']]
+        pivot_m = df_m.pivot_table(index='Class_ABC', columns='Класс XYZ', values=abc_target, aggfunc='count', fill_value=0).loc[['A','B','C'], ['X','Y','Z']]
         mc1, mc2 = st.columns(2)
         with mc1: st.dataframe(pivot_m, use_container_width=True)
         with mc2: st.plotly_chart(px.imshow(pivot_m, text_auto=True, color_continuous_scale="Blues"), use_container_width=True)
+        
         if st.button("✍️ Сгенерировать ИИ-отчет по матрице ABC/XYZ", key="ai_report_abc_btn"):
-            ai_generate_text_report(pivot_m, report_type="ABC/XYZ", api_key=api_key)
+            ai_generate_text_report(pivot_m, report_type="ABC/XYZ", data_context=data_context, api_key=api_key)
+            
         st.dataframe(df_m.sort_values(by=abc_value, ascending=False), use_container_width=True)
     except Exception as e: st.error(f"Ошибка ABC: {e}")
-# ФУНКЦИЯ 4: МОДУЛЬ АДАПТИВНОЙ RFM СЕГМЕНТАЦИИ С КНОПКОЙ ИИ-ОТЧЕТА
-def internal_show_rfm_page(filtered_df, api_key):
+# 👥 МОДУЛЬ RFM С КНОПКОЙ ГИБКОГО ИИ-ОТЧЕТА И ГРАФИЧЕСКИЙ ДВИЖОК PLOTLY
+def internal_show_rfm_page(filtered_df, api_key, data_context):
     st.title("👥 Модуль RFM-сегментации номенклатуры")
     if filtered_df.empty: return st.info("ℹ️ Выборка пуста. Загрузите файлы.")
     df = filtered_df.copy()
-    t_ozm = 'ОЗМ' if 'ОЗМ' in df.columns else df.columns
-    t_sum = 'Сумма' if 'Сумма' in df.columns else df.select_dtypes(include=[np.number]).columns
+    t_ozm, t_sum = 'ОЗМ' if 'ОЗМ' in df.columns else df.columns, 'Сумма' if 'Сумма' in df.columns else df.select_dtypes(include=[np.number]).columns
     try:
         df[t_sum] = pd.to_numeric(df[t_sum], errors='coerce').fillna(0.0)
         rfm = df.groupby(str(t_ozm)).agg(F=(df.columns, 'count'), M=(t_sum, 'sum')).reset_index()
@@ -94,12 +104,13 @@ def internal_show_rfm_page(filtered_df, api_key):
         rfm['RFM'] = rfm['F_Score'] + rfm['M_Score']
         seg_counts = rfm.groupby('RFM').size().reset_index(name='Количество ОЗМ')
         st.plotly_chart(px.bar(seg_counts, x='RFM', y='Количество ОЗМ', text_auto=True, title="📊 Распределение RFM-сегментов номенклатуры", color='RFM', color_continuous_scale="Purples"), use_container_width=True)
+        
         if st.button("👥 Сгенерировать ИИ-отчет по матрице RFM", key="ai_report_rfm_btn"):
-            ai_generate_text_report(seg_counts, report_type="RFM-Сегментации", api_key=api_key)
+            ai_generate_text_report(seg_counts, report_type="RFM-Сегментации", data_context=data_context, api_key=api_key)
+            
         st.dataframe(rfm.sort_values(by='M', ascending=False), use_container_width=True)
     except Exception as rfe: st.error(f"Ошибка RFM: {rfe}")
 
-# ФУНКЦИЯ 5: КАСТОМИЗИРУЕМЫЙ ГРАФИЧЕСКИЙ ДВИЖОК PLOTLY С ШРИФТАМИ И ЦВЕТОМ
 def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_round, f_size, f_color, f_pos, horiz, rot, top_limit, i):
     try:
         df_c = active_df.copy()
@@ -120,7 +131,6 @@ def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_ro
             if "Donut" in style: fig.update_traces(insidetextfont=dict(size=f_size, color=f_color), outsidetextfont=dict(size=f_size, color=f_color))
         st.plotly_chart(fig, use_container_width=True, key=f"p_{i}")
     except: pass
-# ФУНКЦИЯ 6: СКОРОСТНОЙ ИМПОРТ И ПРЕДОБРАБОТКА ДАННЫХ RUST CALAMINE
 def power_query_clean_engine(uploaded_files_list, gemini_key):
     frames = {}
     for f in uploaded_files_list:
@@ -155,6 +165,15 @@ if "main_df" not in st.session_state: st.session_state.main_df = pd.DataFrame()
 
 st.sidebar.markdown("### 🤖 Интеллектуальный ИИ-Ассистент")
 gemini_api_key = st.sidebar.text_input("Введите Gemini API Key:", type="password")
+
+# МАТРИЦА АНАЛОГИЙ: СЕМАНТИЧЕСКИЙ ПЕРЕКЛЮЧАТЕЛЬ БИЗНЕС-КОНТЕКСТА В САЙДБАРЕ
+ai_context_mode = st.sidebar.selectbox("Тип данных (Контекст для AI):", [
+    "📅 Закупки (Планируемые) / Бизнес-планы материалов и услуг", 
+    "📦 Запасы (Складские остатки / ТМЦ без движения)", 
+    "📉 Расход (Реальное потребление / Выдача в производство)", 
+    "💰 Продажи / Сбыт (Коммерческий оборот и ритейл)"
+])
+
 uploaded_files = st.file_uploader("Загрузите файлы Excel/CSV:", type=["csv", "xlsx"], accept_multiple_files=True)
 if not uploaded_files: st.session_state.main_df = pd.DataFrame()
 
@@ -175,11 +194,12 @@ if uploaded_files:
         
         page = st.sidebar.radio("Перейти к разделу:", ["🗂️ 1. Загрузка и очистка данных", "📊 2. Executive Диаграммы", "🧮 3. ABC/XYZ-аналитика ОЗМ", "👥 4. RFM-сегментация"], label_visibility="collapsed")
         
-        if "1. Загрузка" in page:
-            st.success(f"📊 База сформирована! Строк: {len(main_df):,}")
-            cp = st.number_input(f"Страница (из {(len(main_df) // 50) + 1}):", min_value=1, max_value=(len(main_df) // 50) + 1, value=1, step=1)
-            st.dataframe(main_df.iloc[(cp - 1) * 50: cp * 50], height=350, use_container_width=True)
-        elif "2. Executive" in page:
+        def show_page_1(dataframe_input, columns_input):
+            st.success(f"📊 База сформирована! Строк: {len(dataframe_input):,}")
+            cp = st.number_input(f"Страница (из {(len(dataframe_input) // 50) + 1}):", min_value=1, value=1, step=1)
+            st.dataframe(dataframe_input.iloc[(cp - 1) * 50: cp * 50], height=350, use_container_width=True)
+            
+        def show_page_2(dataframe_input, columns_input):
             st.title("📊 Интерактивная BI-Панель Показателей")
             card_cols = st.columns(st.session_state.manual_cards)
             for j in range(st.session_state.manual_cards):
@@ -239,6 +259,12 @@ if uploaded_files:
             with b2:
                 if st.session_state.manual_charts > 1:
                     if st.button("🗑️ Удалить диаграмму"): st.session_state.manual_charts -= 1; st.rerun()
-        elif "3. ABC/XYZ" in page: internal_show_abc_xyz_page(act_df, gemini_api_key)
-        elif "4. RFM" in page: internal_show_rfm_page(act_df, gemini_api_key)
+
+        router = {
+            "🗂️ 1. Загрузка и очистка данных": lambda: show_page_1(main_df, all_cols),
+            "📊 2. Executive Диаграммы": lambda: show_page_2(act_df, all_cols),
+            "🧮 3. ABC/XYZ-аналитика ОЗМ": lambda: internal_show_abc_xyz_page(act_df, gemini_api_key, ai_context_mode),
+            "👥 4. RFM-сегментация": lambda: internal_show_rfm_page(act_df, gemini_api_key, ai_context_mode)
+        }
+        router[page]()
 else: st.info("Ожидание загрузки любых файлов Excel/CSV...")
