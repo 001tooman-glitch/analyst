@@ -8,38 +8,38 @@ import plotly.graph_objects as go
 from google import genai
 from google.genai import types
 
-# 🤖 МОДУЛЬ 1: ИИ-АВТОМАППИНГ ЗАГОЛОВКОВ (ЖЕСТКИЙ ПЕРЕВОД НА GEMINI-2.5-FLASH)
+# 🤖 МОДУЛЬ 1: ИИ-АВТОМАППИНГ ЗАГОЛОВКОВ (ФИКСАЦИЯ СИНТАКСИСА НОВОЙ БИБЛИОТЕКИ GOOGLE)
 def ai_column_mapper_engine(raw_columns_list, api_key):
     if not api_key: return {}
     try:
         client = genai.Client(api_key=api_key)
-        system_instruction = "Ты — BI-аналитик. Сопоставь заголовки закупщика с полями: 'ОЗМ', 'Наименование материала', 'Количество', 'Сумма'. Верни СТРОГО JSON-объект вида {\"Номенклатура\": \"ОЗМ\", \"Прайс\": \"Сумма\"}"
+        sys_instruction = "Ты — BI-аналитик. Сопоставь заголовки закупщика с полями: 'ОЗМ', 'Наименование материала', 'Количество', 'Сумма'. Верни СТРОГО JSON-объект вида {\"Номенклатура\": \"ОЗМ\", \"Прайс\": \"Сумма\"}"
         response = client.models.generate_content(
             model='gemini-2.5-flash',
-            contents=f"Выполни маппинг списка: {str(raw_columns_list)}",
-            config=types.GenerateContentConfig(system_instruction=system_instruction, response_mime_type="application/json", temperature=0.1),
+            contents=f"Выполни маппинг списка заголовков: {str(raw_columns_list)}",
+            config=types.GenerateContentConfig(system_instruction=sys_instruction, response_mime_type="application/json", temperature=0.1),
         )
         return json.loads(response.text)
     except: return {}
 
-# ✍️ МОДУЛЬ 2: ИНТЕЛЛЕКТУАЛЬНЫЙ АВТОРЕФЕРАТ И ГЕНЕРАЦИЯ ТЕКСТОВЫХ ОТЧЕТОВ ИИ (ОТЛАДКА НА GEMINI-2.5-FLASH)
+# ✍️ МОДУЛЬ 2: ИНТЕЛЛЕКТУАЛЬНЫЙ АВТОРЕФЕРАТ И ГЕНЕРАЦИЯ ТЕКСТОВЫХ ОТЧЕТОВ ИИ ДЛЯ ДИРЕКТОРА
 def ai_generate_text_report(pivot_matrix_df, report_type="ABC/XYZ", api_key=None):
     if not api_key: 
         st.warning("⚠️ Введите Gemini API Key в сайдбаре.")
         return
     try:
         client = genai.Client(api_key=api_key)
-        system_instruction = f"Ты — директор по снабжению. Напиши краткий, жесткий аналитический отчет для генерального директора по матрице плотности {report_type}. Структура: 1. Краткое резюме. 2. Критические риски и аномалии. 3. Пошаговые рекомендации (контракты, склады, оптимизация). Пиши емко, списком, используя сленг закупок."
+        sys_instruction = f"Ты — директор по снабжению. Напиши краткий, жесткий аналитический отчет для генерального директора по матрице плотности {report_type}. Структура: 1. Краткое резюме. 2. Критические риски и аномалии. 3. Пошаговые рекомендации. Пиши емко, списком, используя сленг закупок."
         with st.spinner("🔮 ИИ пишет отчет для руководства..."):
             response = client.models.generate_content(
                 model='gemini-2.5-flash',
                 contents=f"Проанализируй матрицу плотности:\n{pivot_matrix_df.to_string()}",
-                config=types.GenerateContentConfig(system_instruction=system_instruction, temperature=0.3),
+                config=types.GenerateContentConfig(system_instruction=sys_instruction, temperature=0.3),
             )
             st.markdown("---")
             st.markdown(f"### 📝 Аналитический ИИ-Отчет по матрице {report_type}")
             st.info(response.text)
-    except Exception as report_err: st.error(f"❌ Не удалось сгенерировать ИИ-отчет: {report_err}")
+    except Exception as report_err: st.error(f"❌ Ошибка ИИ-генератора отчетов: {report_err}")
 # 🧮 МОДУЛЬ 3: УНИВЕРСАЛЬНЫЙ КОНСТРУКТОР ABC/XYZ С КНОПКОЙ ИИ-ОТЧЕТА
 def internal_show_abc_xyz_page(filtered_df, api_key):
     st.title("🧮 Универсальный Конструктор матриц ABC/XYZ")
