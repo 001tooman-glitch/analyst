@@ -11,7 +11,6 @@ from pydantic import BaseModel, Field
 
 # Схема для гарантированного JSON-ответа от Gemini Developer API
 class ColumnMappingSchema(BaseModel):
-    # Явно запрещаем additionalProperties для совместимости с Developer API
     model_config = {"extra": "forbid"}
     
     mapping: dict[str, str] = Field(
@@ -26,7 +25,7 @@ def ai_column_mapper_engine(raw_columns_list, api_key):
         client = genai.Client(api_key=api_key)
         sys_instruction = (
             "Ты — BI-аналитик. Сопоставь заголовки закупщика с полями: "
-            "'ОЗМ', 'Наименование материала', 'Количество', 'Сумма'. "
+            "'ОЗМ', 'Наименование材料', 'Количество', 'Сумма'. "
             "Используй контекст и смысл слов (например, 'Sales', 'Revenue', 'Profit', 'Cost' "
             "должны мапиться в 'Сумма', а 'Units', 'Volume' — в 'Количество')."
         )
@@ -56,8 +55,8 @@ def ai_generate_text_report(pivot_matrix_df, report_type="ABC/XYZ", data_context
         
         context_mapping = {
             "Закупки": "Данные — это ПЛАНИРУЕМЫЕ ЗАКУПКИ / БИЗНЕС-ПЛАНЫ. Группа AZ — это стратегические контракты (риск срыва сроков проектов). Группа CZ — мелкая операционная текучка (риск бюрократии, недоосвоения бюджета).",
-            "Запасы": "Данные — это СУЩЕСТВУЮЩИЕ СКЛАДСКИЕ ЗАПАСЫ. Группа AZ — это жестко замороженный рабочий капитал предприятия (дорогие ТМЦ без движения). Группа CZ — складской хлам, неликвиды, забивающие полки.",
-            "Расход": "Данные — это РЕАЛЬНЫЙ ФАКТИЧЕСКИЙ РАСХОД / ПОТРЕБЛЕНИЕ. Группа AZ — это внеплановые, аварийные ремонты оборудования, сжигающие огромный budget. Группа CZ — административная нагрузка мелких заявок."
+            "Зазапасы": "Данные — это СУЩЕСТВУЮЩИЕ СКЛАДСКИЕ ЗАПАСЫ. Группа AZ — это жестко замороженный рабочий капитал предприятия (дорогие ТМЦ без движения). Группа CZ — складской хлам, неликвиды, забивающие полки.",
+            "Расход": "Данные — это РЕАЛЬНЫЙ ФАКТИЧЕСКИЙ РАСХОД / ПОТРЕБЛЕНИЕ. Группа AZ — это внеплановые, аварийные ремонты оборудования, сжигающие огромный бюджет. Группа CZ — административная нагрузка мелких заявок."
         }
         
         context_rules = next((v for k, v in context_mapping.items() if k in data_context), 
@@ -151,11 +150,11 @@ def internal_show_rfm_page(filtered_df, api_key, data_context):
     st.markdown("### 🎯 Настройка объекта сегментации")
     col_selectors = st.columns(2)
     
-    with col_selectors[0]:
+    with col_selectors:
         rfm_target = st.selectbox("Выберите анализируемое поле:", [c for c in available_cols if c not in ['Сумма', 'Количество']], key="rfm_target_select")
     
-    with col_selectors[1]:
-        detected_sum_col = 'Сумма' if 'Сумма' in available_cols else (available_cols[0] if available_cols else None)
+    with col_selectors:
+        detected_sum_col = 'Сумма' if 'Сумма' in available_cols else (available_cols if available_cols else None)
         rfm_value_col = st.selectbox("Выберите поле стоимости/суммы:", available_cols, index=available_cols.index(detected_sum_col) if detected_sum_col in available_cols else 0, key="rfm_value_select")
     
     try:
@@ -293,7 +292,12 @@ if uploaded_files:
                     t_col = st.selectbox(f"Поле:", columns_input, key=f"c_t_{j}")
                     c_mode = st.selectbox(f"Агрегация:", ["Сумма", "Среднее"], key=f"c_m_{j}")
                     with st.expander("🎨 Настройки"):
-                        c_fmt = st.selectbox("Формат:", ["Числовой", "Финансовый (₸)", "Сжатый (млн/млрд)"], key=f"c_f_{j}")
+                        c_fmt = st.selectbox("Формат:", ["Числовой", "Финансовый", "Сжатый (млн/млрд)"], key=f"c_f_{j}")
+                        
+                        # ДИНАМИЧЕСКИЙ ВЫБОР ВАЛЮТЫ ДЛЯ КАРТОЧКИ
+                        c_curr = st.selectbox("Валюта:", ["₸ (Тенге)", "₽ (Рубль)", "$ (Доллар)", "€ (Евро)", "Без валюты"], key=f"c_cur_{j}")
+                        curr_sym = "" if c_curr == "Без валюты" else " " + c_curr.split(" ")[0]
+                        
                         c_rnd = st.slider("Округление:", 0, 4, 2, key=f"c_r_{j}")
                         c_sz = st.slider("Шрифт (px):", 16, 48, 28, key=f"c_s_{j}")
                     if t_col != "-- Выберите заголовок --":
@@ -301,11 +305,18 @@ if uploaded_files:
                             df_c = act_df.copy()
                             df_c[t_col] = pd.to_numeric(df_c[t_col], errors='coerce').fillna(0)
                             cv = df_c[t_col].sum() if "Сумма" in c_mode else df_c[t_col].mean()
-                            if c_fmt == "Финансовый (₸)": lbl = f"{round(cv, c_rnd):,}".replace(",", " ") + " ₸"
+                            
+                            # ОПРЕДЕЛЕНИЕ ФОРМАТА ВЫВОДА С ВЫБРАННОЙ ВАЛЮТОЙ
+                            if c_fmt == "Финансовый": 
+                                lbl = f"{round(cv, c_rnd):,}".replace(",", " ") + curr_sym
                             elif c_fmt == "Сжатый (млн/млрд)":
-                                if abs(cv) >= 1_000_000_000: lbl = f"{cv / 1_000_000_000:,.2f} млрд ₸"
-                                else: lbl = f"{cv / 1_000_000:,.2f} млн ₸"
-                            else: lbl = f"{round(cv, c_rnd):,}".replace(",", " ")
+                                if abs(cv) >= 1_000_000_000: 
+                                    lbl = f"{cv / 1_000_000_000:,.2f} млрд{curr_sym}"
+                                else: 
+                                    lbl = f"{cv / 1_000_000:,.2f} млн{curr_sym}"
+                            else: 
+                                lbl = f"{round(cv, c_rnd):,}".replace(",", " ")
+                                
                             st.markdown(f'<div style="background-color:#f8f9fa; border:1px solid #dee2e6; border-radius:10px; padding:20px; text-align:center; margin-bottom:15px;"><div style="color:#6c757d; font-size:14px;">{t_col}</div><div style="color:#1f77b4; font-size:{c_sz}px; font-weight:bold;">{lbl}</div></div>', unsafe_allow_html=True)
                         except: pass
             cc1, cc2 = st.columns(2)
@@ -323,7 +334,7 @@ if uploaded_files:
                     cu1, cu2, cu3 = st.columns(3)
                     with cu1:
                         lbl_g = st.checkbox("Показывать значения", value=True, key=f"lbl_{i}")
-                        f_format = st.selectbox("Формат:", ["Числовой", "Финансовый (₸)"], key=f"fmt_{i}")
+                        f_format = st.selectbox("Формат:", ["Числовой", "Финансовый"], key=f"fmt_{i}")
                         f_round = st.slider("Округление:", 0, 4, 0, key=f"rnd_{i}")
                     with cu2:
                         f_size = st.slider("Шрифт (px):", 8, 24, 12, key=f"sz_{i}")
