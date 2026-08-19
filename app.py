@@ -184,27 +184,26 @@ def internal_show_rfm_page(filtered_df, api_key, data_context):
         st.dataframe(rfm.sort_values(by='M', ascending=False), use_container_width=True)
     except Exception as rfe: 
         st.error(f"❌ Ошибка расчета RFM: {rfe}")
-# 📊 ФУНКЦИЯ 5: ГРАФИЧЕСКИЙ ДВИЖОК PLOTLY С УМНОЙ ОБРАБОТКОЙ ВРЕМЕНИ
-def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_round, f_size, f_color, f_pos, horiz, rot, top_limit, i, date_format_type="Исходный"):
+# 📊 ФУНКЦИЯ 5: ГРАФИЧЕСКИЙ ДВИЖОК PLOTLY С УМНОЙ ОБРАБОТКОЙ ВРЕМЕНИ И СВОБОДНЫМ ТЕКСТОМ ВАЛЮТЫ
+def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_round, f_size, f_color, f_pos, horiz, rot, top_limit, i, date_format_type="Исходный", custom_currency=""):
     try:
         df_c = active_df.copy()
         df_c[y_ax] = pd.to_numeric(df_c[y_ax], errors='coerce').fillna(0)
         
-        # 🗓️ ПРОВЕРКА: ЯВЛЯЕТСЯ ЛИ ОСЬ X ДАТОЙ
+        # ⚡ МОДИФИЦИРОВАНО: Префикс валюты берется напрямую из текстового поля ввода
+        clean_currency = str(custom_currency).strip()
+        curr_suffix = f" {clean_currency}" if clean_currency else ""
+        
+        # Проверка временной шкалы по оси X
         converted_dates = pd.to_datetime(df_c[x_ax], errors='coerce')
         is_date_axis = converted_dates.notna().sum() > (0.5 * len(df_c))
         
         if is_date_axis:
             df_c['_datetime_clean_'] = converted_dates
-            # Удаляем строки, где дата не распарсилась
             df_c = df_c.dropna(subset=['_datetime_clean_'])
-            
-            # Агрегируем по чистой временной метке
             df_g = df_c.groupby('_datetime_clean_', as_index=False)[y_ax].sum()
-            # СТРОГАЯ ХРОНОЛОГИЧЕСКАЯ СОРТИРОВКА (По возрастанию дат)
             df_g = df_g.sort_values(by='_datetime_clean_', ascending=True).head(top_limit)
             
-            # ЭКСЕЛЬ-ФОРМАТИРОВАНИЕ ДАТ ДЛЯ ОТОБРАЖЕНИЯ НА ОСИ Х
             format_mapping = {
                 "ММ.ГГГГ (01.2014)": "%m.%Y",
                 "Месяц ГГГГ (Янв 2014)": "%b %Y",
@@ -212,18 +211,28 @@ def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_ro
                 "ГГГГ (2014)": "%Y"
             }
             chosen_pattern = format_mapping.get(date_format_type, None)
-            
             if chosen_pattern:
                 df_g[x_ax] = df_g['_datetime_clean_'].dt.strftime(chosen_pattern)
             else:
                 df_g[x_ax] = df_g['_datetime_clean_'].astype(str)
         else:
-            # Стандартная бизнес-логика для обычных текстовых категорий (Топ по объемам)
             df_g = df_c.groupby(x_ax, as_index=False)[y_ax].sum().sort_values(by=y_ax, ascending=False).head(top_limit)
             if horiz: 
                 df_g = df_g.sort_values(by=y_ax, ascending=True)
 
-        txt = [f"{round(v, f_round):,}".replace(",", " ") + (" ₸" if "Финанс" in f_format else "") for v in df_g[y_ax]]
+        txt = []
+        for v in df_g[y_ax]:
+            if f_format == "Финансовый":
+                formatted_val = f"{round(v, f_round):,}".replace(",", " ") + curr_suffix
+            elif f_format == "Сжатый (млн/млрд)":
+                if abs(v) >= 1_000_000_000:
+                    formatted_val = f"{v / 1_000_000_000:,.2f} млрд{curr_suffix}"
+                else:
+                    formatted_val = f"{v / 1_000_000:,.2f} млн{curr_suffix}"
+            else:  # Обычный числовой
+                formatted_val = f"{round(v, f_round):,}".replace(",", " ")
+            txt.append(formatted_val)
+
         safe_pos = f_pos if ("Donut" not in style or f_pos in ["inside", "outside", "auto"]) else "auto"
         if "Line" in style: safe_pos = "top center"
         
@@ -253,7 +262,6 @@ def power_query_clean_engine(uploaded_files_list, gemini_key):
         try:
             df = pd.read_csv(f, dtype=str) if f.name.endswith('.csv') else pd.read_excel(f, dtype=str, engine='calamine')
             raw_cols = [str(c).strip() for c in df.columns]
-            
             ai_map = ai_column_mapper_engine(raw_cols, gemini_key)
             mapped = []
             for col in raw_cols:
@@ -344,8 +352,11 @@ if uploaded_files:
                     
                     with st.expander("🎨 Настройки отображения"):
                         c_fmt = st.selectbox("Формат:", ["Числовой", "Финансовый", "Сжатый (млн/млрд)"], key=f"c_f_{j}")
-                        c_curr = st.selectbox("Валюта:", ["₸ (Тенге)", "₽ (Рубль)", "$ (Доллар)", "€ (Евро)", "Без валюты"], key=f"c_cur_{j}")
-                        curr_sym = "" if c_curr == "Без валюты" else " " + c_curr.split(" ")[0]
+                        
+                        # ⚡ МОДИФИЦИРОВАНО: Свободный текстовый ввод валюты/единиц измерения для карточки
+                        c_curr_text = st.text_input("Валюта/Ед. изм. (вручную):", value="₸", key=f"c_cur_tx_{j}", help="Оставьте пустым, чтобы скрыть обозначение")
+                        curr_sym = f" {c_curr_text.strip()}" if c_curr_text.strip() else ""
+                        
                         c_rnd = st.slider("Округление:", 0, 4, 2, key=f"c_r_{j}")
                         c_sz = st.slider("Шрифт (px):", 16, 48, 26, key=f"c_s_{j}")
                     
@@ -381,22 +392,23 @@ if uploaded_files:
                     cu1, cu2, cu3 = st.columns(3)
                     with cu1:
                         lbl_g = st.checkbox("Показывать значения", value=True, key=f"lbl_{i}")
-                        f_format = st.selectbox("Формат:", ["Числовой", "Финансовый"], key=f"fmt_{i}")
+                        f_format = st.selectbox("Формат надписей:", ["Числовой", "Финансовый", "Сжатый (млн/млрд)"], key=f"fmt_{i}")
                         f_round = st.slider("Округление:", 0, 4, 0, key=f"rnd_{i}")
                     with cu2:
                         f_size = st.slider("Шрифт (px):", 8, 24, 12, key=f"sz_{i}")
                         f_color = st.color_picker("Цвет:", "#000000", key=f"fcol_{i}")
+                        
+                        # ⚡ МОДИФИЦИРОВАНО: Свободный текстовый ввод валюты/единиц измерения для меток графика
+                        f_curr_text = st.text_input("Валюта/Ед. изм. графика:", value="$", key=f"fcur_tx_{i}")
                     with cu3:
                         f_pos = st.selectbox("Положение:", ["auto", "inside", "outside"], key=f"pos_{i}")
                         horiz = st.checkbox("Горизонтально", value=False, key=f"h_{i}") if "Bar" in style else False
                         rot = st.slider("🔄 Поворот:", 0, 360, 0, step=15, key=f"rot_{i}") if "Donut" in style else 0
                         top_limit = st.slider("🔝 ТОП позиций:", 5, 200, 15, key=f"top_{i}")
-                        
-                        # 📈 ДОБАВЛЕН ВЫБОР ЭКСЕЛЬ-ФОРМАТА ДАТЫ ДЛЯ ОСИ Х
                         d_fmt = st.selectbox("Формат даты (Excel):", ["Исходный", "ММ.ГГГГ (01.2014)", "Месяц ГГГГ (Янв 2014)", "ДД.ММ.ГГГГ (15.01.2014)", "ГГГГ (2014)"], key=f"dfmt_{i}")
                         
                 if x_ax != "-- Выберите заголовок --" and y_ax != "-- Выберите заголовок --":
-                    render_custom_chart(act_df, x_ax, y_ax, style, color, lbl_g, f_format, f_round, f_size, f_color, f_pos, horiz, rot, top_limit, i, date_format_type=d_fmt)
+                    render_custom_chart(act_df, x_ax, y_ax, style, color, lbl_g, f_format, f_round, f_size, f_color, f_pos, horiz, rot, top_limit, i, date_format_type=d_fmt, custom_currency=f_curr_text)
                 st.markdown("<hr style='border:1px dashed #ddd'>", unsafe_allow_html=True)
             b1, b2 = st.columns(2)
             with b1: st.button("➕ Добавить диаграмму", on_click=add_chart_cb)
@@ -406,7 +418,7 @@ if uploaded_files:
             "🗂️ 1. Загрузка и очистка данных": lambda: show_page_1(main_df, all_cols),
             "📊 2. Executive Диаграммы": lambda: show_page_2(act_df, all_cols),
             "🧮 3. ABC/XYZ-аналитика ОЗМ": lambda: internal_show_abc_xyz_page(act_df, gemini_api_key, ai_context_mode),
-            "👥 4. RFM-сегментация": lambda: internal_show_rfm_page(act_df, gemini_api_key, api_context_mode)
+            "👥 4. RFM-сегментация": lambda: internal_show_rfm_page(act_df, gemini_api_key, ai_context_mode)
         }
         router_pages[page]()
 else:
