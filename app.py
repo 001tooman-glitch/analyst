@@ -184,30 +184,69 @@ def internal_show_rfm_page(filtered_df, api_key, data_context):
         st.dataframe(rfm.sort_values(by='M', ascending=False), use_container_width=True)
     except Exception as rfe: 
         st.error(f"❌ Ошибка расчета RFM: {rfe}")
-# 📊 ФУНКЦИЯ 5: ГРАФИЧЕСКИЙ ДВИЖОК PLOTLY
-def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_round, f_size, f_color, f_pos, horiz, rot, top_limit, i):
+# 📊 ФУНКЦИЯ 5: ГРАФИЧЕСКИЙ ДВИЖОК PLOTLY С УМНОЙ ОБРАБОТКОЙ ВРЕМЕНИ
+def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_round, f_size, f_color, f_pos, horiz, rot, top_limit, i, date_format_type="Исходный"):
     try:
         df_c = active_df.copy()
         df_c[y_ax] = pd.to_numeric(df_c[y_ax], errors='coerce').fillna(0)
-        df_g = df_c.groupby(x_ax, as_index=False)[y_ax].sum().sort_values(by=y_ax, ascending=False).head(top_limit)
-        if horiz: df_g = df_g.sort_values(by=y_ax, ascending=True)
+        
+        # 🗓️ ПРОВЕРКА: ЯВЛЯЕТСЯ ЛИ ОСЬ X ДАТОЙ
+        converted_dates = pd.to_datetime(df_c[x_ax], errors='coerce')
+        is_date_axis = converted_dates.notna().sum() > (0.5 * len(df_c))
+        
+        if is_date_axis:
+            df_c['_datetime_clean_'] = converted_dates
+            # Удаляем строки, где дата не распарсилась
+            df_c = df_c.dropna(subset=['_datetime_clean_'])
+            
+            # Агрегируем по чистой временной метке
+            df_g = df_c.groupby('_datetime_clean_', as_index=False)[y_ax].sum()
+            # СТРОГАЯ ХРОНОЛОГИЧЕСКАЯ СОРТИРОВКА (По возрастанию дат)
+            df_g = df_g.sort_values(by='_datetime_clean_', ascending=True).head(top_limit)
+            
+            # ЭКСЕЛЬ-ФОРМАТИРОВАНИЕ ДАТ ДЛЯ ОТОБРАЖЕНИЯ НА ОСИ Х
+            format_mapping = {
+                "ММ.ГГГГ (01.2014)": "%m.%Y",
+                "Месяц ГГГГ (Янв 2014)": "%b %Y",
+                "ДД.ММ.ГГГГ (15.01.2014)": "%d.%m.%Y",
+                "ГГГГ (2014)": "%Y"
+            }
+            chosen_pattern = format_mapping.get(date_format_type, None)
+            
+            if chosen_pattern:
+                df_g[x_ax] = df_g['_datetime_clean_'].dt.strftime(chosen_pattern)
+            else:
+                df_g[x_ax] = df_g['_datetime_clean_'].astype(str)
+        else:
+            # Стандартная бизнес-логика для обычных текстовых категорий (Топ по объемам)
+            df_g = df_c.groupby(x_ax, as_index=False)[y_ax].sum().sort_values(by=y_ax, ascending=False).head(top_limit)
+            if horiz: 
+                df_g = df_g.sort_values(by=y_ax, ascending=True)
+
         txt = [f"{round(v, f_round):,}".replace(",", " ") + (" ₸" if "Финанс" in f_format else "") for v in df_g[y_ax]]
         safe_pos = f_pos if ("Donut" not in style or f_pos in ["inside", "outside", "auto"]) else "auto"
         if "Line" in style: safe_pos = "top center"
+        
         fig = go.Figure()
-        if "Waterfall" in style: fig.add_trace(go.Waterfall(x=list(df_g[x_ax].astype(str)) + ["ИТОГО"], y=list(df_g[y_ax]) + [df_g[y_ax].sum()], text=txt + [f"{df_g[y_ax].sum():,}"], textposition=safe_pos, measure=["relative"] * len(df_g[y_ax]) + ["total"], increasing={"marker": {"color": color}}))
-        elif "Donut" in style: fig.add_trace(go.Pie(labels=df_g[x_ax], values=df_g[y_ax], hole=0.4, rotation=rot, textinfo="label+value" if lbl else "none", textposition=safe_pos, texttemplate="%{label}<br>%{text}" if lbl else None, text=txt))
-        elif "Line" in style: fig.add_trace(go.Scatter(x=df_g[x_ax], y=df_g[y_ax], mode="lines+markers+text" if lbl else "lines+markers", text=txt, textposition=safe_pos, line=dict(color=color, width=4), marker=dict(size=8)))
-        else: fig.add_trace(go.Bar(y=df_g[x_ax] if horiz else df_g[y_ax], x=df_g[y_ax] if horiz else df_g[x_ax], text=txt if lbl else None, textposition=safe_pos, orientation="h" if horiz else "v", marker_color=color))
+        if "Waterfall" in style: 
+            fig.add_trace(go.Waterfall(x=list(df_g[x_ax].astype(str)) + ["ИТОГО"], y=list(df_g[y_ax]) + [df_g[y_ax].sum()], text=txt + [f"{df_g[y_ax].sum():,}"], textposition=safe_pos, measure=["relative"] * len(df_g[y_ax]) + ["total"], increasing={"marker": {"color": color}}))
+        elif "Donut" in style: 
+            fig.add_trace(go.Pie(labels=df_g[x_ax], values=df_g[y_ax], hole=0.4, rotation=rot, textinfo="label+value" if lbl else "none", textposition=safe_pos, texttemplate="%{label}<br>%{text}" if lbl else None, text=txt))
+        elif "Line" in style: 
+            fig.add_trace(go.Scatter(x=df_g[x_ax], y=df_g[y_ax], mode="lines+markers+text" if lbl else "lines+markers", text=txt, textposition=safe_pos, line=dict(color=color, width=4), marker=dict(size=8)))
+        else: 
+            fig.add_trace(go.Bar(y=df_g[x_ax] if horiz else df_g[y_ax], x=df_g[y_ax] if horiz else df_g[x_ax], text=txt if lbl else None, textposition=safe_pos, orientation="h" if horiz else "v", marker_color=color))
+            
         fig.update_layout(xaxis=dict(type='category', tickangle=45 if not horiz else 0))
         if lbl:
             fig.update_traces(textfont=dict(size=f_size, color=f_color))
-            if "Donut" in style: fig.update_traces(insidetextfont=dict(size=f_size, color=f_color), outsidetextfont=dict(size=f_size, color=f_color))
+            if "Donut" in style: 
+                fig.update_traces(insidetextfont=dict(size=f_size, color=f_color), outsidetextfont=dict(size=f_size, color=f_color))
         st.plotly_chart(fig, use_container_width=True, key=f"p_{i}")
     except Exception as chart_err:
         st.error(f"Ошибка графика №{i+1}: {chart_err}")
 
-# 🛠️ ДВИЖОК ОЧИСТКИ И СБОРКИ ДАННЫХ
+# ДВИЖОК ОЧИСТКИ И СБОРКИ ДАННЫХ
 def power_query_clean_engine(uploaded_files_list, gemini_key):
     frames = {}
     for f in uploaded_files_list:
@@ -268,7 +307,6 @@ if uploaded_files:
             if not calc_df.empty: st.session_state.main_df = calc_df
             
     main_df = st.session_state.main_df
-    
     if not main_df.empty:
         if st.sidebar.button("♻️ Сбросить/Очистить базу данных"):
             st.session_state.main_df = pd.DataFrame()
@@ -292,7 +330,6 @@ if uploaded_files:
         def show_page_2(dataframe_input, columns_input):
             st.title("📊 Интерактивная BI-Панель Показателей")
             card_cols = st.columns(st.session_state.manual_cards)
-            
             for j in range(st.session_state.manual_cards):
                 with card_cols[j % len(card_cols)]:
                     st.markdown(f"**📌 Карточка № {j+1}**")
@@ -300,7 +337,6 @@ if uploaded_files:
                     c_mode = st.selectbox(f"Агрегация:", ["Сумма", "Среднее"], key=f"c_m_{j}")
                     st.markdown("---")
                     group_col = st.selectbox(f"Группировать по полю:", ["-- Без фильтра --"] + columns_input, key=f"c_g_{j}")
-                    
                     filter_value = None
                     if group_col != "-- Без фильтра --":
                         unique_vals = list(act_df[group_col].astype(str).unique())
@@ -309,10 +345,7 @@ if uploaded_files:
                     with st.expander("🎨 Настройки отображения"):
                         c_fmt = st.selectbox("Формат:", ["Числовой", "Финансовый", "Сжатый (млн/млрд)"], key=f"c_f_{j}")
                         c_curr = st.selectbox("Валюта:", ["₸ (Тенге)", "₽ (Рубль)", "$ (Доллар)", "€ (Евро)", "Без валюты"], key=f"c_cur_{j}")
-                        
-                        # ИСПРАВЛЕНО: Добавлен индекс [0] для корректного извлечения символа из split()
                         curr_sym = "" if c_curr == "Без валюты" else " " + c_curr.split(" ")[0]
-                        
                         c_rnd = st.slider("Округление:", 0, 4, 2, key=f"c_r_{j}")
                         c_sz = st.slider("Шрифт (px):", 16, 48, 26, key=f"c_s_{j}")
                     
@@ -321,24 +354,15 @@ if uploaded_files:
                             df_card = act_df.copy()
                             if group_col != "-- Без фильтра --" and filter_value is not None:
                                 df_card = df_card[df_card[group_col].astype(str) == str(filter_value)]
-                            
                             df_card[t_col] = pd.to_numeric(df_card[t_col], errors='coerce').fillna(0)
                             cv = df_card[t_col].sum() if "Сумма" in c_mode else df_card[t_col].mean()
-                            
-                            if c_fmt == "Финансовый": 
-                                lbl = f"{round(cv, c_rnd):,}".replace(",", " ") + curr_sym
+                            if c_fmt == "Финансовый": lbl = f"{round(cv, c_rnd):,}".replace(",", " ") + curr_sym
                             elif c_fmt == "Сжатый (млн/млрд)":
-                                if abs(cv) >= 1_000_000_000: 
-                                    lbl = f"{cv / 1_000_000_000:,.2f} млрд{curr_sym}"
-                                else: 
-                                    lbl = f"{cv / 1_000_000:,.2f} млн{curr_sym}"
-                            else: 
-                                lbl = f"{round(cv, c_rnd):,}".replace(",", " ")
-                            
+                                if abs(cv) >= 1_000_000_000: lbl = f"{cv / 1_000_000_000:,.2f} млрд{curr_sym}"
+                                else: lbl = f"{cv / 1_000_000:,.2f} млн{curr_sym}"
+                            else: lbl = f"{round(cv, c_rnd):,}".replace(",", " ")
                             card_title = f"{t_col}"
-                            if group_col != "-- Без фильтра --":
-                                card_title += f" ({filter_value})"
-                                
+                            if group_col != "-- Без фильтра --": card_title += f" ({filter_value})"
                             st.markdown(f'<div style="background-color:#f8f9fa; border:1px solid #dee2e6; border-radius:10px; padding:20px; text-align:center; margin-bottom:15px;"><div style="color:#6c757d; font-size:13px; font-weight:bold; height:40px; display:flex; align-items:center; justify-content:center;">{card_title}</div><div style="color:#1f77b4; font-size:{c_sz}px; font-weight:bold;">{lbl}</div></div>', unsafe_allow_html=True)
                         except: pass
                             
@@ -353,7 +377,7 @@ if uploaded_files:
                 with c2: x_ax = st.selectbox(f"Ось X №{i+1}:", columns_input, key=f"x_{i}")
                 with c3: y_ax = st.selectbox(f"Ось Y №{i+1}:", columns_input, key=f"y_{i}")
                 with c4: color = st.color_picker(f"Цвет №{i+1}:", "#1f77b4", key=f"col_{i}")
-                with st.expander("🎨 Настройки надписей"):
+                with st.expander("🎨 Настройки надписей и Временной оси"):
                     cu1, cu2, cu3 = st.columns(3)
                     with cu1:
                         lbl_g = st.checkbox("Показывать значения", value=True, key=f"lbl_{i}")
@@ -367,10 +391,13 @@ if uploaded_files:
                         horiz = st.checkbox("Горизонтально", value=False, key=f"h_{i}") if "Bar" in style else False
                         rot = st.slider("🔄 Поворот:", 0, 360, 0, step=15, key=f"rot_{i}") if "Donut" in style else 0
                         top_limit = st.slider("🔝 ТОП позиций:", 5, 200, 15, key=f"top_{i}")
+                        
+                        # 📈 ДОБАВЛЕН ВЫБОР ЭКСЕЛЬ-ФОРМАТА ДАТЫ ДЛЯ ОСИ Х
+                        d_fmt = st.selectbox("Формат даты (Excel):", ["Исходный", "ММ.ГГГГ (01.2014)", "Месяц ГГГГ (Янв 2014)", "ДД.ММ.ГГГГ (15.01.2014)", "ГГГГ (2014)"], key=f"dfmt_{i}")
+                        
                 if x_ax != "-- Выберите заголовок --" and y_ax != "-- Выберите заголовок --":
-                    render_custom_chart(act_df, x_ax, y_ax, style, color, lbl_g, f_format, f_round, f_size, f_color, f_pos, horiz, rot, top_limit, i)
+                    render_custom_chart(act_df, x_ax, y_ax, style, color, lbl_g, f_format, f_round, f_size, f_color, f_pos, horiz, rot, top_limit, i, date_format_type=d_fmt)
                 st.markdown("<hr style='border:1px dashed #ddd'>", unsafe_allow_html=True)
-            
             b1, b2 = st.columns(2)
             with b1: st.button("➕ Добавить диаграмму", on_click=add_chart_cb)
             with b2: st.button("🗑️ Удалить диаграмму", on_click=remove_chart_cb)
@@ -379,7 +406,7 @@ if uploaded_files:
             "🗂️ 1. Загрузка и очистка данных": lambda: show_page_1(main_df, all_cols),
             "📊 2. Executive Диаграммы": lambda: show_page_2(act_df, all_cols),
             "🧮 3. ABC/XYZ-аналитика ОЗМ": lambda: internal_show_abc_xyz_page(act_df, gemini_api_key, ai_context_mode),
-            "👥 4. RFM-сегментация": lambda: internal_show_rfm_page(act_df, gemini_api_key, ai_context_mode)
+            "👥 4. RFM-сегментация": lambda: internal_show_rfm_page(act_df, gemini_api_key, api_context_mode)
         }
         router_pages[page]()
 else:
