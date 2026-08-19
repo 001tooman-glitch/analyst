@@ -62,12 +62,18 @@ def ai_generate_text_report(pivot_matrix_df, report_type="ABC/XYZ", data_context
         context_rules = next((v for k, v in context_mapping.items() if k in data_context), 
                              "Данные — это КОММЕРЧЕСКИЕ ПРОДАЖИ / СБЫТ / РИТЕЙЛ. Группа AZ — это товары-локомотивы, генерирующие 80% выручки (риск упущенной прибыли). Группа CZ — длинный хвост ассортимента с низким чеком.")
 
+        # ИСПРАВЛЕНО: Изменены правила генерации. ИИ жестко запрещено писать обращения и вводные метаданные.
         system_instruction = f"""
         Ты — директор по логистике и снабжению комбината. Напиши аналитический отчет для генерального директора по матрице {report_type}.
         БИЗНЕС-КОНТЕКСТ ДАННЫХ: {context_rules}
-        Структура отчета: 1. Анализ текущего процесса ({data_context}). 2. Выявление скрытых аномалий и рисков (оцени группы AZ и CZ). 3. Рекомендации. Пиши емко, списками Markdown. Используй деловой сленг.
+        
+        СТРОГИЕ ПРАВИЛА ОФОРМЛЕНИЯ:
+        - НАЧИНАЙ ОТЧЕТ СРАЗУ с содержательного анализа (Раздел "1. Анализ текущего процесса").
+        - КАТЕГОРИЧЕСКИ ЗАПРЕЩЕНО писать метаданные документа: "Генеральному директору", "От:", "Дата:", "Тема:", приветствия или вводные подписи.
+        
+        Структура отчета: 1. Анализ текущего процесса ({data_context}). 2. Выявление скрытых аномалий и рисков (оцени группы AZ и CZ). 3. Рекомендации. Пиши емко, списками Markdown. Используй деловой снабженческий сленг.
         """
-        with st.spinner(f"🔮 ИИ генерирует отчет для контекста '{data_context}'..."):
+        with st.spinner(f"🔮 ИИ генерирует чистый отчет для контекста '{data_context}'..."):
             response = client.models.generate_content(
                 model='gemini-3.5-flash', 
                 contents=f"Матрица плотности ({data_context}):\n{pivot_matrix_df.to_string()}", 
@@ -250,7 +256,7 @@ gemini_api_key = st.sidebar.text_input("Введите Gemini API Key:", type="p
 ai_context_mode = st.sidebar.selectbox("Тип данных (Контекст для AI):", [
     "📅 Закупки (Планируемые) / Бизнес-планы материалов и услуг", 
     "📦 Запасы (Складские остатки / ТМЦ без движения)", 
-    "📉 Расход (Реальное потребление / Выдача в производство)", 
+    "📉 Расход (Реальное потребление / Выдача in производство)", 
     "💰 Продажи / Сбыт (Коммерческий оборот и ритейл)"
 ])
 
@@ -311,6 +317,7 @@ if uploaded_files:
                     if t_col != "-- Выберите заголовок --":
                         try:
                             df_card = act_df.copy()
+                            
                             if group_col != "-- Без фильтра --" and filter_value is not None:
                                 df_card = df_card[df_card[group_col].astype(str) == str(filter_value)]
                             
@@ -362,17 +369,15 @@ if uploaded_files:
                 if x_ax != "-- Выберите заголовок --" and y_ax != "-- Выберите заголовок --":
                     render_custom_chart(act_df, x_ax, y_ax, style, color, lbl_g, f_format, f_round, f_size, f_color, f_pos, horiz, rot, top_limit, i)
                 st.markdown("<hr style='border:1px dashed #ddd'>", unsafe_allow_html=True)
-            
             b1, b2 = st.columns(2)
             with b1: st.button("➕ Добавить диаграмму", on_click=add_chart_cb)
-            # ИСПРАВЛЕНО: Теперь кнопка удаления графиков корректно вызывает remove_chart_cb
             with b2: st.button("🗑️ Удалить диаграмму", on_click=remove_chart_cb)
 
         router_pages = {
             "🗂️ 1. Загрузка и очистка данных": lambda: show_page_1(main_df, all_cols),
             "📊 2. Executive Диаграммы": lambda: show_page_2(act_df, all_cols),
-            "🧮 3. ABC/XYZ-аналитика ОЗМ": lambda: internal_show_abc_xyz_page(act_df, gemini_api_key, ai_context_mode),
-            "👥 4. RFM-сегментация": lambda: internal_show_rfm_page(act_df, gemini_api_key, ai_context_mode)
+            "🧮 3. ABC/XYZ-аналитика ОЗМ": lambda: internal_show_abc_xyz_page(act_df, gemini_api_key, api_context_mode),
+            "👥 4. RFM-сегментация": lambda: internal_show_rfm_page(act_df, gemini_api_key, api_context_mode)
         }
         router_pages[page]()
 else:
