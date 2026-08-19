@@ -309,7 +309,10 @@ if uploaded_files:
                     with st.expander("🎨 Настройки отображения"):
                         c_fmt = st.selectbox("Формат:", ["Числовой", "Финансовый", "Сжатый (млн/млрд)"], key=f"c_f_{j}")
                         c_curr = st.selectbox("Валюта:", ["₸ (Тенге)", "₽ (Рубль)", "$ (Доллар)", "€ (Евро)", "Без валюты"], key=f"c_cur_{j}")
-                        curr_sym = "" if c_curr == "Без валюты" else " " + c_curr.split(" ")
+                        
+                        # ИСПРАВЛЕНО: Добавлен индекс [0] для корректного извлечения символа из split()
+                        curr_sym = "" if c_curr == "Без валюты" else " " + c_curr.split(" ")[0]
+                        
                         c_rnd = st.slider("Округление:", 0, 4, 2, key=f"c_r_{j}")
                         c_sz = st.slider("Шрифт (px):", 16, 48, 26, key=f"c_s_{j}")
                     
@@ -372,7 +375,6 @@ if uploaded_files:
             with b1: st.button("➕ Добавить диаграмму", on_click=add_chart_cb)
             with b2: st.button("🗑️ Удалить диаграмму", on_click=remove_chart_cb)
 
-        # ИСПРАВЛЕНО: Теперь во все аналитические функции безопасно передается act_df вместо неопределенных переменных
         router_pages = {
             "🗂️ 1. Загрузка и очистка данных": lambda: show_page_1(main_df, all_cols),
             "📊 2. Executive Диаграммы": lambda: show_page_2(act_df, all_cols),
