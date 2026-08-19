@@ -27,34 +27,28 @@ def ai_generate_text_report(pivot_matrix_df, report_type="ABC/XYZ", data_context
     if not api_key: return st.warning("⚠️ Введите API Key Gemini в сайдбаре.")
     try:
         client = genai.Client(api_key=api_key)
-        
-        # Динамическая подмена ТЗ для нейросети на основе глобального селектора
         context_rules = ""
         if "Закупки" in data_context:
-            context_rules = "Данные — это ПЛАНИРУЕМЫЕ ЗАКУПКИ / БИЗНЕС-ПЛАНЫ. Группа AZ — это критически важные стратегические контракты (риск срыва сроков проектов). Группа CZ — мелкая операционная текучка (риск бюрократии, недоосвоения бюджета и затягивания процедур)."
+            context_rules = "Данные — это ПЛАНИРУЕМЫЕ ЗАКУПКИ / БИЗНЕС-ПЛАНЫ. Группа AZ — это стратегические контракты (риск срыва сроков проектов). Группа CZ — мелкая операционная текучка (риск бюрократии, недоосвоения бюджета)."
         elif "Запасы" in data_context:
-            context_rules = "Данные — это СУЩЕСТВУЮЩИЕ СКЛАДСКИЕ ЗАПАСЫ. Группа AZ — это жестко замороженный рабочий капитал предприятия (дорогие ТМЦ без движения). Группа CZ — складской хлам, неликвиды, забивающие полки и требующие немедленного списания."
+            context_rules = "Данные — это СУЩЕСТВУЮЩИЕ СКЛАДСКИЕ ЗАПАСЫ. Группа AZ — это жестко замороженный рабочий капитал предприятия (дорогие ТМЦ без движения). Группа CZ — складской хлам, неликвиды, забивающие полки."
         elif "Расход" in data_context:
-            context_rules = "Данные — это РЕАЛЬНЫЙ ФАКТИЧЕСКИЙ РАСХОД / ПОТРЕБЛЕНИЕ / ВЫДАЧА В ПРОИЗВОДСТВО. Группа AZ — это внеплановые, аварийные ремонты оборудования, сжигающие огромный бюджет. Группа CZ — ситуативные заявки цехов 'по требованию'."
+            context_rules = "Данные — это РЕАЛЬНЫЙ ФАКТИЧЕСКИЙ РАСХОД / ПОТРЕБЛЕНИЕ. Группа AZ — это внеплановые, аварийные ремонты оборудования, сжигающие огромный бюджет. Группа CZ — ситуативные заявки цехов 'по требованию'."
         else:
-            context_rules = "Данные — это КОММЕРЧЕСКИЕ ПРОДАЖИ / СБЫТ / РИТЕЙЛ. Группа AZ — это товары-локомотивы, генерирующие 80% выручки (риск упущенной прибыли при дефиците). Группа CZ — длинный хвост ассортимента с низким чеком и хаотичным спросом."
+            context_rules = "Данные — это КОММЕРЧЕСКИЕ ПРОДАЖИ / СБЫТ / РИТЕЙЛ. Группа AZ — это товары-локомотивы, генерирующие 80% выручки (риск упущенной прибыли). Группа CZ — длинный хвост ассортимента с низким чеком."
 
         system_instruction = f"""
-        Ты — первоклассный BI-консультант и директор по управлению эффективностью. Напиши жесткий, структурированный аудит для топ-менеджмента по матрице {report_type}.
+        Ты — директор по логистике и снабжению комбината. Напиши жесткий аналитический отчет для генерального директора по матрице {report_type}.
         БИЗНЕС-КОНТЕКСТ ДАННЫХ: {context_rules}
-        Структура отчета: 
-        1. Анализ текущего процесса ({data_context}) — общая оценка структуры и стабильности.
-        2. Выявление скрытых аномалий и рисков (оцени группы AZ и CZ строго сквозь призму указанного контекста).
-        3. Стратегические рекомендации (что сделать директору: консолидировать заявки, почистить склад, скорректировать розничную матрицу или внедрить ТОиР).
-        Пиши емко, списками Markdown, без лишней воды и общих фраз. Используй деловой сленг.
+        Структура отчета: 1. Анализ текущего процесса ({data_context}). 2. Выявление скрытых аномалий и рисков (оцени группы AZ и CZ). 3. Рекомендации. Пиши емко, списками Markdown. Используй деловой сленг.
         """
-        with st.spinner(f"🔮 ИИ перестраивает мышление под контекст '{data_context}'..."):
+        with st.spinner(f"🔮 ИИ генерирует отчет для контекста '{data_context}'..."):
             response = client.models.generate_content(model='gemini-3.5-flash', contents=f"Матрица плотности ({data_context}):\n{pivot_matrix_df.to_string()}", config=types.GenerateContentConfig(system_instruction=system_instruction, temperature=0.2))
             st.markdown("---")
             st.markdown(f"### 📝 Аналитический ИИ-Отчет: {data_context} ({report_type})")
             st.info(response.text)
     except Exception as report_err: st.error(f"❌ Ошибка ИИ: {report_err}")
-# 🧮 МОДУЛЬ УНИВЕРСАЛЬНОЙ ABC/XYZ МАТРИЦЫ С КНОПКОЙ ГИБКОГО ИИ-ОТЧЕТА
+# 🧮 МОДУЛЬ УНИВЕРСАЛЬНОЙ ABC/XYZ МАТРИЦЫ (ЖЕЛЕЗОБЕТОННОЕ ИСПРАВЛЕНИЕ ОШИБКИ NOT IN INDEX)
 def internal_show_abc_xyz_page(filtered_df, api_key, data_context):
     st.title("🧮 Универсальный Конструктор матриц ABC/XYZ")
     if filtered_df.empty: return st.info("ℹ️ Выборка пуста. Загрузите файлы.")
@@ -73,14 +67,24 @@ def internal_show_abc_xyz_page(filtered_df, api_key, data_context):
         if total_sum == 0: return
         df_abc['Cum'] = (df_abc[abc_value] / total_sum).cumsum() * 100
         df_abc['Class_ABC'] = df_abc['Cum'].map(lambda x: 'A' if x <= a_lim else ('B' if x <= a_lim + 15 else 'C'))
+        
         p_matrix = df.groupby([abc_target, xyz_period])[abc_value].sum().unstack(fill_value=0.0)
         xyz_res = []
         for name, rows in p_matrix.iterrows():
             m, s = rows.mean(), rows.std(ddof=1) if len(rows) > 1 else 0.0
             kv = (s / m) * 100 if m > 0 and np.count_nonzero(rows) > 1 else 999.0
             xyz_res.append({abc_target: name, 'KV': kv, 'Класс XYZ': 'X' if kv <= x_lim else ('Y' if kv <= x_lim + 15 else 'Z')})
+        
         df_m = pd.merge(df_abc[[abc_target, abc_value, 'Class_ABC']], pd.DataFrame(xyz_res), on=abc_target)
-        pivot_m = df_m.pivot_table(index='Class_ABC', columns='Класс XYZ', values=abc_target, aggfunc='count', fill_value=0).loc[['A','B','C'], ['X','Y','Z']]
+        
+        # РЕШЕНИЕ ПРОБЛЕМЫ: Безопасное динамическое перестроение сводника с заполнением пустых колонок нулями
+        raw_pivot = df_m.pivot_table(index='Class_ABC', columns='Класс XYZ', values=abc_target, aggfunc='count', fill_value=0)
+        pivot_m = pd.DataFrame(0, index=['A', 'B', 'C'], columns=['X', 'Y', 'Z'])
+        for idx in pivot_m.index:
+            for col in pivot_m.columns:
+                if idx in raw_pivot.index and col in raw_pivot.columns:
+                    pivot_m.loc[idx, col] = raw_pivot.loc[idx, col]
+                    
         mc1, mc2 = st.columns(2)
         with mc1: st.dataframe(pivot_m, use_container_width=True)
         with mc2: st.plotly_chart(px.imshow(pivot_m, text_auto=True, color_continuous_scale="Blues"), use_container_width=True)
@@ -90,7 +94,7 @@ def internal_show_abc_xyz_page(filtered_df, api_key, data_context):
             
         st.dataframe(df_m.sort_values(by=abc_value, ascending=False), use_container_width=True)
     except Exception as e: st.error(f"Ошибка ABC: {e}")
-# 👥 МОДУЛЬ RFM С КНОПКОЙ ГИБКОГО ИИ-ОТЧЕТА И ГРАФИЧЕСКИЙ ДВИЖОК PLOTLY
+# 👥 МОДУЛЬ 4: СЕГМЕНТАЦИЯ RFM И СИСТЕМА No-Code ВИЗУАЛИЗАЦИИ PLOTLY
 def internal_show_rfm_page(filtered_df, api_key, data_context):
     st.title("👥 Модуль RFM-сегментации номенклатуры")
     if filtered_df.empty: return st.info("ℹ️ Выборка пуста. Загрузите файлы.")
@@ -104,10 +108,8 @@ def internal_show_rfm_page(filtered_df, api_key, data_context):
         rfm['RFM'] = rfm['F_Score'] + rfm['M_Score']
         seg_counts = rfm.groupby('RFM').size().reset_index(name='Количество ОЗМ')
         st.plotly_chart(px.bar(seg_counts, x='RFM', y='Количество ОЗМ', text_auto=True, title="📊 Распределение RFM-сегментов номенклатуры", color='RFM', color_continuous_scale="Purples"), use_container_width=True)
-        
         if st.button("👥 Сгенерировать ИИ-отчет по матрице RFM", key="ai_report_rfm_btn"):
             ai_generate_text_report(seg_counts, report_type="RFM-Сегментации", data_context=data_context, api_key=api_key)
-            
         st.dataframe(rfm.sort_values(by='M', ascending=False), use_container_width=True)
     except Exception as rfe: st.error(f"Ошибка RFM: {rfe}")
 
@@ -166,7 +168,6 @@ if "main_df" not in st.session_state: st.session_state.main_df = pd.DataFrame()
 st.sidebar.markdown("### 🤖 Интеллектуальный ИИ-Ассистент")
 gemini_api_key = st.sidebar.text_input("Введите Gemini API Key:", type="password")
 
-# МАТРИЦА АНАЛОГИЙ: СЕМАНТИЧЕСКИЙ ПЕРЕКЛЮЧАТЕЛЬ БИЗНЕС-КОНТЕКСТА В САЙДБАРЕ
 ai_context_mode = st.sidebar.selectbox("Тип данных (Контекст для AI):", [
     "📅 Закупки (Планируемые) / Бизнес-планы материалов и услуг", 
     "📦 Запасы (Складские остатки / ТМЦ без движения)", 
