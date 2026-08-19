@@ -25,13 +25,14 @@ def ai_column_mapper_engine(raw_columns_list, api_key):
         client = genai.Client(api_key=api_key)
         sys_instruction = (
             "Ты — BI-аналитик. Сопоставь заголовки закупщика с полями: "
-            "'ОЗМ', 'Наименование材料', 'Количество', 'Сумма'. "
+            "'ОЗМ', 'Наименование материала', 'Количество', 'Сумма'. "
             "Используй контекст и смысл слов (например, 'Sales', 'Revenue', 'Profit', 'Cost' "
             "должны мапиться в 'Сумма', а 'Units', 'Volume' — в 'Количество')."
         )
         
+        # Передаем правильную модель
         response = client.models.generate_content(
-            model='gemini-3.5-flash',
+            model='gemini-2.5-flash',
             contents=f"Выполни маппинг списка заголовков: {str(raw_columns_list)}",
             config=types.GenerateContentConfig(
                 system_instruction=sys_instruction,
@@ -55,7 +56,7 @@ def ai_generate_text_report(pivot_matrix_df, report_type="ABC/XYZ", data_context
         
         context_mapping = {
             "Закупки": "Данные — это ПЛАНИРУЕМЫЕ ЗАКУПКИ / БИЗНЕС-ПЛАНЫ. Группа AZ — это стратегические контракты (риск срыва сроков проектов). Группа CZ — мелкая операционная текучка (риск бюрократии, недоосвоения бюджета).",
-            "Зазапасы": "Данные — это СУЩЕСТВУЮЩИЕ СКЛАДСКИЕ ЗАПАСЫ. Группа AZ — это жестко замороженный рабочий капитал предприятия (дорогие ТМЦ без движения). Группа CZ — складской хлам, неликвиды, забивающие полки.",
+            "Запасы": "Данные — это СУЩЕСТВУЮЩИЕ СКЛАДСКИЕ ЗАПАСЫ. Группа AZ — это жестко замороженный рабочий капитал предприятия (дорогие ТМЦ без движения). Группа CZ — складской хлам, неликвиды, забивающие полки.",
             "Расход": "Данные — это РЕАЛЬНЫЙ ФАКТИЧЕСКИЙ РАСХОД / ПОТРЕБЛЕНИЕ. Группа AZ — это внеплановые, аварийные ремонты оборудования, сжигающие огромный бюджет. Группа CZ — административная нагрузка мелких заявок."
         }
         
@@ -63,13 +64,13 @@ def ai_generate_text_report(pivot_matrix_df, report_type="ABC/XYZ", data_context
                              "Данные — это КОММЕРЧЕСКИЕ ПРОДАЖИ / СБЫТ / РИТЕЙЛ. Группа AZ — это товары-локомотивы, генерирующие 80% выручки (риск упущенной прибыли). Группа CZ — длинный хвост ассортимента с низким чеком.")
 
         system_instruction = f"""
-        Ты — директор по логистике и снабжению комбината. Напиши жесткий аналитический отчет для генерального директора по матрице {report_type}.
+        Ты — директор по логистике и снабжению комбината. Напиши аналитический отчет для генерального директора по матрице {report_type}.
         БИЗНЕС-КОНТЕКСТ ДАННЫХ: {context_rules}
         Структура отчета: 1. Анализ текущего процесса ({data_context}). 2. Выявление скрытых аномалий и рисков (оцени группы AZ и CZ). 3. Рекомендации. Пиши емко, списками Markdown. Используй деловой сленг.
         """
         with st.spinner(f"🔮 ИИ генерирует отчет для контекста '{data_context}'..."):
             response = client.models.generate_content(
-                model='gemini-3.5-flash', 
+                model='gemini-2.5-flash', 
                 contents=f"Матрица плотности ({data_context}):\n{pivot_matrix_df.to_string()}", 
                 config=types.GenerateContentConfig(system_instruction=system_instruction, temperature=0.2)
             )
@@ -286,27 +287,42 @@ if uploaded_files:
         def show_page_2(dataframe_input, columns_input):
             st.title("📊 Интерактивная BI-Панель Показателей")
             card_cols = st.columns(st.session_state.manual_cards)
+            
             for j in range(st.session_state.manual_cards):
                 with card_cols[j % len(card_cols)]:
                     st.markdown(f"**📌 Карточка № {j+1}**")
-                    t_col = st.selectbox(f"Поле:", columns_input, key=f"c_t_{j}")
+                    
+                    # 1. ВЫБОР ЦЕЛЕВОЙ МЕТРИКИ (что считаем - числовой столбец)
+                    t_col = st.selectbox(f"Поле метрики (Числовое):", columns_input, key=f"c_t_{j}")
                     c_mode = st.selectbox(f"Агрегация:", ["Сумма", "Среднее"], key=f"c_m_{j}")
-                    with st.expander("🎨 Настройки"):
+                    
+                    # 2. ДИНАМИЧЕСКИЙ КРОСС-ФИЛЬТР (разрез группировки)
+                    st.markdown("---")
+                    group_col = st.selectbox(f"Группировать по полю:", ["-- Без фильтра --"] + columns_input, key=f"c_g_{j}")
+                    
+                    filter_value = None
+                    if group_col != "-- Без фильтра --":
+                        unique_vals = list(act_df[group_col].astype(str).unique())
+                        filter_value = st.selectbox(f"Значение элемента:", unique_vals, key=f"c_v_{j}")
+                    
+                    with st.expander("🎨 Настройки отображения"):
                         c_fmt = st.selectbox("Формат:", ["Числовой", "Финансовый", "Сжатый (млн/млрд)"], key=f"c_f_{j}")
-                        
-                        # ДИНАМИЧЕСКИЙ ВЫБОР ВАЛЮТЫ ДЛЯ КАРТОЧКИ
                         c_curr = st.selectbox("Валюта:", ["₸ (Тенге)", "₽ (Рубль)", "$ (Доллар)", "€ (Евро)", "Без валюты"], key=f"c_cur_{j}")
                         curr_sym = "" if c_curr == "Без валюты" else " " + c_curr.split(" ")[0]
-                        
                         c_rnd = st.slider("Округление:", 0, 4, 2, key=f"c_r_{j}")
-                        c_sz = st.slider("Шрифт (px):", 16, 48, 28, key=f"c_s_{j}")
+                        c_sz = st.slider("Шрифт (px):", 16, 48, 26, key=f"c_s_{j}")
+                    
                     if t_col != "-- Выберите заголовок --":
                         try:
-                            df_c = act_df.copy()
-                            df_c[t_col] = pd.to_numeric(df_c[t_col], errors='coerce').fillna(0)
-                            cv = df_c[t_col].sum() if "Сумма" in c_mode else df_c[t_col].mean()
+                            df_card = act_df.copy()
                             
-                            # ОПРЕДЕЛЕНИЕ ФОРМАТА ВЫВОДА С ВЫБРАННОЙ ВАЛЮТОЙ
+                            # Применяем фильтрацию по выбранному элементу разреза
+                            if group_col != "-- Без фильтра --" and filter_value is not None:
+                                df_card = df_card[df_card[group_col].astype(str) == str(filter_value)]
+                            
+                            df_card[t_col] = pd.to_numeric(df_card[t_col], errors='coerce').fillna(0)
+                            cv = df_card[t_col].sum() if "Сумма" in c_mode else df_card[t_col].mean()
+                            
                             if c_fmt == "Финансовый": 
                                 lbl = f"{round(cv, c_rnd):,}".replace(",", " ") + curr_sym
                             elif c_fmt == "Сжатый (млн/млрд)":
@@ -316,9 +332,14 @@ if uploaded_files:
                                     lbl = f"{cv / 1_000_000:,.2f} млн{curr_sym}"
                             else: 
                                 lbl = f"{round(cv, c_rnd):,}".replace(",", " ")
+                            
+                            card_title = f"{t_col}"
+                            if group_col != "-- Без фильтра --":
+                                card_title += f" ({filter_value})"
                                 
-                            st.markdown(f'<div style="background-color:#f8f9fa; border:1px solid #dee2e6; border-radius:10px; padding:20px; text-align:center; margin-bottom:15px;"><div style="color:#6c757d; font-size:14px;">{t_col}</div><div style="color:#1f77b4; font-size:{c_sz}px; font-weight:bold;">{lbl}</div></div>', unsafe_allow_html=True)
+                            st.markdown(f'<div style="background-color:#f8f9fa; border:1px solid #dee2e6; border-radius:10px; padding:20px; text-align:center; margin-bottom:15px;"><div style="color:#6c757d; font-size:13px; font-weight:bold; height:40px; display:flex; align-items:center; justify-content:center;">{card_title}</div><div style="color:#1f77b4; font-size:{c_sz}px; font-weight:bold;">{lbl}</div></div>', unsafe_allow_html=True)
                         except: pass
+                            
             cc1, cc2 = st.columns(2)
             with cc1: st.button("➕ Добавить карточку", on_click=add_card_cb)
             with cc2: st.button("🗑️ Удалить карточку", on_click=remove_card_cb)
@@ -355,7 +376,7 @@ if uploaded_files:
             "🗂️ 1. Загрузка и очистка данных": lambda: show_page_1(main_df, all_cols),
             "📊 2. Executive Диаграммы": lambda: show_page_2(act_df, all_cols),
             "🧮 3. ABC/XYZ-аналитика ОЗМ": lambda: internal_show_abc_xyz_page(act_df, gemini_api_key, ai_context_mode),
-            "👥 4. RFM-сегментация": lambda: internal_show_rfm_page(act_df, gemini_api_key, ai_context_mode)
+            "👥 4. RFM-сегментация": lambda: internal_show_rfm_page(act_df, gemini_api_key, api_context_mode)
         }
         router_pages[page]()
 else:
