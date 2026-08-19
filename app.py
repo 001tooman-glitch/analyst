@@ -149,12 +149,9 @@ def internal_show_rfm_page(filtered_df, api_key, data_context):
     
     st.markdown("### 🎯 Настройка объекта сегментации")
     
-    # ИСПРАВЛЕНО: Распаковка колонок вместо некорректного with col_selectors:
     rc1, rc2 = st.columns(2)
-    
     with rc1:
         rfm_target = st.selectbox("Выберите анализируемое поле:", [c for c in available_cols if c not in ['Сумма', 'Количество']], key="rfm_target_select")
-    
     with rc2:
         detected_sum_col = 'Сумма' if 'Сумма' in available_cols else (available_cols if available_cols else None)
         rfm_value_col = st.selectbox("Выберите поле стоимости/суммы:", available_cols, index=available_cols.index(detected_sum_col) if detected_sum_col in available_cols else 0, key="rfm_value_select")
@@ -314,7 +311,6 @@ if uploaded_files:
                     if t_col != "-- Выберите заголовок --":
                         try:
                             df_card = act_df.copy()
-                            
                             if group_col != "-- Без фильтра --" and filter_value is not None:
                                 df_card = df_card[df_card[group_col].astype(str) == str(filter_value)]
                             
@@ -342,7 +338,7 @@ if uploaded_files:
             with cc1: st.button("➕ Добавить карточку", on_click=add_card_cb)
             with cc2: st.button("🗑️ Удалить карточку", on_click=remove_card_cb)
             st.markdown("---")
-            st.subheader("🛠️ No-Codebadge Конструктор Графиков")
+            st.subheader("🛠️ No-Code Конструктор Графиков")
             for i in range(st.session_state.manual_charts):
                 c1, c2, c3, c4 = st.columns(4)
                 with c1: style = st.selectbox(f"Тип №{i+1}:", ["Столбчатая диаграмма (Bar)", "Линейный тренд (Line)", "Кольцевая долей (Donut)", "Диаграмма Водопад (Waterfall)"], key=f"s_{i}")
@@ -366,8 +362,10 @@ if uploaded_files:
                 if x_ax != "-- Выберите заголовок --" and y_ax != "-- Выберите заголовок --":
                     render_custom_chart(act_df, x_ax, y_ax, style, color, lbl_g, f_format, f_round, f_size, f_color, f_pos, horiz, rot, top_limit, i)
                 st.markdown("<hr style='border:1px dashed #ddd'>", unsafe_allow_html=True)
+            
             b1, b2 = st.columns(2)
             with b1: st.button("➕ Добавить диаграмму", on_click=add_chart_cb)
+            # ИСПРАВЛЕНО: Теперь кнопка удаления графиков корректно вызывает remove_chart_cb
             with b2: st.button("🗑️ Удалить диаграмму", on_click=remove_chart_cb)
 
         router_pages = {
