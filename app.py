@@ -30,7 +30,6 @@ def ai_column_mapper_engine(raw_columns_list, api_key):
             "должны мапиться в 'Сумма', а 'Units', 'Volume' — в 'Количество')."
         )
         
-        # ИСПРАВЛЕНО: Установлена актуальная модель gemini-3.5-flash
         response = client.models.generate_content(
             model='gemini-3.5-flash',
             contents=f"Выполни маппинг списка заголовков: {str(raw_columns_list)}",
@@ -69,7 +68,6 @@ def ai_generate_text_report(pivot_matrix_df, report_type="ABC/XYZ", data_context
         Структура отчета: 1. Анализ текущего процесса ({data_context}). 2. Выявление скрытых аномалий и рисков (оцени группы AZ и CZ). 3. Рекомендации. Пиши емко, списками Markdown. Используй деловой сленг.
         """
         with st.spinner(f"🔮 ИИ генерирует отчет для контекста '{data_context}'..."):
-            # ИСПРАВЛЕНО: Установлена актуальная модель gemini-3.5-flash
             response = client.models.generate_content(
                 model='gemini-3.5-flash', 
                 contents=f"Матрица плотности ({data_context}):\n{pivot_matrix_df.to_string()}", 
@@ -150,12 +148,14 @@ def internal_show_rfm_page(filtered_df, api_key, data_context):
     available_cols = list(df.columns)
     
     st.markdown("### 🎯 Настройка объекта сегментации")
-    col_selectors = st.columns(2)
     
-    with col_selectors:
+    # ИСПРАВЛЕНО: Распаковка колонок вместо некорректного with col_selectors:
+    rc1, rc2 = st.columns(2)
+    
+    with rc1:
         rfm_target = st.selectbox("Выберите анализируемое поле:", [c for c in available_cols if c not in ['Сумма', 'Количество']], key="rfm_target_select")
     
-    with col_selectors:
+    with rc2:
         detected_sum_col = 'Сумма' if 'Сумма' in available_cols else (available_cols if available_cols else None)
         rfm_value_col = st.selectbox("Выберите поле стоимости/суммы:", available_cols, index=available_cols.index(detected_sum_col) if detected_sum_col in available_cols else 0, key="rfm_value_select")
     
@@ -342,7 +342,7 @@ if uploaded_files:
             with cc1: st.button("➕ Добавить карточку", on_click=add_card_cb)
             with cc2: st.button("🗑️ Удалить карточку", on_click=remove_card_cb)
             st.markdown("---")
-            st.subheader("🛠️ No-Code Конструктор Графиков")
+            st.subheader("🛠️ No-Codebadge Конструктор Графиков")
             for i in range(st.session_state.manual_charts):
                 c1, c2, c3, c4 = st.columns(4)
                 with c1: style = st.selectbox(f"Тип №{i+1}:", ["Столбчатая диаграмма (Bar)", "Линейный тренд (Line)", "Кольцевая долей (Donut)", "Диаграмма Водопад (Waterfall)"], key=f"s_{i}")
@@ -368,7 +368,7 @@ if uploaded_files:
                 st.markdown("<hr style='border:1px dashed #ddd'>", unsafe_allow_html=True)
             b1, b2 = st.columns(2)
             with b1: st.button("➕ Добавить диаграмму", on_click=add_chart_cb)
-            with b2: st.button("🗑️ Удалить диаграмму", on_click=remove_card_cb)
+            with b2: st.button("🗑️ Удалить диаграмму", on_click=remove_chart_cb)
 
         router_pages = {
             "🗂️ 1. Загрузка и очистка данных": lambda: show_page_1(main_df, all_cols),
