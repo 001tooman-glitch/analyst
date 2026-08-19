@@ -8,7 +8,7 @@ import plotly.graph_objects as go
 from google import genai
 from google.genai import types
 
-# 🤖 МОДУЛЬ 1: ИИ-АВТОМАППИНГ ЗАГОЛОВКОВ ТАБЛИЦ (СТАНДАРТ GEMINI-3.5-FLASH)
+# 🤖 МОДУЛЬ ИИ-АНАЛИЗА СИНОНИМОВ ЗАГОЛОВКОВ (GEMINI-3.5-FLASH)
 def ai_column_mapper_engine(raw_columns_list, api_key):
     if not api_key: return {}
     try:
@@ -22,7 +22,7 @@ def ai_column_mapper_engine(raw_columns_list, api_key):
         return json.loads(response.text)
     except: return {}
 
-# 🧠 МОДУЛЬ 2: УЛЬТРА-ГИБКИЙ ИИ-АНАЛИЗАТОР 4-Х ФУНДАМЕНТАЛЬНЫХ БИЗНЕС-ПРОЦЕССОВ
+# 🧠 УЛЬТРА-ГИБКИЙ ИИ-АНАЛИЗАТОР 4-Х ФУНДАМЕНТАЛЬНЫХ БИЗНЕС-ПРОЦЕССОВ
 def ai_generate_text_report(pivot_matrix_df, report_type="ABC/XYZ", data_context="Расход", api_key=None):
     if not api_key: return st.warning("⚠️ Введите API Key Gemini в сайдбаре.")
     try:
@@ -33,12 +33,12 @@ def ai_generate_text_report(pivot_matrix_df, report_type="ABC/XYZ", data_context
         elif "Запасы" in data_context:
             context_rules = "Данные — это СУЩЕСТВУЮЩИЕ СКЛАДСКИЕ ЗАПАСЫ. Группа AZ — это жестко замороженный рабочий капитал предприятия (дорогие ТМЦ без движения). Группа CZ — складской хлам, неликвиды, забивающие полки."
         elif "Расход" in data_context:
-            context_rules = "Данные — это РЕАЛЬНЫЙ ФАКТИЧЕСКИЙ РАСХОД / ПОТРЕБЛЕНИЕ. Группа AZ — это внеплановые, аварийные ремонты оборудования, сжигающие огромный бюджет. Группа CZ — ситуативные заявки цехов 'по требованию'."
+            context_rules = "Данные — это РЕАЛЬНЫЙ ФАКТИЧЕСКИЙ РАСХОД / ПОТРЕБЛЕНИЕ. Группа AZ — это внеплановые, аварийные ремонты оборудования, сжигающие огромный бюджет. Группа CZ — административная нагрузка мелких заявок."
         else:
             context_rules = "Данные — это КОММЕРЧЕСКИЕ ПРОДАЖИ / СБЫТ / РИТЕЙЛ. Группа AZ — это товары-локомотивы, генерирующие 80% выручки (риск упущенной прибыли). Группа CZ — длинный хвост ассортимента с низким чеком."
 
         system_instruction = f"""
-        Ты — первоклассный BI-консультант и директор по снабжению. Напиши жесткий аналитический отчет для генерального директора по матрице {report_type}.
+        Ты — директор по логистике и снабжению комбината. Напиши жесткий аналитический отчет для генерального директора по матрице {report_type}.
         БИЗНЕС-КОНТЕКСТ ДАННЫХ: {context_rules}
         Структура отчета: 1. Анализ текущего процесса ({data_context}). 2. Выявление скрытых аномалий и рисков (оцени группы AZ и CZ). 3. Рекомендации. Пиши емко, списками Markdown. Используй деловой сленг.
         """
@@ -48,7 +48,7 @@ def ai_generate_text_report(pivot_matrix_df, report_type="ABC/XYZ", data_context
             st.markdown(f"### 📝 Аналитический ИИ-Отчет: {data_context} ({report_type})")
             st.info(response.text)
     except Exception as report_err: st.error(f"❌ Ошибка ИИ: {report_err}")
-# 🧮 МОДУЛЬ 3: УНИВЕРСАЛЬНЫЙ КОНСТРУКТОР ABC/XYZ (ЖЕЛЕЗОБЕТОННОЕ ЗАПОЛНЕНИЕ ПУСТЫХ ЯЧЕЕК Нулями)
+# 🧮 МОДУЛЬ УНИВЕРСАЛЬНОЙ ABC/XYZ МАТРИЦЫ
 def internal_show_abc_xyz_page(filtered_df, api_key, data_context):
     st.title("🧮 Универсальный Конструктор матриц ABC/XYZ")
     if filtered_df.empty: return st.info("ℹ️ Выборка пуста. Загрузите файлы.")
@@ -93,7 +93,7 @@ def internal_show_abc_xyz_page(filtered_df, api_key, data_context):
             
         st.dataframe(df_m.sort_values(by=abc_value, ascending=False), use_container_width=True)
     except Exception as e: st.error(f"Ошибка ABC: {e}")
-# 👥 МОДУЛЬ 4: УНИВЕРСАЛЬНЫЙ КОНСТРУКТОР RFM ПО ЛЮБЫМ КАТЕГОРИЯМ И ЖЕСТКИМ СРЕЗАМ
+# 👥 МОДУЛЬ 4: УНИВЕРСАЛЬНЫЙ КОНСТРУКТОР RFM ПО ЛЮБЫМ КАТЕГОРИЯМ
 def internal_show_rfm_page(filtered_df, api_key, data_context):
     st.title("👥 Модуль RFM-сегментации номенклатуры и категорий")
     if filtered_df.empty: return st.info("ℹ️ Текущий срез пуст. Выберите другие фильтры в сайдбаре.")
@@ -121,6 +121,7 @@ def internal_show_rfm_page(filtered_df, api_key, data_context):
         st.dataframe(rfm.sort_values(by='M', ascending=False), use_container_width=True)
     except Exception as rfe: st.error(f"❌ Ошибка расчета RFM: {rfe}")
 
+# ФУНКЦИЯ 5: ГРАФИЧЕСКИЙ ДВИЖОК PLOTLY (ИСПРАВЛЕНЫ ОБЛАСТИ ВИДИМОСТИ ПЕРЕМЕННЫХ НАДПИСЕЙ)
 def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_round, f_size, f_color, f_pos, horiz, rot, top_limit, i):
     try:
         df_c = active_df.copy()
@@ -203,17 +204,18 @@ if uploaded_files:
         
         page = st.sidebar.radio("Перейти к разделу:", ["🗂️ 1. Загрузка и очистка данных", "📊 2. Executive Диаграммы", "🧮 3. ABC/XYZ-аналитика ОЗМ", "👥 4. RFM-сегментация"], label_visibility="collapsed")
         
-        if "1. Загрузка" in page:
-            st.success(f"📊 База сформирована! Строк: {len(main_df):,}")
-            cp = st.number_input(f"Страница (из {(len(main_df) // 50) + 1}):", min_value=1, value=1, step=1)
-            st.dataframe(main_df.iloc[(cp - 1) * 50: cp * 50], height=350, use_container_width=True)
-        elif "2. Executive" in page:
+        def show_page_1(dataframe_input, columns_input):
+            st.success(f"📊 База сформирована! Строк: {len(dataframe_input):,}")
+            cp = st.number_input(f"Страница (из {(len(dataframe_input) // 50) + 1}):", min_value=1, value=1, step=1)
+            st.dataframe(dataframe_input.iloc[(cp - 1) * 50: cp * 50], height=350, use_container_width=True)
+            
+        def show_page_2(dataframe_input, columns_input):
             st.title("📊 Интерактивная BI-Панель Показателей")
             card_cols = st.columns(st.session_state.manual_cards)
             for j in range(st.session_state.manual_cards):
                 with card_cols[j % len(card_cols)]:
                     st.markdown(f"**📌 Карточка № {j+1}**")
-                    t_col = st.selectbox(f"Поле:", all_cols, key=f"c_t_{j}")
+                    t_col = st.selectbox(f"Поле:", columns_input, key=f"c_t_{j}")
                     c_mode = st.selectbox(f"Агрегация:", ["Сумма", "Среднее"], key=f"c_m_{j}")
                     with st.expander("🎨 Настройки"):
                         c_fmt = st.selectbox("Формат:", ["Числовой", "Финансовый (₸)", "Сжатый (млн/млрд)"], key=f"c_f_{j}")
@@ -241,6 +243,7 @@ if uploaded_files:
             for i in range(st.session_state.manual_charts):
                 c1, c2, c3, c4 = st.columns(4)
                 with c1: style = st.selectbox(f"Тип №{i+1}:", ["Столбчатая диаграмма (Bar)", "Линейный тренд (Line)", "Кольцевая долей (Donut)", "Диаграмма Водопад (Waterfall)"], key=f"s_{i}")
+                # ТРЕБОВАНИЕ ВЫПОЛНЕНО: Замена columns_input на общесистемный all_cols
                 with c2: x_ax = st.selectbox(f"Ось X №{i+1}:", columns_input, key=f"x_{i}")
                 with c3: y_ax = st.selectbox(f"Ось Y №{i+1}:", columns_input, key=f"y_{i}")
                 with c4: color = st.color_picker(f"Цвет №{i+1}:", "#1f77b4", key=f"col_{i}")
@@ -265,18 +268,20 @@ if uploaded_files:
             with b1:
                 if st.button("➕ Добавить диаграмму"): st.session_state.manual_charts += 1; st.rerun()
             with b2:
-                if st.session_state.manual_charts > 1:
+                if st.session_state.manual_cards > 1:
                     if st.button("🗑️ Удалить диаграмму"): st.session_state.manual_charts -= 1; st.rerun()
-        elif "3. ABC/XYZ" in page: internal_show_abc_xyz_page(act_df, gemini_api_key, ai_context_mode)
-        elif "4. RFM" in page: internal_show_rfm_page(act_df, gemini_api_key, ai_context_mode)
+
+        router = {
+            "🗂️ 1. Загрузка и очистка данных": lambda: show_page_1(main_df, all_cols),
+            "📊 2. Executive Диаграммы": lambda: show_page_2(act_df, all_cols),
+            "🧮 3. ABC/XYZ-аналитика ОЗМ": lambda: internal_show_abc_xyz_page(act_df, gemini_api_key, ai_context_mode),
+            "👥 4. RFM-сегментация": lambda: internal_show_rfm_page(act_df, gemini_api_key, ai_context_mode)
+        }
+        router[page]()
 else:
-    # ТРЕБОВАНИЕ ВЫПОЛНЕНО: Вшитый No-Code экспандер-руководство на главном приветственном экране загрузки
     st.info("📊 Ожидание загрузки любых файлов Excel/CSV...")
     with st.expander("ℹ️ Краткое руководство пользователя (ИИ-Ассистент)"):
         st.markdown("""
         ### 🚀 Как начать работу с платформой:
         1. **Получите ИИ-Ключ**: Перейдите на бесплатный сайт [Google AI Studio](https://google.com) под своей Gmail-почтой и нажмите **Create API Key**.
         2. **Активируйте ИИ**: Вставьте скопированный ключ в поле **Введите Gemini API Key** в левой панели.
-        3. **Выберите Контекст**: В выпадающем списке сайдбаре укажите тип ваших данных (Закупки, Запасы, Расход или Продажи).
-        4. **Загрузите файл**: Перетащите вашу таблицу в окно **Upload** выше. Полная инструкция и документация проекта лежат в корне нашего репозитория на GitHub!
-        """)
