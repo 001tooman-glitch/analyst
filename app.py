@@ -8,21 +8,21 @@ import plotly.graph_objects as go
 from google import genai
 from google.genai import types
 
-# 🤖 МОДУЛЬ 1: ИИ-АВТОМАППИНГ ЗАГОЛОВКОВ (ФИКСАЦИЯ СИНТАКСИСА НОВОЙ БИБЛИОТЕКИ GOOGLE)
+# ФУНКЦИЯ 1: ИИ-АВТОМАППИНГ ЗАГОЛОВКОВ ТАБЛИЦ (GEMINI-3.5-FLASH)
 def ai_column_mapper_engine(raw_columns_list, api_key):
     if not api_key: return {}
     try:
         client = genai.Client(api_key=api_key)
         sys_instruction = "Ты — BI-аналитик. Сопоставь заголовки закупщика с полями: 'ОЗМ', 'Наименование материала', 'Количество', 'Сумма'. Верни СТРОГО JSON-объект вида {\"Номенклатура\": \"ОЗМ\", \"Прайс\": \"Сумма\"}"
         response = client.models.generate_content(
-            model='gemini-2.5-flash',
+            model='gemini-3.5-flash',
             contents=f"Выполни маппинг списка заголовков: {str(raw_columns_list)}",
             config=types.GenerateContentConfig(system_instruction=sys_instruction, response_mime_type="application/json", temperature=0.1),
         )
         return json.loads(response.text)
     except: return {}
 
-# ✍️ МОДУЛЬ 2: ИНТЕЛЛЕКТУАЛЬНЫЙ АВТОРЕФЕРАТ И ГЕНЕРАЦИЯ ТЕКСТОВЫХ ОТЧЕТОВ ИИ ДЛЯ ДИРЕКТОРА
+# ФУНКЦИЯ 2: ИНТЕЛЛЕКТУАЛЬНАЯ АВТО-ГЕНЕРАЦИЯ БИЗНЕС-ОТЧЕТОВ ИИ (GEMINI-3.5-FLASH)
 def ai_generate_text_report(pivot_matrix_df, report_type="ABC/XYZ", api_key=None):
     if not api_key: 
         st.warning("⚠️ Введите Gemini API Key в сайдбаре.")
@@ -32,7 +32,7 @@ def ai_generate_text_report(pivot_matrix_df, report_type="ABC/XYZ", api_key=None
         sys_instruction = f"Ты — директор по снабжению. Напиши краткий, жесткий аналитический отчет для генерального директора по матрице плотности {report_type}. Структура: 1. Краткое резюме. 2. Критические риски и аномалии. 3. Пошаговые рекомендации. Пиши емко, списком, используя сленг закупок."
         with st.spinner("🔮 ИИ пишет отчет для руководства..."):
             response = client.models.generate_content(
-                model='gemini-2.5-flash',
+                model='gemini-3.5-flash',
                 contents=f"Проанализируй матрицу плотности:\n{pivot_matrix_df.to_string()}",
                 config=types.GenerateContentConfig(system_instruction=sys_instruction, temperature=0.3),
             )
@@ -40,7 +40,7 @@ def ai_generate_text_report(pivot_matrix_df, report_type="ABC/XYZ", api_key=None
             st.markdown(f"### 📝 Аналитический ИИ-Отчет по матрице {report_type}")
             st.info(response.text)
     except Exception as report_err: st.error(f"❌ Ошибка ИИ-генератора отчетов: {report_err}")
-# 🧮 МОДУЛЬ 3: УНИВЕРСАЛЬНЫЙ КОНСТРУКТОР ABC/XYZ С КНОПКОЙ ИИ-ОТЧЕТА
+# ФУНКЦИЯ 3: УНИВЕРСАЛЬНЫЙ КОНСТРУКТОР МАТРИЦ ABC/XYZ С КНОПКОЙ ИИ-ОТЧЕТА
 def internal_show_abc_xyz_page(filtered_df, api_key):
     st.title("🧮 Универсальный Конструктор матриц ABC/XYZ")
     if filtered_df.empty: return st.info("ℹ️ Выборка пуста. Загрузите файлы.")
@@ -75,13 +75,11 @@ def internal_show_abc_xyz_page(filtered_df, api_key):
         mc1, mc2 = st.columns(2)
         with mc1: st.dataframe(pivot_m, use_container_width=True)
         with mc2: st.plotly_chart(px.imshow(pivot_m, text_auto=True, color_continuous_scale="Blues"), use_container_width=True)
-        
         if st.button("✍️ Сгенерировать ИИ-отчет по матрице ABC/XYZ", key="ai_report_abc_btn"):
             ai_generate_text_report(pivot_m, report_type="ABC/XYZ", api_key=api_key)
-            
         st.dataframe(df_m.sort_values(by=abc_value, ascending=False), use_container_width=True)
     except Exception as e: st.error(f"Ошибка ABC: {e}")
-# 👥 МОДУЛЬ 4: СЕГМЕНТАЦИЯ RFM С КНОПКОЙ ИИ-ОТЧЕТА И ГРАФИЧЕСКИЙ ДВИЖОК PLOTLY
+# ФУНКЦИЯ 4: МОДУЛЬ АДАПТИВНОЙ RFM СЕГМЕНТАЦИИ С КНОПКОЙ ИИ-ОТЧЕТА
 def internal_show_rfm_page(filtered_df, api_key):
     st.title("👥 Модуль RFM-сегментации номенклатуры")
     if filtered_df.empty: return st.info("ℹ️ Выборка пуста. Загрузите файлы.")
@@ -96,13 +94,12 @@ def internal_show_rfm_page(filtered_df, api_key):
         rfm['RFM'] = rfm['F_Score'] + rfm['M_Score']
         seg_counts = rfm.groupby('RFM').size().reset_index(name='Количество ОЗМ')
         st.plotly_chart(px.bar(seg_counts, x='RFM', y='Количество ОЗМ', text_auto=True, title="📊 Распределение RFM-сегментов номенклатуры", color='RFM', color_continuous_scale="Purples"), use_container_width=True)
-        
         if st.button("👥 Сгенерировать ИИ-отчет по матрице RFM", key="ai_report_rfm_btn"):
             ai_generate_text_report(seg_counts, report_type="RFM-Сегментации", api_key=api_key)
-            
         st.dataframe(rfm.sort_values(by='M', ascending=False), use_container_width=True)
     except Exception as rfe: st.error(f"Ошибка RFM: {rfe}")
 
+# ФУНКЦИЯ 5: КАСТОМИЗИРУЕМЫЙ ГРАФИЧЕСКИЙ ДВИЖОК PLOTLY С ШРИФТАМИ И ЦВЕТОМ
 def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_round, f_size, f_color, f_pos, horiz, rot, top_limit, i):
     try:
         df_c = active_df.copy()
@@ -123,6 +120,7 @@ def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_ro
             if "Donut" in style: fig.update_traces(insidetextfont=dict(size=f_size, color=f_color), outsidetextfont=dict(size=f_size, color=f_color))
         st.plotly_chart(fig, use_container_width=True, key=f"p_{i}")
     except: pass
+# ФУНКЦИЯ 6: СКОРОСТНОЙ ИМПОРТ И ПРЕДОБРАБОТКА ДАННЫХ RUST CALAMINE
 def power_query_clean_engine(uploaded_files_list, gemini_key):
     frames = {}
     for f in uploaded_files_list:
@@ -157,7 +155,6 @@ if "main_df" not in st.session_state: st.session_state.main_df = pd.DataFrame()
 
 st.sidebar.markdown("### 🤖 Интеллектуальный ИИ-Ассистент")
 gemini_api_key = st.sidebar.text_input("Введите Gemini API Key:", type="password")
-
 uploaded_files = st.file_uploader("Загрузите файлы Excel/CSV:", type=["csv", "xlsx"], accept_multiple_files=True)
 if not uploaded_files: st.session_state.main_df = pd.DataFrame()
 
@@ -178,12 +175,11 @@ if uploaded_files:
         
         page = st.sidebar.radio("Перейти к разделу:", ["🗂️ 1. Загрузка и очистка данных", "📊 2. Executive Диаграммы", "🧮 3. ABC/XYZ-аналитика ОЗМ", "👥 4. RFM-сегментация"], label_visibility="collapsed")
         
-        def show_page_1(dataframe_input, columns_input):
-            st.success(f"📊 База сформирована! Строк: {len(dataframe_input):,}")
-            cp = st.number_input(f"Страница (из {(len(dataframe_input) // 50) + 1}):", min_value=1, max_value=(len(dataframe_input) // 50) + 1, value=1, step=1)
-            st.dataframe(dataframe_input.iloc[(cp - 1) * 50: cp * 50], height=350, use_container_width=True)
-            
-        def show_page_2(dataframe_input, columns_input):
+        if "1. Загрузка" in page:
+            st.success(f"📊 База сформирована! Строк: {len(main_df):,}")
+            cp = st.number_input(f"Страница (из {(len(main_df) // 50) + 1}):", min_value=1, max_value=(len(main_df) // 50) + 1, value=1, step=1)
+            st.dataframe(main_df.iloc[(cp - 1) * 50: cp * 50], height=350, use_container_width=True)
+        elif "2. Executive" in page:
             st.title("📊 Интерактивная BI-Панель Показателей")
             card_cols = st.columns(st.session_state.manual_cards)
             for j in range(st.session_state.manual_cards):
@@ -243,12 +239,6 @@ if uploaded_files:
             with b2:
                 if st.session_state.manual_charts > 1:
                     if st.button("🗑️ Удалить диаграмму"): st.session_state.manual_charts -= 1; st.rerun()
-
-        router = {
-            "🗂️ 1. Загрузка и очистка данных": lambda: show_page_1(main_df, all_cols),
-            "📊 2. Executive Диаграммы": lambda: show_page_2(act_df, all_cols),
-            "🧮 3. ABC/XYZ-аналитика ОЗМ": lambda: internal_show_abc_xyz_page(act_df, gemini_api_key),
-            "👥 4. RFM-сегментация": lambda: internal_show_rfm_page(act_df, gemini_api_key)
-        }
-        router[page]()
+        elif "3. ABC/XYZ" in page: internal_show_abc_xyz_page(act_df, gemini_api_key)
+        elif "4. RFM" in page: internal_show_rfm_page(act_df, gemini_api_key)
 else: st.info("Ожидание загрузки любых файлов Excel/CSV...")
