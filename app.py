@@ -192,7 +192,7 @@ def internal_show_rfm_page(filtered_df, api_key, data_context):
         st.dataframe(rfm.sort_values(by='M', ascending=False), use_container_width=True)
     except Exception as rfe: 
         st.error(f"❌ Ошибка расчета RFM: {rfe}")
-# 📊 ФУНКЦИЯ 5: ГРАФИЧЕСКИЙ ДВИЖОК С АВТО-РЕСЕМПЛИНГОМ И ЖЕСТКИМИ СЛОЯМИ GRAPH_OBJECTS
+# 📊 ФУНКЦИЯ 5: ГРАФИЧЕСКИЙ ДВИЖОК С АВТОМАТИЧЕСКИМ ВЫЧИСЛЕНИЕМ ДЕЛЬТЫ ВРЕМЕННЫХ ИНТЕРВАЛОВ
 def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_round, f_size, f_color, f_pos, horiz, rot, top_limit, i, date_format_type="Исходный", custom_currency="", forecast_periods=0):
     try:
         df_c = active_df.copy()
@@ -205,10 +205,6 @@ def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_ro
         if "Line" in style or forecast_periods > 0:
             if safe_pos == "auto": safe_pos = "top center"
 
-        converted_dates = pd.to_datetime(df_c[x_ax], errors='coerce')
-        is_date_axis = converted_dates.notna().sum() > (0.5 * len(df_c))
-        
-        # Вспомогательная функция локального форматирования меток
         def get_formatted_text(value_array):
             labels = []
             for v in value_array:
@@ -220,6 +216,9 @@ def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_ro
                 labels.append(formatted_val)
             return labels
 
+        converted_dates = pd.to_datetime(df_c[x_ax], errors='coerce')
+        is_date_axis = converted_dates.notna().sum() > (0.5 * len(df_c))
+        
         if is_date_axis:
             df_c['_datetime_clean_'] = converted_dates
             df_c = df_c.dropna(subset=['_datetime_clean_'])
@@ -237,19 +236,25 @@ def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_ro
             
             fig = go.Figure()
             
-            # СЛОЙ 1: ФАКТИЧЕСКИЕ ИСТОРИЧЕСКИЕ ДАННЫЕ
+            # Слой Факта
             fact_x = df_fact['_month_period_'].dt.strftime(chosen_pattern).astype(str)
             fact_y = df_fact[y_ax].values
             fact_txt = get_formatted_text(fact_y)
-            
             fig.add_trace(go.Scatter(x=fact_x, y=fact_y, mode="lines+markers+text" if lbl else "lines+markers", name="Факт", line=dict(color=color, width=4), marker=dict(size=8), text=fact_txt if lbl else None, textposition=safe_pos))
             
-            # СЛОЙ 2: НЕЗАВИСИМЫЙ ПРОГНОЗНЫЙ ТРЕНД ИИ
+            # Слой Прогноза с умным расчетом дельты шага
             if forecast_periods > 0 and len(df_fact) > 1:
                 last_value = df_fact[y_ax].iloc[-1]
                 pct_changes = df_fact[y_ax].pct_change().dropna()
                 avg_drop = pct_changes.tail(3).mean() if len(pct_changes) >= 3 else pct_changes.mean()
                 if avg_drop < 0: avg_drop = max(avg_drop, -0.15)
+                
+                # ⚙️ ИСПРАВЛЕНО: Автоопределение шага таблицы (по месяцам или по годам)
+                date_diffs = df_fact['_month_period_'].diff().dropna()
+                avg_days_step = date_diffs.dt.days.mean()
+                
+                # Если средний шаг между записями больше 300 дней — данные годовые, шагаем годами
+                is_yearly_data = avg_days_step > 300
                 
                 future_values = []
                 current_val = last_value
@@ -258,9 +263,14 @@ def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_ro
                     future_values.append(current_val)
                 
                 last_date = df_fact['_month_period_'].max()
-                future_dates = [last_date + pd.DateOffset(months=m) for m in range(1, forecast_periods + 1)]
+                future_dates = []
+                for m in range(1, forecast_periods + 1):
+                    if is_yearly_data:
+                        # Если данные годовые, прибавляем ровно 12 месяцев за каждый шаг ползунка
+                        future_dates.append(last_date + pd.DateOffset(years=m))
+                    else:
+                        future_dates.append(last_date + pd.DateOffset(months=m))
                 
-                # Точка склейки: соединяем последний факт с началом прогноза
                 fc_x_dates = [df_fact['_month_period_'].iloc[-1]] + future_dates
                 fc_x = [d.strftime(chosen_pattern) for d in fc_x_dates]
                 fc_y = [last_value] + future_values
@@ -273,7 +283,6 @@ def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_ro
             return
             
         else:
-            # Бизнес-категории (Текстовая ось без дат)
             df_g = df_c.groupby(x_ax, as_index=False)[y_ax].sum().sort_values(by=y_ax, ascending=False).head(top_limit).reset_index(drop=True)
             txt = get_formatted_text(df_g[y_ax].values)
             if horiz: df_g = df_g.sort_values(by=y_ax, ascending=True).reset_index(drop=True)
@@ -316,7 +325,7 @@ def power_query_clean_engine(uploaded_files_list, gemini_key):
             
     if not frames: return pd.DataFrame()
     
-    base_df = frames[0]
+    base_df = frames
     for extra_df in frames[1:]:
         common_keys = list(set(base_df.columns) & set(extra_df.columns))
         common_keys = [k for k in common_keys if k not in ['Сумма', 'Количество']]
@@ -446,7 +455,7 @@ if uploaded_files:
                         rot = st.slider("🔄 Поворот:", 0, 360, 0, step=15, key=f"rot_{i}") if "Donut" in style else 0
                         top_limit = st.slider("🔝 ТОП позиций:", 5, 200, 15, key=f"top_{i}")
                         d_fmt = st.selectbox("Формат даты (Excel):", ["Исходный", "ММ.ГГГГ (01.2014)", "Месяц ГГГГ (Янв 2014)", "ДД.ММ.ГГГГ (15.01.2014)", "ГГГГ (2014)"], key=f"dfmt_{i}")
-                        f_cast = st.slider("🔮 Прогноз (в месяцах):", 0, 12, 0, key=f"fcast_{i}")
+                        f_cast = st.slider("🔮 Прогноз (в периодах таблицы):", 0, 5, 0, key=f"fcast_{i}")
                         
                 if x_ax != "-- Выберите заголовок --" and y_ax != "-- Выберите заголовок --":
                     render_custom_chart(act_df, x_ax, y_ax, style, color, lbl_g, f_format, f_round, f_size, f_color, f_pos, horiz, rot, top_limit, i, date_format_type=d_fmt, custom_currency=f_curr_text, forecast_periods=f_cast)
