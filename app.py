@@ -3,8 +3,8 @@ import pandas as pd
 import io
 import json
 import numpy as np
-import plotly.express as px
 import plotly.graph_objects as go
+import plotly.express as px
 from google import genai
 from google.genai import types
 from pydantic import BaseModel, Field
@@ -184,7 +184,7 @@ def internal_show_rfm_page(filtered_df, api_key, data_context):
         rfm['RFM'] = rfm['F_Score'] + rfm['M_Score']
         seg_counts = rfm.groupby('RFM').size().reset_index(name='Количество объектов')
         
-        st.plotly_chart(px.bar(seg_counts, x='RFM', y='Количество объектов', text_auto=True, title=f"📊 Динамическое RFM-распреде по полю: {rfm_target}", color='RFM', color_continuous_scale="Purples"), use_container_width=True)
+        st.plotly_chart(px.bar(seg_counts, x='RFM', y='Количество объектов', text_auto=True, title=f"📊 Динамическое RFM-распределение по полю: {rfm_target}", color='RFM', color_continuous_scale="Purples"), use_container_width=True)
         
         if st.button("👥 Сгенерировать ИИ-отчет по матрице RFM", key="ai_report_rfm_btn"):
             ai_generate_text_report(seg_counts, report_type=f"RFM-Сегментации ({rfm_target})", data_context=data_context, api_key=api_key)
@@ -192,7 +192,7 @@ def internal_show_rfm_page(filtered_df, api_key, data_context):
         st.dataframe(rfm.sort_values(by='M', ascending=False), use_container_width=True)
     except Exception as rfe: 
         st.error(f"❌ Ошибка расчета RFM: {rfe}")
-# 📊 ФУНКЦИЯ 5: ГРАФИЧЕСКИЙ ДВИЖОК С ИСПРАВЛЕННОЙ ИНТЕРАКТИВНОСТЬЮ И СВОБОДНЫМ ВЫБОРОМ ТИПОВ
+# 📊 ФУНКЦИЯ 5: ГРАФИЧЕСКИЙ ДВИЖОК С АВТОМАТИЧЕСКОЙ ЗАЩИТОЙ ИЗОЛЯЦИИ ВЕРТИКАЛЬНЫХ И ГОРИЗОНТАЛЬНЫХ СЛОЕВ В BAR
 def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_round, f_size, f_color, f_pos, horiz, rot, top_limit, i, date_format_type="Исходный", custom_currency="", forecast_periods=0):
     try:
         df_c = active_df.copy()
@@ -201,11 +201,24 @@ def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_ro
         clean_currency = str(custom_currency).strip()
         curr_suffix = f" {clean_currency}" if clean_currency else ""
         
-        # ⚙️ Проверка временной шкалы по оси X
+        scatter_pos = f_pos
+        if "Line" in style or forecast_periods > 0 or (pd.to_datetime(df_c[x_ax], errors='coerce').notna().sum() > (0.5 * len(df_c))):
+            if scatter_pos in ["inside", "outside", "auto"]:
+                scatter_pos = "top center"
+
+        def get_formatted_text(value_array):
+            labels = []
+            for v in value_array:
+                if f_format == "Финансовый": formatted_val = f"{round(v, f_round):,}".replace(",", " ") + curr_suffix
+                elif f_format == "Сжатый (млн/млрд)":
+                    if abs(v) >= 1_000_000_000: formatted_val = f"{v / 1_000_000_000:,.2f} млрд{curr_suffix}"
+                    else: formatted_val = f"{v / 1_000_000:,.2f} млн{curr_suffix}"
+                else: formatted_val = f"{round(v, f_round):,}".replace(",", " ")
+                labels.append(formatted_val)
+            return labels
+
         converted_dates = pd.to_datetime(df_c[x_ax], errors='coerce')
         is_date_axis = converted_dates.notna().sum() > (0.5 * len(df_c))
-        
-        # 🗓️ Сборка и подготовка данных (Общая для всех типов графиков)
         if is_date_axis:
             df_c['_datetime_clean_'] = converted_dates
             df_c = df_c.dropna(subset=['_datetime_clean_'])
@@ -215,12 +228,10 @@ def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_ro
             format_mapping = {"ММ.ГГГГ (01.2014)": "%m.%Y", "Месяц ГГГГ (Янв 2014)": "%b %Y", "ДД.ММ.ГГГГ (15.01.2014)": "%d.%m.%Y", "ГГГГ (2014)": "%Y"}
             chosen_pattern = format_mapping.get(date_format_type, "%b %Y")
             
-            # Генерация векторов
             final_x = list(df_fact['_month_period_'].dt.strftime(chosen_pattern).astype(str))
             final_y = list(df_fact[y_ax].values)
             legend_names = ["Факт"] * len(final_y)
             
-            # Добавление прогнозных вех (без жесткого return)
             if forecast_periods > 0 and len(df_fact) > 1:
                 last_value = df_fact[y_ax].iloc[-1]
                 pct_changes = df_fact[y_ax].pct_change().dropna()
@@ -242,60 +253,56 @@ def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_ro
             
             df_g = pd.DataFrame({x_ax: final_x, y_ax: final_y, "Тип данных": legend_names})
         else:
-            # Обычные категории
             df_g = df_c.groupby(x_ax, as_index=False)[y_ax].sum().sort_values(by=y_ax, ascending=False).head(top_limit).reset_index(drop=True)
             df_g["Тип данных"] = "Факт"
-            if horiz and "Bar" in style: 
-                df_g = df_g.sort_values(by=y_ax, ascending=True).reset_index(drop=True)
 
-        # ⚡ Логика генерации текстовых подписей (Синхронно)
-        txt = []
-        for v in df_g[y_ax]:
-            if f_format == "Финансовый": formatted_val = f"{round(v, f_round):,}".replace(",", " ") + curr_suffix
-            elif f_format == "Сжатый (млн/млрд)":
-                if abs(v) >= 1_000_000_000: formatted_val = f"{v / 1_000_000_000:,.2f} млрд{curr_suffix}"
-                else: formatted_val = f"{v / 1_000_000:,.2f} млн{curr_suffix}"
-            else: formatted_val = f"{round(v, f_round):,}".replace(",", " ")
-            txt.append(formatted_val)
-
-        # 🔮 ИСПРАВЛЕНО: Безопасный автоматический маппинг положений надписей под типы графиков
         fig = go.Figure()
         
         if "Линейный" in style or (is_date_axis and "Столбчатая" not in style and "Кольцевая" not in style and "Водопад" not in style):
-            # Линейный режим (Принимает только географическое положение подписей)
-            safe_pos = f_pos if f_pos not in ["inside", "outside", "auto"] else "top center"
-            
             if is_date_axis and forecast_periods > 0:
-                # Двухцветная склейка Факт/Прогноз
-                f_mask = df_g["Тип данных"] == "Факт"
-                p_mask = df_g["Тип данных"] != "Факт"
-                idx_split = len(df_fact) - 1 # Точка склейки
+                idx_split = len(df_fact) - 1
+                txt_full = get_formatted_text(df_g[y_ax].values)
                 
-                # Линия Факта
-                fig.add_trace(go.Scatter(x=df_g[x_ax].iloc[:idx_split+1], y=df_g[y_ax].iloc[:idx_split+1], mode="lines+markers+text" if lbl else "lines+markers", name="Факт", line=dict(color=color, width=4), marker=dict(size=8), text=txt[:idx_split+1] if lbl else None, textposition=safe_pos, textfont=dict(size=f_size, color=f_color)))
-                # Линия Прогноза
-                fig.add_trace(go.Scatter(x=df_g[x_ax].iloc[idx_split:], y=df_g[y_ax].iloc[idx_split:], mode="lines+markers+text" if lbl else "lines+markers", name="Прогноз ИИ", line=dict(color="#ff4b4b", width=4, dash="dash"), marker=dict(size=8, symbol="diamond"), text=txt[idx_split:] if lbl else None, textposition=safe_pos, textfont=dict(size=f_size, color=f_color)))
+                fig.add_trace(go.Scatter(x=df_g[x_ax].iloc[:idx_split+1], y=df_g[y_ax].iloc[:idx_split+1], mode="lines+markers+text" if lbl else "lines+markers", name="Факт", line=dict(color=color, width=4), marker=dict(size=8), text=txt_full[:idx_split+1] if lbl else None, textposition=scatter_pos, textfont=dict(size=f_size, color=f_color)))
+                fig.add_trace(go.Scatter(x=df_g[x_ax].iloc[idx_split:], y=df_g[y_ax].iloc[idx_split:], mode="lines+markers+text" if lbl else "lines+markers", name="Прогноз ИИ", line=dict(color="#ff4b4b", width=4, dash="dash"), marker=dict(size=8, symbol="diamond"), text=txt_full[idx_split:] if lbl else None, textposition=scatter_pos, textfont=dict(size=f_size, color=f_color)))
             else:
-                fig.add_trace(go.Scatter(x=df_g[x_ax], y=df_g[y_ax], mode="lines+markers+text" if lbl else "lines+markers", name="Факт", line=dict(color=color, width=4), marker=dict(size=8), text=txt if lbl else None, textposition=safe_pos, textfont=dict(size=f_size, color=f_color)))
+                txt = get_formatted_text(df_g[y_ax].values)
+                fig.add_trace(go.Scatter(x=df_g[x_ax], y=df_g[y_ax], mode="lines+markers+text" if lbl else "lines+markers", name="Факт", line=dict(color=color, width=4), marker=dict(size=8), text=txt if lbl else None, textposition=scatter_pos, textfont=dict(size=f_size, color=f_color)))
                 
         elif "Столбчатая" in style:
             safe_pos = f_pos if f_pos in ["inside", "outside", "auto"] else "auto"
-            fig.add_trace(go.Bar(y=df_g[x_ax] if horiz else df_g[y_ax], x=df_g[y_ax] if horiz else df_g[x_ax], text=txt if lbl else None, textposition=safe_pos, orientation="h" if horiz else "v", marker_color=color, textfont=dict(size=f_size, color=f_color)))
-            
+            if horiz:
+                if is_date_axis:
+                    df_g = df_g.iloc[::-1].reset_index(drop=True)
+                else:
+                    df_g = df_g.sort_values(by=y_ax, ascending=True).reset_index(drop=True)
+                
+                txt = get_formatted_text(df_g[y_ax].values)
+                fig.add_trace(go.Bar(y=df_g[x_ax].astype(str), x=df_g[y_ax].values, text=txt if lbl else None, textposition=safe_pos, orientation="h", marker_color=color, textfont=dict(size=f_size, color=f_color)))
+            else:
+                txt = get_formatted_text(df_g[y_ax].values)
+                fig.add_trace(go.Bar(x=df_g[x_ax].astype(str), y=df_g[y_ax].values, text=txt if lbl else None, textposition=safe_pos, orientation="v", marker_color=color, textfont=dict(size=f_size, color=f_color)))
+                
         elif "Кольцевая" in style:
             donut_pos = f_pos if f_pos in ["inside", "outside", "auto"] else "auto"
+            txt = get_formatted_text(df_g[y_ax].values)
             fig.add_trace(go.Pie(labels=df_g[x_ax], values=df_g[y_ax], hole=0.4, rotation=rot, textinfo="label+value" if lbl else "none", textposition=donut_pos, texttemplate="%{label}<br>%{text}" if lbl else None, text=txt, textfont=dict(size=f_size, color=f_color)))
             
         elif "Водопад" in style:
             safe_pos = f_pos if f_pos in ["inside", "outside", "auto"] else "auto"
+            txt = get_formatted_text(df_g[y_ax].values)
             fig.add_trace(go.Waterfall(x=list(df_g[x_ax].astype(str)) + ["ИТОГО"], y=list(df_g[y_ax]) + [df_g[y_ax].sum()], text=txt + [f"{df_g[y_ax].sum():,}"], textposition=safe_pos, measure=["relative"] * len(df_g[y_ax]) + ["total"], increasing={"marker": {"color": color}}, textfont=dict(size=f_size, color=f_color)))
 
-        fig.update_layout(xaxis=dict(type='category', tickangle=45 if not horiz else 0), showlegend=True)
+        if horiz and "Столбчатая" in style:
+            fig.update_layout(yaxis=dict(type='category'), xaxis=dict(showgrid=True))
+        else:
+            fig.update_layout(xaxis=dict(type='category', tickangle=45), yaxis=dict(showgrid=True))
+            
+        fig.update_layout(showlegend=True, margin=dict(l=40, r=40, t=40, b=40))
         st.plotly_chart(fig, use_container_width=True, key=f"p_{i}")
     except Exception as chart_err:
         st.error(f"Ошибка графика №{i+1}: {chart_err}")
-
-# ДВИЖОК ОЧИСТКИ И СБОРКИ ДАННЫХ
+# 🛠️ ДВИЖОК ОЧИСТКИ И СБОРКИ ДАННЫХ (POWER QUEEN MERGE ENGINE)
 def power_query_clean_engine(uploaded_files_list, gemini_key):
     frames = []
     for f in uploaded_files_list:
@@ -321,7 +328,7 @@ def power_query_clean_engine(uploaded_files_list, gemini_key):
             
     if not frames: return pd.DataFrame()
     
-    base_df = frames[0].copy()
+    base_df = frames.copy()
     for extra_df in frames[1:]:
         common_keys = list(set(base_df.columns) & set(extra_df.columns))
         common_keys = [k for k in common_keys if k not in ['Сумма', 'Количество']]
@@ -339,7 +346,6 @@ if "manual_charts" not in st.session_state: st.session_state.manual_charts = 1
 if "manual_cards" not in st.session_state: st.session_state.manual_cards = 1
 if "main_df" not in st.session_state: st.session_state.main_df = pd.DataFrame()
 
-# 🛡️ ИСПРАВЛЕНО: Безопасное управление сессией для моментальной интерактивности кнопок конструктора
 def add_chart_cb(): st.session_state.manual_charts += 1
 def remove_chart_cb(): 
     if st.session_state.manual_charts > 1: st.session_state.manual_charts -= 1
@@ -466,8 +472,8 @@ if uploaded_files:
         router_pages = {
             "🗂️ 1. Загрузка и очистка данных": lambda: show_page_1(main_df, all_cols),
             "📊 2. Executive Диаграммы": lambda: show_page_2(act_df, all_cols),
-            "🧮 3. ABC/XYZ-аналитика ОЗМ": lambda: internal_show_abc_xyz_page(act_df, gemini_api_key, ai_context_mode),
-            "👥 4. RFM-сегментация": lambda: internal_show_rfm_page(act_df, gemini_api_key, ai_context_mode)
+            "🗮️ 3. ABC/XYZ-аналитика ОЗМ": lambda: internal_show_abc_xyz_page(act_df, gemini_api_key, ai_context_mode),
+            "👥 4. RFM-сегментация": lambda: internal_show_rfm_page(act_df, gemini_api_key, api_context_mode)
         }
         router_pages[page]()
 else:
