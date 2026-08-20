@@ -46,7 +46,7 @@ def ai_column_mapper_engine(raw_columns_list, api_key):
     except Exception as e:
         st.sidebar.warning(f"⚠️ Ошибка ИИ-маппинга: {e}. Применен локальный текстовый поиск.")
         return {}
-# 🧠 МОДУЛЬ 2: УЛЬТРА-ГИБКИЙ ИИ-АНАЛИЗАТОР БИЗНЕС-ПРОЦЕССОВ
+# 🧠 МОДУЛЬ 2: УЛЬТРА-ГИБКИЙ ИИ-АНАЛИЗАТОР С ФУНКЦИЕЙ СКАЧИВАНИЯ ОТЧЕТА
 def ai_generate_text_report(pivot_matrix_df, report_type="ABC/XYZ", data_context="Расход", api_key=None):
     if not api_key: 
         return st.warning("⚠️ Введите API Key Gemini в сайдбаре.")
@@ -78,9 +78,17 @@ def ai_generate_text_report(pivot_matrix_df, report_type="ABC/XYZ", data_context
                 contents=f"Матрица плотности ({data_context}):\n{pivot_matrix_df.to_string()}", 
                 config=types.GenerateContentConfig(system_instruction=system_instruction, temperature=0.2)
             )
+            report_text = response.text
             st.markdown("---")
             st.markdown(f"### 📝 Аналитический ИИ-Отчет: {data_context} ({report_type})")
-            st.info(response.text)
+            st.info(report_text)
+            
+            st.download_button(
+                label="📥 Скачать аналитическое заключение ИИ (.txt)",
+                data=report_text,
+                file_name=f"ai_report_{report_type.lower().replace('/', '_')}.txt",
+                mime="text/plain"
+            )
     except Exception as report_err: 
         st.error(f"❌ Ошибка ИИ: {report_err}")
 # 🧮 МОДУЛЬ 3: УНИВЕРСАЛЬНЫЙ КОНСТРУКТОР ABC/XYZ
@@ -144,7 +152,7 @@ def internal_show_abc_xyz_page(filtered_df, api_key, data_context):
         
     except Exception as e: 
         st.error(f"Ошибка расчета ABC/XYZ: {e}")
-# 👥 МОДУЛЬ 4: УНИВЕРСАЛЬНЫЙ КОНСТРУКТОР RFM
+# 👥 МОДУЛЬ 4: УНИВЕРСАЛЬНЫЙ КОНСТРУКТОР RFM С ДИНАМИЧЕСКИМ ВЫБОРОМ КОЛОНОК
 def internal_show_rfm_page(filtered_df, api_key, data_context):
     st.title("👥 Модуль RFM-сегментации номенклатуры и категорий")
     if filtered_df.empty: 
@@ -153,6 +161,7 @@ def internal_show_rfm_page(filtered_df, api_key, data_context):
     available_cols = list(df.columns)
     
     st.markdown("### 🎯 Настройка объекта сегментации")
+    
     rc1, rc2 = st.columns(2)
     with rc1:
         rfm_target = st.selectbox("Выберите анализируемое поле:", [c for c in available_cols if c not in ['Сумма', 'Количество']], key="rfm_target_select")
@@ -183,7 +192,7 @@ def internal_show_rfm_page(filtered_df, api_key, data_context):
         st.dataframe(rfm.sort_values(by='M', ascending=False), use_container_width=True)
     except Exception as rfe: 
         st.error(f"❌ Ошибка расчета RFM: {rfe}")
-# 📊 ФУНКЦИЯ 5: ГРАФИЧЕСКИЙ ДВИЖОК С НЕЛИНЕЙНЫМ СГЛАЖИВАНИЕМ И ЗАЩИТОЙ ОТ ПАДЕНИЯ В НОЛЬ
+# 📊 ФУНКЦИЯ 5: ГРАФИЧЕСКИЙ ДВИЖОК С АВТО-РЕСЕМПЛИНГОМ И СИНХРОННЫМИ ИНДЕКСАМИ ПОДПИСЕЙ
 def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_round, f_size, f_color, f_pos, horiz, rot, top_limit, i, date_format_type="Исходный", custom_currency="", forecast_periods=0):
     try:
         df_c = active_df.copy()
@@ -207,17 +216,13 @@ def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_ro
             df_g = df_c.groupby('_month_period_', as_index=False)[y_ax].sum()
             df_g = df_g.sort_values(by='_month_period_', ascending=True)
             
-            # 🔮 УЛУЧШЕННЫЙ МОДУЛЬ ПРОГНОЗА: Весовое сглаживание с затуханием (Защита от нуля)
             if forecast_periods > 0 and len(df_g) > 1:
                 last_value = df_g[y_ax].iloc[-1]
-                
-                # Считаем среднее изменение (тренд) за последние доступные периоды
                 pct_changes = df_g[y_ax].pct_change().dropna()
                 avg_drop = pct_changes.tail(3).mean() if len(pct_changes) >= 3 else pct_changes.mean()
                 
-                # Если тренд падающий, применяем затухающий коэффициент, чтобы график не уходил резко в 0
                 if avg_drop < 0:
-                    avg_drop = max(avg_drop, -0.15) # Ограничиваем падение максимум 15% за шаг
+                    avg_drop = max(avg_drop, -0.15)
                 
                 future_values = []
                 current_val = last_value
@@ -233,11 +238,14 @@ def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_ro
                     y_ax: future_values
                 })
                 
-                df_g['Тип данных'] = 'Факт'
-                df_forecast['Тип данных'] = 'Прогноз ИИ'
-                df_g = pd.concat([df_g, df_forecast], ignore_index=True)
+                df_g['Тип данных'] = 'Fact'
+                df_forecast['Тип данных'] = 'Forecast'
+                
+                # ИСПРАВЛЕНО: Полный принудительный сброс индексов строк для 100% точности подписей данных
+                df_g = pd.concat([df_g, df_forecast], ignore_index=True).reset_index(drop=True)
             else:
-                df_g['Тип данных'] = 'Факт'
+                df_g['Тип данных'] = 'Fact'
+                df_g = df_g.reset_index(drop=True)
                 
             format_mapping = {
                 "ММ.ГГГГ (01.2014)": "%m.%Y",
@@ -248,9 +256,9 @@ def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_ro
             chosen_pattern = format_mapping.get(date_format_type, "%b %Y")
             df_g[x_ax] = df_g['_month_period_'].dt.strftime(chosen_pattern)
         else:
-            df_g = df_c.groupby(x_ax, as_index=False)[y_ax].sum().sort_values(by=y_ax, ascending=False).head(top_limit)
-            df_g['Тип данных'] = 'Факт'
-            if horiz: df_g = df_g.sort_values(by=y_ax, ascending=True)
+            df_g = df_c.groupby(x_ax, as_index=False)[y_ax].sum().sort_values(by=y_ax, ascending=False).head(top_limit).reset_index(drop=True)
+            df_g['Тип данных'] = 'Fact'
+            if horiz: df_g = df_g.sort_values(by=y_ax, ascending=True).reset_index(drop=True)
 
         txt = []
         for v in df_g[y_ax]:
@@ -264,7 +272,7 @@ def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_ro
         donut_pos = safe_pos if ("Donut" not in style or safe_pos in ["inside", "outside", "auto"]) else "auto"
         
         if is_date_axis and forecast_periods > 0:
-            fig = px.line(df_g, x=x_ax, y=y_ax, color='Тип данных', color_discrete_map={'Факт': color, 'Прогноз ИИ': '#ff4b4b'}, markers=True)
+            fig = px.line(df_g, x=x_ax, y=y_ax, color='Тип данных', color_discrete_map={'Fact': color, 'Forecast': '#ff4b4b'}, markers=True)
             if lbl: fig.update_traces(text=txt, textposition=safe_pos, mode="lines+markers+text")
         else:
             fig = go.Figure()
@@ -280,7 +288,7 @@ def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_ro
     except Exception as chart_err:
         st.error(f"Ошибка графика №{i+1}: {chart_err}")
 
-# 🛠️ УМНЫЙ ДВИЖОК СЛИЯНИЯ И ОЧИСТКИ ТАБЛИЦ (POWER QUERY MERGE)
+# ДВИЖОК ОЧИСТКИ И СБОРКИ ДАННЫХ
 def power_query_clean_engine(uploaded_files_list, gemini_key):
     frames = []
     for f in uploaded_files_list:
@@ -306,14 +314,10 @@ def power_query_clean_engine(uploaded_files_list, gemini_key):
             
     if not frames: return pd.DataFrame()
     
-    # ⚙️ АВТОМАТИЧЕСКИЙ ИНТЕЛЛЕКТУАЛЬНЫЙ MERGE ТАБЛИЦ
     base_df = frames[0]
     for extra_df in frames[1:]:
-        # Ищем общие столбцы для связи (например ОЗМ или общие названия категорий)
         common_keys = list(set(base_df.columns) & set(extra_df.columns))
-        # Исключаем метрики из ключей связи
         common_keys = [k for k in common_keys if k not in ['Сумма', 'Количество']]
-        
         if common_keys:
             base_df = pd.merge(base_df, extra_df, on=common_keys, how='outer')
         else:
