@@ -104,7 +104,7 @@ def internal_show_abc_xyz_page(filtered_df, api_key, data_context):
         df[abc_value] = pd.to_numeric(df[abc_value], errors='coerce').fillna(0.0)
         df = df[(df[abc_target].astype(str).str.strip() != "") & (df[xyz_period].astype(str).str.strip() != "")]
         
-        df_abc = df_abc = df.groupby(abc_target, as_index=False)[abc_value].sum().sort_values(by=abc_value, ascending=False).reset_index(drop=True)
+        df_abc = df.groupby(abc_target, as_index=False)[abc_value].sum().sort_values(by=abc_value, ascending=False).reset_index(drop=True)
         total_sum = df_abc[abc_value].sum()
         if total_sum == 0: 
             return st.warning("Сумма значений равна нулю. Расчет невозможен.")
@@ -144,7 +144,7 @@ def internal_show_abc_xyz_page(filtered_df, api_key, data_context):
         
     except Exception as e: 
         st.error(f"Ошибка расчета ABC/XYZ: {e}")
-# 👥 МОДУЛЬ 4: УНИВЕРСАЛЬНЫЙ КОНСТРУКТОР RFM С ДИНАМИЧЕСКИМ ВЫБОРОМ КОЛОНОК
+# 👥 МОДУЛЬ 4: УНИВЕРСАЛЬНЫЙ КОНСТРУКТОР RFM
 def internal_show_rfm_page(filtered_df, api_key, data_context):
     st.title("👥 Модуль RFM-сегментации номенклатуры и категорий")
     if filtered_df.empty: 
@@ -153,7 +153,6 @@ def internal_show_rfm_page(filtered_df, api_key, data_context):
     available_cols = list(df.columns)
     
     st.markdown("### 🎯 Настройка объекта сегментации")
-    
     rc1, rc2 = st.columns(2)
     with rc1:
         rfm_target = st.selectbox("Выберите анализируемое поле:", [c for c in available_cols if c not in ['Сумма', 'Количество']], key="rfm_target_select")
@@ -184,7 +183,7 @@ def internal_show_rfm_page(filtered_df, api_key, data_context):
         st.dataframe(rfm.sort_values(by='M', ascending=False), use_container_width=True)
     except Exception as rfe: 
         st.error(f"❌ Ошибка расчета RFM: {rfe}")
-# 📊 ФУНКЦИЯ 5: ГРАФИЧЕСКИЙ ДВИЖОК С АВТО-РЕСЕМПЛИНГОМ ДАТ, ПРОГНОЗИРОВАНИЕМ И ЗАЩИТОЙ СИНТАКСИСА
+# 📊 ФУНКЦИЯ 5: ГРАФИЧЕСКИЙ ДВИЖОК С НЕЛИНЕЙНЫМ СГЛАЖИВАНИЕМ И ЗАЩИТОЙ ОТ ПАДЕНИЯ В НОЛЬ
 def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_round, f_size, f_color, f_pos, horiz, rot, top_limit, i, date_format_type="Исходный", custom_currency="", forecast_periods=0):
     try:
         df_c = active_df.copy()
@@ -193,13 +192,10 @@ def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_ro
         clean_currency = str(custom_currency).strip()
         curr_suffix = f" {clean_currency}" if clean_currency else ""
         
-        # 🛡️ ИСПРАВЛЕНО: Защита textposition. Линейные тренды px.line не принимают 'auto'.
         safe_pos = f_pos
         if "Line" in style or forecast_periods > 0:
-            if safe_pos == "auto":
-                safe_pos = "top center"
+            if safe_pos == "auto": safe_pos = "top center"
 
-        # Проверка временной шкалы по оси X
         converted_dates = pd.to_datetime(df_c[x_ax], errors='coerce')
         is_date_axis = converted_dates.notna().sum() > (0.5 * len(df_c))
         
@@ -207,22 +203,30 @@ def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_ro
             df_c['_datetime_clean_'] = converted_dates
             df_c = df_c.dropna(subset=['_datetime_clean_'])
             
-            # УМНЫЙ РЕСЕМПЛИНГ: Схлопываем данные по первому числу месяца
             df_c['_month_period_'] = df_c['_datetime_clean_'].dt.to_period('M').dt.to_timestamp()
             df_g = df_c.groupby('_month_period_', as_index=False)[y_ax].sum()
             df_g = df_g.sort_values(by='_month_period_', ascending=True)
             
-            # 📈 МАТЕМАТИЧЕСКОЕ ПРОГНОЗИРОВАНИЕ (ЛИНЕЙНЫЙ ТРЕНД)
+            # 🔮 УЛУЧШЕННЫЙ МОДУЛЬ ПРОГНОЗА: Весовое сглаживание с затуханием (Защита от нуля)
             if forecast_periods > 0 and len(df_g) > 1:
-                df_g['time_idx'] = np.arange(len(df_g))
-                poly_coefs = np.polyfit(df_g['time_idx'], df_g[y_ax], 1)
-                trend_function = np.poly1d(poly_coefs)
+                last_value = df_g[y_ax].iloc[-1]
+                
+                # Считаем среднее изменение (тренд) за последние доступные периоды
+                pct_changes = df_g[y_ax].pct_change().dropna()
+                avg_drop = pct_changes.tail(3).mean() if len(pct_changes) >= 3 else pct_changes.mean()
+                
+                # Если тренд падающий, применяем затухающий коэффициент, чтобы график не уходил резко в 0
+                if avg_drop < 0:
+                    avg_drop = max(avg_drop, -0.15) # Ограничиваем падение максимум 15% за шаг
+                
+                future_values = []
+                current_val = last_value
+                for _ in range(forecast_periods):
+                    current_val = current_val * (1 + avg_drop)
+                    future_values.append(current_val)
                 
                 last_date = df_g['_month_period_'].max()
                 future_dates = [last_date + pd.DateOffset(months=m) for m in range(1, forecast_periods + 1)]
-                future_indices = np.arange(len(df_g), len(df_g) + forecast_periods)
-                future_values = trend_function(future_indices)
-                future_values = np.clip(future_values, 0, None)
                 
                 df_forecast = pd.DataFrame({
                     '_month_period_': future_dates,
@@ -257,7 +261,6 @@ def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_ro
             else: formatted_val = f"{round(v, f_round):,}".replace(",", " ")
             txt.append(formatted_val)
         
-        # Защита для классического го гоу стайл
         donut_pos = safe_pos if ("Donut" not in style or safe_pos in ["inside", "outside", "auto"]) else "auto"
         
         if is_date_axis and forecast_periods > 0:
@@ -273,14 +276,13 @@ def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_ro
         fig.update_layout(xaxis=dict(type='category', tickangle=45 if not horiz else 0))
         if lbl and not (is_date_axis and forecast_periods > 0):
             fig.update_traces(textfont=dict(size=f_size, color=f_color))
-            if "Donut" in style: fig.update_traces(insidetextfont=dict(size=f_size, color=f_color), outsidetextfont=dict(size=f_size, color=f_color))
         st.plotly_chart(fig, use_container_width=True, key=f"p_{i}")
     except Exception as chart_err:
         st.error(f"Ошибка графика №{i+1}: {chart_err}")
 
-# ДВИЖОК ОЧИСТКИ И СБОРКИ ДАННЫХ
+# 🛠️ УМНЫЙ ДВИЖОК СЛИЯНИЯ И ОЧИСТКИ ТАБЛИЦ (POWER QUERY MERGE)
 def power_query_clean_engine(uploaded_files_list, gemini_key):
-    frames = {}
+    frames = []
     for f in uploaded_files_list:
         try:
             df = pd.read_csv(f, dtype=str) if f.name.endswith('.csv') else pd.read_excel(f, dtype=str, engine='calamine')
@@ -298,15 +300,29 @@ def power_query_clean_engine(uploaded_files_list, gemini_key):
                     else: mapped.append(col)
             df.columns = mapped
             df = df.loc[:, ~df.columns.str.contains('^Без названия|^Unnamed|^Unnamed:')].loc[:, ~df.columns.duplicated()]
-            df['Источник (Файл)'] = f.name.replace(".xlsx", "").replace(".csv", "")
-            frames[f.name] = df.dropna(how='all')
+            frames.append(df.dropna(how='all'))
         except Exception as file_err:
             st.sidebar.error(f"Ошибка файла {f.name}: {file_err}")
+            
     if not frames: return pd.DataFrame()
-    res = pd.concat(frames.values(), ignore_index=True, join='outer')
+    
+    # ⚙️ АВТОМАТИЧЕСКИЙ ИНТЕЛЛЕКТУАЛЬНЫЙ MERGE ТАБЛИЦ
+    base_df = frames[0]
+    for extra_df in frames[1:]:
+        # Ищем общие столбцы для связи (например ОЗМ или общие названия категорий)
+        common_keys = list(set(base_df.columns) & set(extra_df.columns))
+        # Исключаем метрики из ключей связи
+        common_keys = [k for k in common_keys if k not in ['Сумма', 'Количество']]
+        
+        if common_keys:
+            base_df = pd.merge(base_df, extra_df, on=common_keys, how='outer')
+        else:
+            base_df = pd.concat([base_df, extra_df], ignore_index=True, join='outer')
+            
     for c in ['Количество', 'Сумма']:
-        if c in res.columns: res[c] = pd.to_numeric(res[c].astype(str).str.replace(r'\s+', '', regex=True).str.replace(',', '.'), errors='coerce').fillna(0.0)
-    return res.dropna(how='all')
+        if c in base_df.columns: 
+            base_df[c] = pd.to_numeric(base_df[c].astype(str).str.replace(r'\s+', '', regex=True).str.replace(',', '.'), errors='coerce').fillna(0.0)
+    return base_df.dropna(how='all')
 # ⚙️ ИНИЦИАЛИЗАЦИЯ И СТАТИЧЕСКИЕ КОЛЛБЭКИ ВМЕСТО ST.RERUN
 if "manual_charts" not in st.session_state: st.session_state.manual_charts = 1
 if "manual_cards" not in st.session_state: st.session_state.manual_cards = 1
@@ -436,7 +452,7 @@ if uploaded_files:
         router_pages = {
             "🗂️ 1. Загрузка и очистка данных": lambda: show_page_1(main_df, all_cols),
             "📊 2. Executive Диаграммы": lambda: show_page_2(act_df, all_cols),
-            "🧮 3. ABC/XYZ-аналитика ОЗМ": lambda: internal_show_abc_xyz_page(act_df, gemini_api_key, ai_context_mode),
+            "🗂️ 3. ABC/XYZ-аналитика ОЗМ": lambda: internal_show_abc_xyz_page(act_df, gemini_api_key, ai_context_mode),
             "👥 4. RFM-сегментация": lambda: internal_show_rfm_page(act_df, gemini_api_key, ai_context_mode)
         }
         router_pages[page]()
