@@ -30,8 +30,9 @@ def ai_column_mapper_engine(raw_columns_list, api_key):
             "должны мапиться в 'Сумма', а 'Units', 'Volume' — в 'Количество')."
         )
         
+        # Переключено на gemini-2.5-flash для идеальной совместимости с Structured Outputs
         response = client.models.generate_content(
-            model='gemini-3.5-flash',
+            model='gemini-2.5-flash',
             contents=f"Выполни маппинг списка заголовков: {str(raw_columns_list)}",
             config=types.GenerateContentConfig(
                 system_instruction=sys_instruction,
@@ -74,7 +75,7 @@ def ai_generate_text_report(pivot_matrix_df, report_type="ABC/XYZ", data_context
         """
         with st.spinner(f"🔮 ИИ генерирует чистый отчет для контекста '{data_context}'..."):
             response = client.models.generate_content(
-                model='gemini-3.5-flash', 
+                model='gemini-2.5-flash', 
                 contents=f"Матрица плотности ({data_context}):\n{pivot_matrix_df.to_string()}", 
                 config=types.GenerateContentConfig(system_instruction=system_instruction, temperature=0.2)
             )
@@ -236,24 +237,19 @@ def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_ro
             
             fig = go.Figure()
             
-            # Слой Факта
             fact_x = df_fact['_month_period_'].dt.strftime(chosen_pattern).astype(str)
             fact_y = df_fact[y_ax].values
             fact_txt = get_formatted_text(fact_y)
             fig.add_trace(go.Scatter(x=fact_x, y=fact_y, mode="lines+markers+text" if lbl else "lines+markers", name="Факт", line=dict(color=color, width=4), marker=dict(size=8), text=fact_txt if lbl else None, textposition=safe_pos))
             
-            # Слой Прогноза с умным расчетом дельты шага
             if forecast_periods > 0 and len(df_fact) > 1:
                 last_value = df_fact[y_ax].iloc[-1]
                 pct_changes = df_fact[y_ax].pct_change().dropna()
                 avg_drop = pct_changes.tail(3).mean() if len(pct_changes) >= 3 else pct_changes.mean()
                 if avg_drop < 0: avg_drop = max(avg_drop, -0.15)
                 
-                # ⚙️ ИСПРАВЛЕНО: Автоопределение шага таблицы (по месяцам или по годам)
                 date_diffs = df_fact['_month_period_'].diff().dropna()
                 avg_days_step = date_diffs.dt.days.mean()
-                
-                # Если средний шаг между записями больше 300 дней — данные годовые, шагаем годами
                 is_yearly_data = avg_days_step > 300
                 
                 future_values = []
@@ -266,7 +262,6 @@ def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_ro
                 future_dates = []
                 for m in range(1, forecast_periods + 1):
                     if is_yearly_data:
-                        # Если данные годовые, прибавляем ровно 12 месяцев за каждый шаг ползунка
                         future_dates.append(last_date + pd.DateOffset(years=m))
                     else:
                         future_dates.append(last_date + pd.DateOffset(months=m))
@@ -281,7 +276,6 @@ def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_ro
             fig.update_layout(xaxis=dict(type='category', tickangle=45 if not horiz else 0))
             st.plotly_chart(fig, use_container_width=True, key=f"p_{i}")
             return
-            
         else:
             df_g = df_c.groupby(x_ax, as_index=False)[y_ax].sum().sort_values(by=y_ax, ascending=False).head(top_limit).reset_index(drop=True)
             txt = get_formatted_text(df_g[y_ax].values)
@@ -299,7 +293,7 @@ def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_ro
     except Exception as chart_err:
         st.error(f"Ошибка графика №{i+1}: {chart_err}")
 
-# ДВИЖОК ОЧИСТКИ И СБОРКИ ДАННЫХ
+# 🛠️ ИСПРАВЛЕНО: Полностью устранен AttributeError 'list' object has no attribute 'columns'
 def power_query_clean_engine(uploaded_files_list, gemini_key):
     frames = []
     for f in uploaded_files_list:
@@ -325,7 +319,9 @@ def power_query_clean_engine(uploaded_files_list, gemini_key):
             
     if not frames: return pd.DataFrame()
     
-    base_df = frames
+    # Задаем первый DataFrame как основу для слияния
+    base_df = frames[0].copy()
+    
     for extra_df in frames[1:]:
         common_keys = list(set(base_df.columns) & set(extra_df.columns))
         common_keys = [k for k in common_keys if k not in ['Сумма', 'Количество']]
@@ -382,7 +378,7 @@ if uploaded_files:
             f_v1 = st.sidebar.selectbox("Значение среза №1:", u_v1, key="fl_v1")
             if f_v1 != "-- Все значения --": act_df = act_df[act_df[f_col1].astype(str) == str(f_v1)]
         
-        page = st.sidebar.radio("Перейти к разделу:", ["🗂️ 1. Загрузка и очистка данных", "📊 2. Executive Диаграммы", "🧮 3. ABC/XYZ-аналитика ОЗМ", "👥 4. RFM-сегментация"])
+        page = st.sidebar.radio("Перейти к разделу:", ["🗂️ 1. Загрузка и очистка данных", "📊 2. Executive Диаграммы", "🗮️ 3. ABC/XYZ-аналитика ОЗМ", "👥 4. RFM-сегментация"])
         
         def show_page_1(dataframe_input, columns_input):
             st.success(f"📊 База сформирована! Строк: {len(dataframe_input):,}")
