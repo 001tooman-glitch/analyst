@@ -192,7 +192,7 @@ def internal_show_rfm_page(filtered_df, api_key, data_context):
         st.dataframe(rfm.sort_values(by='M', ascending=False), use_container_width=True)
     except Exception as rfe: 
         st.error(f"❌ Ошибка расчета RFM: {rfe}")
-# 📊 ФУНКЦИЯ 5: ГРАФИЧЕСКИЙ ДВИЖОК С АВТО-РЕСЕМПЛИНГОМ И СИНХРОННЫМИ ИНДЕКСАМИ ПОДПИСЕЙ
+# 📊 ФУНКЦИЯ 5: ГРАФИЧЕСКИЙ ДВИЖОК С АВТО-РЕСЕМПЛИНГОМ И ЖЕСТКИМИ СЛОЯМИ GRAPH_OBJECTS
 def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_round, f_size, f_color, f_pos, horiz, rot, top_limit, i, date_format_type="Исходный", custom_currency="", forecast_periods=0):
     try:
         df_c = active_df.copy()
@@ -208,45 +208,25 @@ def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_ro
         converted_dates = pd.to_datetime(df_c[x_ax], errors='coerce')
         is_date_axis = converted_dates.notna().sum() > (0.5 * len(df_c))
         
+        # Вспомогательная функция локального форматирования меток
+        def get_formatted_text(value_array):
+            labels = []
+            for v in value_array:
+                if f_format == "Финансовый": formatted_val = f"{round(v, f_round):,}".replace(",", " ") + curr_suffix
+                elif f_format == "Сжатый (млн/млрд)":
+                    if abs(v) >= 1_000_000_000: formatted_val = f"{v / 1_000_000_000:,.2f} млрд{curr_suffix}"
+                    else: formatted_val = f"{v / 1_000_000:,.2f} млн{curr_suffix}"
+                else: formatted_val = f"{round(v, f_round):,}".replace(",", " ")
+                labels.append(formatted_val)
+            return labels
+
         if is_date_axis:
             df_c['_datetime_clean_'] = converted_dates
             df_c = df_c.dropna(subset=['_datetime_clean_'])
-            
             df_c['_month_period_'] = df_c['_datetime_clean_'].dt.to_period('M').dt.to_timestamp()
-            df_g = df_c.groupby('_month_period_', as_index=False)[y_ax].sum()
-            df_g = df_g.sort_values(by='_month_period_', ascending=True)
             
-            if forecast_periods > 0 and len(df_g) > 1:
-                last_value = df_g[y_ax].iloc[-1]
-                pct_changes = df_g[y_ax].pct_change().dropna()
-                avg_drop = pct_changes.tail(3).mean() if len(pct_changes) >= 3 else pct_changes.mean()
-                
-                if avg_drop < 0:
-                    avg_drop = max(avg_drop, -0.15)
-                
-                future_values = []
-                current_val = last_value
-                for _ in range(forecast_periods):
-                    current_val = current_val * (1 + avg_drop)
-                    future_values.append(current_val)
-                
-                last_date = df_g['_month_period_'].max()
-                future_dates = [last_date + pd.DateOffset(months=m) for m in range(1, forecast_periods + 1)]
-                
-                df_forecast = pd.DataFrame({
-                    '_month_period_': future_dates,
-                    y_ax: future_values
-                })
-                
-                df_g['Тип данных'] = 'Fact'
-                df_forecast['Тип данных'] = 'Forecast'
-                
-                # ИСПРАВЛЕНО: Полный принудительный сброс индексов строк для 100% точности подписей данных
-                df_g = pd.concat([df_g, df_forecast], ignore_index=True).reset_index(drop=True)
-            else:
-                df_g['Тип данных'] = 'Fact'
-                df_g = df_g.reset_index(drop=True)
-                
+            df_fact = df_c.groupby('_month_period_', as_index=False)[y_ax].sum().sort_values(by='_month_period_', ascending=True).reset_index(drop=True)
+            
             format_mapping = {
                 "ММ.ГГГГ (01.2014)": "%m.%Y",
                 "Месяц ГГГГ (Янв 2014)": "%b %Y",
@@ -254,37 +234,59 @@ def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_ro
                 "ГГГГ (2014)": "%Y"
             }
             chosen_pattern = format_mapping.get(date_format_type, "%b %Y")
-            df_g[x_ax] = df_g['_month_period_'].dt.strftime(chosen_pattern)
+            
+            fig = go.Figure()
+            
+            # СЛОЙ 1: ФАКТИЧЕСКИЕ ИСТОРИЧЕСКИЕ ДАННЫЕ
+            fact_x = df_fact['_month_period_'].dt.strftime(chosen_pattern).astype(str)
+            fact_y = df_fact[y_ax].values
+            fact_txt = get_formatted_text(fact_y)
+            
+            fig.add_trace(go.Scatter(x=fact_x, y=fact_y, mode="lines+markers+text" if lbl else "lines+markers", name="Факт", line=dict(color=color, width=4), marker=dict(size=8), text=fact_txt if lbl else None, textposition=safe_pos))
+            
+            # СЛОЙ 2: НЕЗАВИСИМЫЙ ПРОГНОЗНЫЙ ТРЕНД ИИ
+            if forecast_periods > 0 and len(df_fact) > 1:
+                last_value = df_fact[y_ax].iloc[-1]
+                pct_changes = df_fact[y_ax].pct_change().dropna()
+                avg_drop = pct_changes.tail(3).mean() if len(pct_changes) >= 3 else pct_changes.mean()
+                if avg_drop < 0: avg_drop = max(avg_drop, -0.15)
+                
+                future_values = []
+                current_val = last_value
+                for _ in range(forecast_periods):
+                    current_val = current_val * (1 + avg_drop)
+                    future_values.append(current_val)
+                
+                last_date = df_fact['_month_period_'].max()
+                future_dates = [last_date + pd.DateOffset(months=m) for m in range(1, forecast_periods + 1)]
+                
+                # Точка склейки: соединяем последний факт с началом прогноза
+                fc_x_dates = [df_fact['_month_period_'].iloc[-1]] + future_dates
+                fc_x = [d.strftime(chosen_pattern) for d in fc_x_dates]
+                fc_y = [last_value] + future_values
+                fc_txt = get_formatted_text(fc_y)
+                
+                fig.add_trace(go.Scatter(x=fc_x, y=fc_y, mode="lines+markers+text" if lbl else "lines+markers", name="Прогноз ИИ", line=dict(color="#ff4b4b", width=4, dash="dash"), marker=dict(size=8, symbol="diamond"), text=fc_txt if lbl else None, textposition=safe_pos))
+                
+            fig.update_layout(xaxis=dict(type='category', tickangle=45 if not horiz else 0))
+            st.plotly_chart(fig, use_container_width=True, key=f"p_{i}")
+            return
+            
         else:
+            # Бизнес-категории (Текстовая ось без дат)
             df_g = df_c.groupby(x_ax, as_index=False)[y_ax].sum().sort_values(by=y_ax, ascending=False).head(top_limit).reset_index(drop=True)
-            df_g['Тип данных'] = 'Fact'
+            txt = get_formatted_text(df_g[y_ax].values)
             if horiz: df_g = df_g.sort_values(by=y_ax, ascending=True).reset_index(drop=True)
 
-        txt = []
-        for v in df_g[y_ax]:
-            if f_format == "Финансовый": formatted_val = f"{round(v, f_round):,}".replace(",", " ") + curr_suffix
-            elif f_format == "Сжатый (млн/млрд)":
-                if abs(v) >= 1_000_000_000: formatted_val = f"{v / 1_000_000_000:,.2f} млрд{curr_suffix}"
-                else: formatted_val = f"{v / 1_000_000:,.2f} млн{curr_suffix}"
-            else: formatted_val = f"{round(v, f_round):,}".replace(",", " ")
-            txt.append(formatted_val)
-        
-        donut_pos = safe_pos if ("Donut" not in style or safe_pos in ["inside", "outside", "auto"]) else "auto"
-        
-        if is_date_axis and forecast_periods > 0:
-            fig = px.line(df_g, x=x_ax, y=y_ax, color='Тип данных', color_discrete_map={'Fact': color, 'Forecast': '#ff4b4b'}, markers=True)
-            if lbl: fig.update_traces(text=txt, textposition=safe_pos, mode="lines+markers+text")
-        else:
+            donut_pos = safe_pos if ("Donut" not in style or safe_pos in ["inside", "outside", "auto"]) else "auto"
             fig = go.Figure()
             if "Waterfall" in style: fig.add_trace(go.Waterfall(x=list(df_g[x_ax].astype(str)) + ["ИТОГО"], y=list(df_g[y_ax]) + [df_g[y_ax].sum()], text=txt + [f"{df_g[y_ax].sum():,}"], textposition=safe_pos, measure=["relative"] * len(df_g[y_ax]) + ["total"], increasing={"marker": {"color": color}}))
             elif "Donut" in style: fig.add_trace(go.Pie(labels=df_g[x_ax], values=df_g[y_ax], hole=0.4, rotation=rot, textinfo="label+value" if lbl else "none", textposition=donut_pos, texttemplate="%{label}<br>%{text}" if lbl else None, text=txt))
             elif "Line" in style: fig.add_trace(go.Scatter(x=df_g[x_ax], y=df_g[y_ax], mode="lines+markers+text" if lbl else "lines+markers", text=txt, textposition=safe_pos, line=dict(color=color, width=4), marker=dict(size=8)))
             else: fig.add_trace(go.Bar(y=df_g[x_ax] if horiz else df_g[y_ax], x=df_g[y_ax] if horiz else df_g[x_ax], text=txt if lbl else None, textposition=safe_pos, orientation="h" if horiz else "v", marker_color=color))
             
-        fig.update_layout(xaxis=dict(type='category', tickangle=45 if not horiz else 0))
-        if lbl and not (is_date_axis and forecast_periods > 0):
-            fig.update_traces(textfont=dict(size=f_size, color=f_color))
-        st.plotly_chart(fig, use_container_width=True, key=f"p_{i}")
+            fig.update_layout(xaxis=dict(type='category', tickangle=45 if not horiz else 0))
+            st.plotly_chart(fig, use_container_width=True, key=f"p_{i}")
     except Exception as chart_err:
         st.error(f"Ошибка графика №{i+1}: {chart_err}")
 
@@ -456,7 +458,7 @@ if uploaded_files:
         router_pages = {
             "🗂️ 1. Загрузка и очистка данных": lambda: show_page_1(main_df, all_cols),
             "📊 2. Executive Диаграммы": lambda: show_page_2(act_df, all_cols),
-            "🗂️ 3. ABC/XYZ-аналитика ОЗМ": lambda: internal_show_abc_xyz_page(act_df, gemini_api_key, ai_context_mode),
+            "🗮️ 3. ABC/XYZ-аналитика ОЗМ": lambda: internal_show_abc_xyz_page(act_df, gemini_api_key, ai_context_mode),
             "👥 4. RFM-сегментация": lambda: internal_show_rfm_page(act_df, gemini_api_key, ai_context_mode)
         }
         router_pages[page]()
