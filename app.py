@@ -104,7 +104,7 @@ def internal_show_abc_xyz_page(filtered_df, api_key, data_context):
         df[abc_value] = pd.to_numeric(df[abc_value], errors='coerce').fillna(0.0)
         df = df[(df[abc_target].astype(str).str.strip() != "") & (df[xyz_period].astype(str).str.strip() != "")]
         
-        df_abc = df.groupby(abc_target, as_index=False)[abc_value].sum().sort_values(by=abc_value, ascending=False).reset_index(drop=True)
+        df_abc = df_abc = df.groupby(abc_target, as_index=False)[abc_value].sum().sort_values(by=abc_value, ascending=False).reset_index(drop=True)
         total_sum = df_abc[abc_value].sum()
         if total_sum == 0: 
             return st.warning("Сумма значений равна нулю. Расчет невозможен.")
@@ -184,7 +184,7 @@ def internal_show_rfm_page(filtered_df, api_key, data_context):
         st.dataframe(rfm.sort_values(by='M', ascending=False), use_container_width=True)
     except Exception as rfe: 
         st.error(f"❌ Ошибка расчета RFM: {rfe}")
-# 📊 ФУНКЦИЯ 5: ГРАФИЧЕСКИЙ ДВИЖОК С АВТО-РЕСЕМПЛИНГОМ ДАТ, ПРОГНОЗИРОВАНИЕМ И СВОБОДНЫМ ТЕКСТОМ ВАЛЮТЫ
+# 📊 ФУНКЦИЯ 5: ГРАФИЧЕСКИЙ ДВИЖОК С АВТО-РЕСЕМПЛИНГОМ ДАТ, ПРОГНОЗИРОВАНИЕМ И ЗАЩИТОЙ СИНТАКСИСА
 def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_round, f_size, f_color, f_pos, horiz, rot, top_limit, i, date_format_type="Исходный", custom_currency="", forecast_periods=0):
     try:
         df_c = active_df.copy()
@@ -193,6 +193,12 @@ def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_ro
         clean_currency = str(custom_currency).strip()
         curr_suffix = f" {clean_currency}" if clean_currency else ""
         
+        # 🛡️ ИСПРАВЛЕНО: Защита textposition. Линейные тренды px.line не принимают 'auto'.
+        safe_pos = f_pos
+        if "Line" in style or forecast_periods > 0:
+            if safe_pos == "auto":
+                safe_pos = "top center"
+
         # Проверка временной шкалы по оси X
         converted_dates = pd.to_datetime(df_c[x_ax], errors='coerce')
         is_date_axis = converted_dates.notna().sum() > (0.5 * len(df_c))
@@ -250,9 +256,9 @@ def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_ro
                 else: formatted_val = f"{v / 1_000_000:,.2f} млн{curr_suffix}"
             else: formatted_val = f"{round(v, f_round):,}".replace(",", " ")
             txt.append(formatted_val)
-
-        safe_pos = f_pos if ("Donut" not in style or f_pos in ["inside", "outside", "auto"]) else "auto"
-        if "Line" in style: safe_pos = "top center"
+        
+        # Защита для классического го гоу стайл
+        donut_pos = safe_pos if ("Donut" not in style or safe_pos in ["inside", "outside", "auto"]) else "auto"
         
         if is_date_axis and forecast_periods > 0:
             fig = px.line(df_g, x=x_ax, y=y_ax, color='Тип данных', color_discrete_map={'Факт': color, 'Прогноз ИИ': '#ff4b4b'}, markers=True)
@@ -260,7 +266,7 @@ def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_ro
         else:
             fig = go.Figure()
             if "Waterfall" in style: fig.add_trace(go.Waterfall(x=list(df_g[x_ax].astype(str)) + ["ИТОГО"], y=list(df_g[y_ax]) + [df_g[y_ax].sum()], text=txt + [f"{df_g[y_ax].sum():,}"], textposition=safe_pos, measure=["relative"] * len(df_g[y_ax]) + ["total"], increasing={"marker": {"color": color}}))
-            elif "Donut" in style: fig.add_trace(go.Pie(labels=df_g[x_ax], values=df_g[y_ax], hole=0.4, rotation=rot, textinfo="label+value" if lbl else "none", textposition=safe_pos, texttemplate="%{label}<br>%{text}" if lbl else None, text=txt))
+            elif "Donut" in style: fig.add_trace(go.Pie(labels=df_g[x_ax], values=df_g[y_ax], hole=0.4, rotation=rot, textinfo="label+value" if lbl else "none", textposition=donut_pos, texttemplate="%{label}<br>%{text}" if lbl else None, text=txt))
             elif "Line" in style: fig.add_trace(go.Scatter(x=df_g[x_ax], y=df_g[y_ax], mode="lines+markers+text" if lbl else "lines+markers", text=txt, textposition=safe_pos, line=dict(color=color, width=4), marker=dict(size=8)))
             else: fig.add_trace(go.Bar(y=df_g[x_ax] if horiz else df_g[y_ax], x=df_g[y_ax] if horiz else df_g[x_ax], text=txt if lbl else None, textposition=safe_pos, orientation="h" if horiz else "v", marker_color=color))
             
@@ -369,7 +375,7 @@ if uploaded_files:
                     
                     with st.expander("🎨 Настройки отображения"):
                         c_fmt = st.selectbox("Формат:", ["Числовой", "Финансовый", "Сжатый (млн/млрд)"], key=f"c_f_{j}")
-                        c_curr_text = st.text_input("Валюта/Ед. изм. (вручную):", value="₸", key=f"c_cur_tx_{j}")
+                        c_curr_text = st.text_input("Валюта/Ед. изм. (вручную):", value="₸", key=f"c_cur_{j}")
                         curr_sym = f" {c_curr_text.strip()}" if c_curr_text.strip() else ""
                         c_rnd = st.slider("Округление:", 0, 4, 2, key=f"c_r_{j}")
                         c_sz = st.slider("Шрифт (px):", 16, 48, 26, key=f"c_s_{j}")
