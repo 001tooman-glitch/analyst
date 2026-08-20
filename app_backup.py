@@ -3,19 +3,13 @@ import pandas as pd
 import io
 import json
 import numpy as np
-import plotly.express as px
 import plotly.graph_objects as go
+import plotly.express as px
 from google import genai
 from google.genai import types
-from pydantic import BaseModel, Field
 
-# Схема для гарантированного JSON-ответа от Gemini Developer API
-class ColumnMappingSchema(BaseModel):
-    model_config = {"extra": "forbid"}
-    
-    mapping: dict[str, str] = Field(
-        description="Словарь, где ключ - исходное имя колонки, а значение - строго одно из полей: 'ОЗМ', 'Наименование материала', 'Количество' или 'Сумма'"
-    )
+# Принудительная инициализация разметки страницы на самом старте скрипта
+st.set_page_config(layout="wide", page_title="BI Enterprise Platform")
 # 🤖 МОДУЛЬ 1: ИИ-АВТОМАППИНГ С ОПТИМИЗАЦИЕЙ И КЭШЕМ
 @st.cache_data(show_spinner=False)
 def ai_column_mapper_engine(raw_columns_list, api_key):
@@ -26,27 +20,23 @@ def ai_column_mapper_engine(raw_columns_list, api_key):
         sys_instruction = (
             "Ты — BI-аналитик. Сопоставь заголовки закупщика с полями: "
             "'ОЗМ', 'Наименование материала', 'Количество', 'Сумма'. "
-            "Используй контекст и смысл слов (например, 'Sales', 'Revenue', 'Profit', 'Cost' "
-            "должны мапиться в 'Сумма', а 'Units', 'Volume' — в 'Количество')."
+            "Возвращай СТРОГО JSON-словарь, где ключ - исходная колонка, а значение - одна из четырех новых."
         )
         
         response = client.models.generate_content(
-            model='gemini-3.5-flash',
+            model='gemini-2.5-flash',
             contents=f"Выполни маппинг списка заголовков: {str(raw_columns_list)}",
             config=types.GenerateContentConfig(
                 system_instruction=sys_instruction,
                 response_mime_type="application/json",
-                response_schema=ColumnMappingSchema,
                 temperature=0.1
             ),
         )
-        res_json = json.loads(response.text)
-        mapping_result = res_json.get("mapping", {})
+        mapping_result = json.loads(response.text)
         return mapping_result
     except Exception as e:
-        st.sidebar.warning(f"⚠️ Ошибка ИИ-маппинга: {e}. Применен локальный текстовый поиск.")
         return {}
-# 🧠 МОДУЛЬ 2: УЛЬТРА-ГИБКИЙ ИИ-АНАЛИЗАТОР БИЗНЕС-ПРОЦЕССОВ
+# 🧠 МОДУЛЬ 2: УЛЬТРА-ГИБКИЙ ИИ-АНАЛИЗАТОР С ФУНКЦИЕЙ СКАЧИВАНИЯ ОТЧЕТА
 def ai_generate_text_report(pivot_matrix_df, report_type="ABC/XYZ", data_context="Расход", api_key=None):
     if not api_key: 
         return st.warning("⚠️ Введите API Key Gemini в сайдбаре.")
@@ -74,13 +64,21 @@ def ai_generate_text_report(pivot_matrix_df, report_type="ABC/XYZ", data_context
         """
         with st.spinner(f"🔮 ИИ генерирует чистый отчет для контекста '{data_context}'..."):
             response = client.models.generate_content(
-                model='gemini-3.5-flash', 
+                model='gemini-2.5-flash', 
                 contents=f"Матрица плотности ({data_context}):\n{pivot_matrix_df.to_string()}", 
                 config=types.GenerateContentConfig(system_instruction=system_instruction, temperature=0.2)
             )
+            report_text = response.text
             st.markdown("---")
             st.markdown(f"### 📝 Аналитический ИИ-Отчет: {data_context} ({report_type})")
-            st.info(response.text)
+            st.info(report_text)
+            
+            st.download_button(
+                label="📥 Скачать аналитическое заключение ИИ (.txt)",
+                data=report_text,
+                file_name=f"ai_report_{report_type.lower().replace('/', '_')}.txt",
+                mime="text/plain"
+            )
     except Exception as report_err: 
         st.error(f"❌ Ошибка ИИ: {report_err}")
 # 🧮 МОДУЛЬ 3: УНИВЕРСАЛЬНЫЙ КОНСТРУКТОР ABC/XYZ
@@ -167,7 +165,7 @@ def internal_show_rfm_page(filtered_df, api_key, data_context):
         rfm.columns = ['Объект Анализа', 'F', 'M']
         
         if len(rfm) < 3 or rfm['F'].nunique() <= 1 or rfm['M'].nunique() <= 1:
-            st.warning("⚠️ Недостаточно уникальных данных в выбранных полях для разделения на квантили (qcut). Выведен общий список.")
+            st.warning("⚠️ Недостаточно уникальных данных для квантования. Выведен общий список.")
             st.dataframe(rfm.sort_values(by='M', ascending=False), use_container_width=True)
             return
 
@@ -184,83 +182,124 @@ def internal_show_rfm_page(filtered_df, api_key, data_context):
         st.dataframe(rfm.sort_values(by='M', ascending=False), use_container_width=True)
     except Exception as rfe: 
         st.error(f"❌ Ошибка расчета RFM: {rfe}")
-# 📊 ФУНКЦИЯ 5: ГРАФИЧЕСКИЙ ДВИЖОК PLOTLY С УМНОЙ ОБРАБОТКОЙ ВРЕМЕНИ И СВОБОДНЫМ ТЕКСТОМ ВАЛЮТЫ
-def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_round, f_size, f_color, f_pos, horiz, rot, top_limit, i, date_format_type="Исходный", custom_currency=""):
+# 📊 ФУНКЦИЯ 5: МОДЕРНИЗИРОВАННЫЙ ГРАФИЧЕСКИЙ ДВИЖОК С АВТОМАППИНГОМ ПОЛОЖЕНИЙ И ФОРМАТИРОВАНИЕМ ИТОГО
+def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_round, f_size, f_color, f_pos, horiz, rot, top_limit, i, date_format_type="Исходный", custom_currency="", forecast_periods=0):
     try:
         df_c = active_df.copy()
         df_c[y_ax] = pd.to_numeric(df_c[y_ax], errors='coerce').fillna(0)
         
-        # ⚡ МОДИФИЦИРОВАНО: Префикс валюты берется напрямую из текстового поля ввода
         clean_currency = str(custom_currency).strip()
         curr_suffix = f" {clean_currency}" if clean_currency else ""
         
-        # Проверка временной шкалы по оси X
+        # ⚙️ ИСПРАВЛЕНО: Гибкий интеллектуальный маппинг положений текста для линий go.Scatter
+        scatter_pos = "top center"
+        if f_pos == "inside": scatter_pos = "middle center"
+        elif f_pos == "outside": scatter_pos = "top center"
+        elif f_pos in ["top center", "bottom center", "middle center", "top left", "top right", "bottom left", "bottom right"]:
+            scatter_pos = f_pos
+
+        def get_formatted_text(value_array):
+            labels = []
+            for v in value_array:
+                if f_format == "Финансовый": formatted_val = f"{round(v, f_round):,}".replace(",", " ") + curr_suffix
+                elif f_format == "Сжатый (млн/млрд)":
+                    if abs(v) >= 1_000_000_000: formatted_val = f"{v / 1_000_000_000:,.2f} млрд{curr_suffix}"
+                    else: formatted_val = f"{v / 1_000_000:,.2f} млн{curr_suffix}"
+                else: formatted_val = f"{round(v, f_round):,}".replace(",", " ")
+                labels.append(formatted_val)
+            return labels
+
         converted_dates = pd.to_datetime(df_c[x_ax], errors='coerce')
         is_date_axis = converted_dates.notna().sum() > (0.5 * len(df_c))
-        
         if is_date_axis:
             df_c['_datetime_clean_'] = converted_dates
             df_c = df_c.dropna(subset=['_datetime_clean_'])
-            df_g = df_c.groupby('_datetime_clean_', as_index=False)[y_ax].sum()
-            df_g = df_g.sort_values(by='_datetime_clean_', ascending=True).head(top_limit)
+            df_c['_month_period_'] = df_c['_datetime_clean_'].dt.to_period('M').dt.to_timestamp()
+            df_fact = df_c.groupby('_month_period_', as_index=False)[y_ax].sum().sort_values(by='_month_period_', ascending=True).reset_index(drop=True)
             
-            format_mapping = {
-                "ММ.ГГГГ (01.2014)": "%m.%Y",
-                "Месяц ГГГГ (Янв 2014)": "%b %Y",
-                "ДД.ММ.ГГГГ (15.01.2014)": "%d.%m.%Y",
-                "ГГГГ (2014)": "%Y"
-            }
-            chosen_pattern = format_mapping.get(date_format_type, None)
-            if chosen_pattern:
-                df_g[x_ax] = df_g['_datetime_clean_'].dt.strftime(chosen_pattern)
-            else:
-                df_g[x_ax] = df_g['_datetime_clean_'].astype(str)
+            format_mapping = {"ММ.ГГГГ (01.2014)": "%m.%Y", "Месяц ГГГГ (Янв 2014)": "%b %Y", "ДД.ММ.ГГГГ (15.01.2014)": "%d.%m.%Y", "ГГГГ (2014)": "%Y"}
+            chosen_pattern = format_mapping.get(date_format_type, "%b %Y")
+            
+            final_x = list(df_fact['_month_period_'].dt.strftime(chosen_pattern).astype(str))
+            final_y = list(df_fact[y_ax].values)
+            legend_names = ["Факт"] * len(final_y)
+            
+            if forecast_periods > 0 and len(df_fact) > 1:
+                last_value = df_fact[y_ax].iloc[-1]
+                pct_changes = df_fact[y_ax].pct_change().dropna()
+                avg_drop = pct_changes.tail(3).mean() if len(pct_changes) >= 3 else pct_changes.mean()
+                if avg_drop < 0: avg_drop = max(avg_drop, -0.15)
+                
+                date_diffs = df_fact['_month_period_'].diff().dropna()
+                is_yearly_data = date_diffs.dt.days.mean() > 300
+                
+                current_val = last_value
+                last_date = df_fact['_month_period_'].max()
+                
+                for m in range(1, forecast_periods + 1):
+                    next_date = last_date + pd.DateOffset(years=m) if is_yearly_data else last_date + pd.DateOffset(months=m)
+                    current_val = current_val * (1 + avg_drop)
+                    final_x.append(next_date.strftime(chosen_pattern))
+                    final_y.append(current_val)
+                    legend_names.append("Прогноз ИИ")
+            
+            df_g = pd.DataFrame({x_ax: final_x, y_ax: final_y, "Тип данных": legend_names})
         else:
-            df_g = df_c.groupby(x_ax, as_index=False)[y_ax].sum().sort_values(by=y_ax, ascending=False).head(top_limit)
-            if horiz: 
-                df_g = df_g.sort_values(by=y_ax, ascending=True)
+            df_g = df_c.groupby(x_ax, as_index=False)[y_ax].sum().sort_values(by=y_ax, ascending=False).head(top_limit).reset_index(drop=True)
+            df_g["Тип данных"] = "Факт"
 
-        txt = []
-        for v in df_g[y_ax]:
-            if f_format == "Финансовый":
-                formatted_val = f"{round(v, f_round):,}".replace(",", " ") + curr_suffix
-            elif f_format == "Сжатый (млн/млрд)":
-                if abs(v) >= 1_000_000_000:
-                    formatted_val = f"{v / 1_000_000_000:,.2f} млрд{curr_suffix}"
-                else:
-                    formatted_val = f"{v / 1_000_000:,.2f} млн{curr_suffix}"
-            else:  # Обычный числовой
-                formatted_val = f"{round(v, f_round):,}".replace(",", " ")
-            txt.append(formatted_val)
-
-        safe_pos = f_pos if ("Donut" not in style or f_pos in ["inside", "outside", "auto"]) else "auto"
-        if "Line" in style: safe_pos = "top center"
-        
         fig = go.Figure()
-        if "Waterfall" in style: 
-            fig.add_trace(go.Waterfall(x=list(df_g[x_ax].astype(str)) + ["ИТОГО"], y=list(df_g[y_ax]) + [df_g[y_ax].sum()], text=txt + [f"{df_g[y_ax].sum():,}"], textposition=safe_pos, measure=["relative"] * len(df_g[y_ax]) + ["total"], increasing={"marker": {"color": color}}))
-        elif "Donut" in style: 
-            fig.add_trace(go.Pie(labels=df_g[x_ax], values=df_g[y_ax], hole=0.4, rotation=rot, textinfo="label+value" if lbl else "none", textposition=safe_pos, texttemplate="%{label}<br>%{text}" if lbl else None, text=txt))
-        elif "Line" in style: 
-            fig.add_trace(go.Scatter(x=df_g[x_ax], y=df_g[y_ax], mode="lines+markers+text" if lbl else "lines+markers", text=txt, textposition=safe_pos, line=dict(color=color, width=4), marker=dict(size=8)))
-        else: 
-            fig.add_trace(go.Bar(y=df_g[x_ax] if horiz else df_g[y_ax], x=df_g[y_ax] if horiz else df_g[x_ax], text=txt if lbl else None, textposition=safe_pos, orientation="h" if horiz else "v", marker_color=color))
+        
+        if "Линейный" in style or (is_date_axis and "Столбчатая" not in style and "Кольцевая" not in style and "Водопад" not in style):
+            if is_date_axis and forecast_periods > 0:
+                idx_split = len(df_fact) - 1
+                txt_full = get_formatted_text(df_g[y_ax].values)
+                
+                fig.add_trace(go.Scatter(x=df_g[x_ax].iloc[:idx_split+1], y=df_g[y_ax].iloc[:idx_split+1], mode="lines+markers+text" if lbl else "lines+markers", name="Факт", line=dict(color=color, width=4), marker=dict(size=8), text=txt_full[:idx_split+1] if lbl else None, textposition=scatter_pos, textfont=dict(size=f_size, color=f_color)))
+                fig.add_trace(go.Scatter(x=df_g[x_ax].iloc[idx_split:], y=df_g[y_ax].iloc[idx_split:], mode="lines+markers+text" if lbl else "lines+markers", name="Прогноз ИИ", line=dict(color="#ff4b4b", width=4, dash="dash"), marker=dict(size=8, symbol="diamond"), text=txt_full[idx_split:] if lbl else None, textposition=scatter_pos, textfont=dict(size=f_size, color=f_color)))
+            else:
+                txt = get_formatted_text(df_g[y_ax].values)
+                fig.add_trace(go.Scatter(x=df_g[x_ax], y=df_g[y_ax], mode="lines+markers+text" if lbl else "lines+markers", name="Факт", line=dict(color=color, width=4), marker=dict(size=8), text=txt if lbl else None, textposition=scatter_pos, textfont=dict(size=f_size, color=f_color)))
+                
+        elif "Столбчатая" in style:
+            safe_pos = f_pos if f_pos in ["inside", "outside", "auto"] else "auto"
+            if horiz:
+                if is_date_axis: df_g = df_g.iloc[::-1].reset_index(drop=True)
+                else: df_g = df_g.sort_values(by=y_ax, ascending=True).reset_index(drop=True)
+                txt = get_formatted_text(df_g[y_ax].values)
+                fig.add_trace(go.Bar(y=df_g[x_ax].astype(str), x=df_g[y_ax].values, text=txt if lbl else None, textposition=safe_pos, orientation="h", marker_color=color, textfont=dict(size=f_size, color=f_color)))
+            else:
+                txt = get_formatted_text(df_g[y_ax].values)
+                fig.add_trace(go.Bar(x=df_g[x_ax].astype(str), y=df_g[y_ax].values, text=txt if lbl else None, textposition=safe_pos, orientation="v", marker_color=color, textfont=dict(size=f_size, color=f_color)))
+                
+        elif "Кольцевая" in style:
+            donut_pos = f_pos if f_pos in ["inside", "outside", "auto"] else "auto"
+            txt = get_formatted_text(df_g[y_ax].values)
+            fig.add_trace(go.Pie(labels=df_g[x_ax], values=df_g[y_ax], hole=0.4, rotation=rot, textinfo="label+value" if lbl else "none", textposition=donut_pos, texttemplate="%{label}<br>%{text}" if lbl else None, text=txt, textfont=dict(size=f_size, color=f_color)))
             
-        fig.update_layout(xaxis=dict(type='category', tickangle=45 if not horiz else 0))
-        if lbl:
-            fig.update_traces(textfont=dict(size=f_size, color=f_color))
-            if "Donut" in style: 
-                fig.update_traces(insidetextfont=dict(size=f_size, color=f_color), outsidetextfont=dict(size=f_size, color=f_color))
+        elif "Водопад" in style:
+            safe_pos = f_pos if f_pos in ["inside", "outside", "auto"] else "auto"
+            txt = get_formatted_text(df_g[y_ax].values)
+            
+            # ⚙️ ИСПРАВЛЕНО: Итоговое суммарное значение теперь пропускается через выбранный вами ИИ-фильтр форматирования
+            total_sum_val = df_g[y_ax].sum()
+            formatted_total = get_formatted_text([total_sum_val])[0]
+            
+            fig.add_trace(go.Waterfall(x=list(df_g[x_ax].astype(str)) + ["ИТОГО"], y=list(df_g[y_ax]) + [total_sum_val], text=txt + [formatted_total], textposition=safe_pos, measure=["relative"] * len(df_g[y_ax]) + ["total"], increasing={"marker": {"color": color}}, textfont=dict(size=f_size, color=f_color)))
+
+        if horiz and "Столбчатая" in style: fig.update_layout(yaxis=dict(type='category'), xaxis=dict(showgrid=True))
+        else: fig.update_layout(xaxis=dict(type='category', tickangle=45), yaxis=dict(showgrid=True))
+            
+        fig.update_layout(showlegend=True, margin=dict(l=40, r=40, t=40, b=40))
         st.plotly_chart(fig, use_container_width=True, key=f"p_{i}")
     except Exception as chart_err:
         st.error(f"Ошибка графика №{i+1}: {chart_err}")
-
-# ДВИЖОК ОЧИСТКИ И СБОРКИ ДАННЫХ
+# 🛠️ ДВИЖОК ОЧИСТКИ И СБОРКИ ДАННЫХ (ENTERPRISE CONCAT ENGINE)
 def power_query_clean_engine(uploaded_files_list, gemini_key):
-    frames = {}
+    frames = []
     for f in uploaded_files_list:
         try:
-            df = pd.read_csv(f, dtype=str) if f.name.endswith('.csv') else pd.read_excel(f, dtype=str, engine='calamine')
+            df = pd.read_csv(f, dtype=str) if f.name.endswith('.csv') else pd.read_excel(f, dtype=str, engine='openpyxl')
             raw_cols = [str(c).strip() for c in df.columns]
             ai_map = ai_column_mapper_engine(raw_cols, gemini_key)
             mapped = []
@@ -275,16 +314,18 @@ def power_query_clean_engine(uploaded_files_list, gemini_key):
                     else: mapped.append(col)
             df.columns = mapped
             df = df.loc[:, ~df.columns.str.contains('^Без названия|^Unnamed|^Unnamed:')].loc[:, ~df.columns.duplicated()]
-            df['Источник (Файл)'] = f.name.replace(".xlsx", "").replace(".csv", "")
-            frames[f.name] = df.dropna(how='all')
+            frames.append(df.dropna(how='all'))
         except Exception as file_err:
             st.sidebar.error(f"Ошибка файла {f.name}: {file_err}")
+            
     if not frames: return pd.DataFrame()
-    res = pd.concat(frames.values(), ignore_index=True, join='outer')
+    base_df = pd.concat(frames, ignore_index=True, join='outer')
+            
     for c in ['Количество', 'Сумма']:
-        if c in res.columns: res[c] = pd.to_numeric(res[c].astype(str).str.replace(r'\s+', '', regex=True).str.replace(',', '.'), errors='coerce').fillna(0.0)
-    return res.dropna(how='all')
-# ⚙️ ИНИЦИАЛИЗАЦИЯ И СТАТИЧЕСКИЕ КОЛЛБЭКИ ВМЕСТО ST.RERUN
+        if c in base_df.columns: 
+            base_df[c] = pd.to_numeric(base_df[c].astype(str).str.replace(r'\s+', '', regex=True).str.replace(',', '.'), errors='coerce').fillna(0.0)
+    return base_df.dropna(how='all')
+# ⚙️ ИНИЦИАЛИЗАЦИЯ И СТАТИЧЕСКИЕ КОЛЛБЭКИ СЕССИИ
 if "manual_charts" not in st.session_state: st.session_state.manual_charts = 1
 if "manual_cards" not in st.session_state: st.session_state.manual_cards = 1
 if "main_df" not in st.session_state: st.session_state.main_df = pd.DataFrame()
@@ -318,6 +359,8 @@ if uploaded_files:
     if not main_df.empty:
         if st.sidebar.button("♻️ Сбросить/Очистить базу данных"):
             st.session_state.main_df = pd.DataFrame()
+            st.session_state.manual_charts = 1
+            st.session_state.manual_cards = 1
             st.rerun()
             
         all_cols = ["-- Выберите заголовок --"] + list(main_df.columns)
@@ -352,11 +395,8 @@ if uploaded_files:
                     
                     with st.expander("🎨 Настройки отображения"):
                         c_fmt = st.selectbox("Формат:", ["Числовой", "Финансовый", "Сжатый (млн/млрд)"], key=f"c_f_{j}")
-                        
-                        # ⚡ МОДИФИЦИРОВАНО: Свободный текстовый ввод валюты/единиц измерения для карточки
-                        c_curr_text = st.text_input("Валюта/Ед. изм. (вручную):", value="₸", key=f"c_cur_tx_{j}", help="Оставьте пустым, чтобы скрыть обозначение")
+                        c_curr_text = st.text_input("Валюта/Ед. изм. (вручную):", value="₸", key=f"c_cur_{j}")
                         curr_sym = f" {c_curr_text.strip()}" if c_curr_text.strip() else ""
-                        
                         c_rnd = st.slider("Округление:", 0, 4, 2, key=f"c_r_{j}")
                         c_sz = st.slider("Шрифт (px):", 16, 48, 26, key=f"c_s_{j}")
                     
@@ -395,10 +435,8 @@ if uploaded_files:
                         f_format = st.selectbox("Формат надписей:", ["Числовой", "Финансовый", "Сжатый (млн/млрд)"], key=f"fmt_{i}")
                         f_round = st.slider("Округление:", 0, 4, 0, key=f"rnd_{i}")
                     with cu2:
-                        f_size = st.slider("Шрифт (px):", 8, 24, 12, key=f"sz_{i}")
+                        f_size = st.slider("Шрифт (px):", 8, 24, 14, key=f"sz_{i}")
                         f_color = st.color_picker("Цвет:", "#000000", key=f"fcol_{i}")
-                        
-                        # ⚡ МОДИФИЦИРОВАНО: Свободный текстовый ввод валюты/единиц измерения для меток графика
                         f_curr_text = st.text_input("Валюта/Ед. изм. графика:", value="$", key=f"fcur_tx_{i}")
                     with cu3:
                         f_pos = st.selectbox("Положение:", ["auto", "inside", "outside"], key=f"pos_{i}")
@@ -406,9 +444,10 @@ if uploaded_files:
                         rot = st.slider("🔄 Поворот:", 0, 360, 0, step=15, key=f"rot_{i}") if "Donut" in style else 0
                         top_limit = st.slider("🔝 ТОП позиций:", 5, 200, 15, key=f"top_{i}")
                         d_fmt = st.selectbox("Формат даты (Excel):", ["Исходный", "ММ.ГГГГ (01.2014)", "Месяц ГГГГ (Янв 2014)", "ДД.ММ.ГГГГ (15.01.2014)", "ГГГГ (2014)"], key=f"dfmt_{i}")
+                        f_cast = st.slider("🔮 Прогноз (в периодах таблицы):", 0, 5, 0, key=f"fcast_{i}")
                         
                 if x_ax != "-- Выберите заголовок --" and y_ax != "-- Выберите заголовок --":
-                    render_custom_chart(act_df, x_ax, y_ax, style, color, lbl_g, f_format, f_round, f_size, f_color, f_pos, horiz, rot, top_limit, i, date_format_type=d_fmt, custom_currency=f_curr_text)
+                    render_custom_chart(act_df, x_ax, y_ax, style, color, lbl_g, f_format, f_round, f_size, f_color, f_pos, horiz, rot, top_limit, i, date_format_type=d_fmt, custom_currency=f_curr_text, forecast_periods=f_cast)
                 st.markdown("<hr style='border:1px dashed #ddd'>", unsafe_allow_html=True)
             b1, b2 = st.columns(2)
             with b1: st.button("➕ Добавить диаграмму", on_click=add_chart_cb)
