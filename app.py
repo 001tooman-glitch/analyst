@@ -8,7 +8,7 @@ import plotly.express as px
 from google import genai
 from google.genai import types
 
-# Принудительная инициализация настроек страницы в самом начале скрипта
+# Инициализация настроек страницы на самом старте скрипта
 st.set_page_config(layout="wide", page_title="BI Enterprise Platform")
 # 🤖 МОДУЛЬ 1: ИИ-АВТОМАППИНГ С ОПТИМИЗАЦИЕЙ И КЭШЕМ
 @st.cache_data(show_spinner=False)
@@ -19,11 +19,10 @@ def ai_column_mapper_engine(raw_columns_list, api_key):
         client = genai.Client(api_key=api_key)
         sys_instruction = (
             "Ты — BI-аналитик. Сопоставь заголовки закупщика с полями: "
-            "'ОЗМ', 'Наименование материала', 'Количество', 'Сумма'. "
+            "'ОЗМ', 'Наименование材料', 'Количество', 'Сумма'. "
             "Возвращай СТРОГО JSON-словарь, где ключ - исходная колонка, а значение - новая."
         )
         
-        # Переключено на стабильный формат ответа без конфликтов Pydantic-схем в сайдбаре
         response = client.models.generate_content(
             model='gemini-2.5-flash',
             contents=f"Выполни маппинг списка заголовков: {str(raw_columns_list)}",
@@ -314,7 +313,7 @@ def power_query_clean_engine(uploaded_files_list, gemini_key):
             
     if not frames: return pd.DataFrame()
     
-    # ⚙️ ИСПРАВЛЕНО: Инициализация базового объекта строго как DataFrame (первый элемент списка)
+    # ⚙️ ИСПРАВЛЕНО: base_df инициализируется клонированием первого датафрейма, а не списка!
     base_df = frames[0].copy()
     
     for extra_df in frames[1:]:
@@ -460,8 +459,8 @@ if uploaded_files:
         router_pages = {
             "🗂️ 1. Загрузка и очистка данных": lambda: show_page_1(main_df, all_cols),
             "📊 2. Executive Диаграммы": lambda: show_page_2(act_df, all_cols),
-            "🧮 3. ABC/XYZ-аналитика ОЗМ": lambda: internal_show_abc_xyz_page(act_df, gemini_api_key, ai_context_mode),
-            "👥 4. RFM-сегментация": lambda: internal_show_rfm_page(act_df, gemini_api_key, ai_context_mode)
+            "🧮 3. ABC/XYZ-аналитика ОЗМ": lambda: internal_show_abc_xyz_page(act_df, gemini_api_key, api_context_mode),
+            "👥 4. RFM-сегментация": lambda: internal_show_rfm_page(act_df, gemini_api_key, api_context_mode)
         }
         router_pages[page]()
 else:
