@@ -7,9 +7,15 @@ import plotly.express as px
 import plotly.graph_objects as go
 from google import genai
 from google.genai import types
+from pydantic import BaseModel, Field
 
-# Инициализация конфигурации страницы на самом старте
-st.set_page_config(layout="wide", page_title="BI Enterprise Platform")
+# Схема для гарантированного JSON-ответа от Gemini Developer API
+class ColumnMappingSchema(BaseModel):
+    model_config = {"extra": "forbid"}
+    
+    mapping: dict[str, str] = Field(
+        description="Словарь, где ключ - исходное имя колонки, а значение - строго одно из полей: 'ОЗМ', 'Наименование материала', 'Количество' или 'Сумма'"
+    )
 # 🤖 МОДУЛЬ 1: ИИ-АВТОМАППИНГ С ОПТИМИЗАЦИЕЙ И КЭШЕМ
 @st.cache_data(show_spinner=False)
 def ai_column_mapper_engine(raw_columns_list, api_key):
@@ -20,21 +26,25 @@ def ai_column_mapper_engine(raw_columns_list, api_key):
         sys_instruction = (
             "Ты — BI-аналитик. Сопоставь заголовки закупщика с полями: "
             "'ОЗМ', 'Наименование материала', 'Количество', 'Сумма'. "
-            "Возвращай СТРОГО JSON-словарь, где ключ - исходная колонка, а значение - новая."
+            "Используй контекст и смысл слов (например, 'Sales', 'Revenue', 'Profit', 'Cost' "
+            "должны мапиться в 'Сумма', а 'Units', 'Volume' — в 'Количество')."
         )
         
         response = client.models.generate_content(
-            model='gemini-2.5-flash',
+            model='gemini-3.5-flash',
             contents=f"Выполни маппинг списка заголовков: {str(raw_columns_list)}",
             config=types.GenerateContentConfig(
                 system_instruction=sys_instruction,
                 response_mime_type="application/json",
+                response_schema=ColumnMappingSchema,
                 temperature=0.1
             ),
         )
-        mapping_result = json.loads(response.text)
+        res_json = json.loads(response.text)
+        mapping_result = res_json.get("mapping", {})
         return mapping_result
     except Exception as e:
+        st.sidebar.warning(f"⚠️ Ошибка ИИ-маппинга: {e}. Применен локальный текстовый поиск.")
         return {}
 # 🧠 МОДУЛЬ 2: УЛЬТРА-ГИБКИЙ ИИ-АНАЛИЗАТОР БИЗНЕС-ПРОЦЕССОВ
 def ai_generate_text_report(pivot_matrix_df, report_type="ABC/XYZ", data_context="Расход", api_key=None):
@@ -44,25 +54,27 @@ def ai_generate_text_report(pivot_matrix_df, report_type="ABC/XYZ", data_context
         client = genai.Client(api_key=api_key)
         
         context_mapping = {
-            "Закупки": "Данные — это ПЛАНИРУЕМЫЕ ЗАКУПКИ / БИЗНЕС-ПЛАНЫ. Группа AZ — это стратегические контракты. Группа CZ — мелкая операционная текучка.",
-            "Запасы": "Данные — это СУЩЕСТВУЮЩИЕ СКЛАДСКИЕ ЗАПАСЫ. Группа AZ — это жестко замороженный рабочий капитал предприятия. Группа CZ — складской хлам, неликвиды.",
-            "Расход": "Данные — это РЕАЛЬНЫЙ ФАКТИЧЕСКИЙ РАСХОД / ПОТРЕБЛЕНИЕ. Группа AZ — это внеплановые ремонты оборудования. Группа CZ — административная нагрузка мелких заявок."
+            "Закупки": "Данные — это ПЛАНИРУЕМЫЕ ЗАКУПКИ / БИЗНЕС-ПЛАНЫ. Группа AZ — это стратегические контракты (риск срыва сроков проектов). Группа CZ — мелкая операционная текучка (риск бюрократии, недоосвоения бюджета).",
+            "Запасы": "Данные — это СУЩЕСТВУЮЩИЕ СКЛАДСКИЕ ЗАПАСЫ. Группа AZ — это жестко замороженный рабочий капитал предприятия (дорогие ТМЦ без движения). Группа CZ — складской хлам, неликвиды, забивающие полки.",
+            "Расход": "Данные — это РЕАЛЬНЫЙ ФАКТИЧЕСКИЙ РАСХОД / ПОТРЕБЛЕНИЕ. Группа AZ — это внеплановые, аварийные ремонты оборудования, сжигающие огромный бюджет. Группа CZ — административная нагрузка мелких заявок."
         }
         
         context_rules = next((v for k, v in context_mapping.items() if k in data_context), 
-                             "Данные — это КОММЕРЧЕСКИЕ ПРОДАЖИ / СБЫТ / РИТЕЙЛ. Группа AZ — это товары-локомотивы. Группа CZ — длинный хвост ассортимента с низким чеком.")
+                             "Данные — это КОММЕРЧЕСКИЕ ПРОДАЖИ / СБЫТ / РИТЕЙЛ. Группа AZ — это товары-локомотивы, генерирующие 80% выручки (риск упущенной прибыли). Группа CZ — длинный хвост ассортимента с низким чеком.")
 
         system_instruction = f"""
         Ты — директор по логистике и снабжению комбината. Напиши аналитический отчет для генерального директора по матрице {report_type}.
         БИЗНЕС-КОНТЕКСТ ДАННЫХ: {context_rules}
         
         СТРОГИЕ ПРАВИЛА ОФОРМЛЕНИЯ:
-        - НАЧИНАЙ ОТЧЕТ СРАЗУ с содержательного анализа.
-        - КАТЕГОРИЧЕСКИ ЗАПРЕЩЕНО писать метаданные документа: "Генеральному директору", "От:", приветствия или вводные подписи.
+        - НАЧИНАЙ ОТЧЕТ СРАЗУ с содержательного анализа (Раздел "1. Анализ текущего процесса").
+        - КАТЕГОРИЧЕСКИ ЗАПРЕЩЕНО писать метаданные документа: "Генеральному директору", "От:", "Дата:", "Тема:", приветствия или вводные подписи.
+        
+        Структура отчета: 1. Анализ текущего процесса ({data_context}). 2. Выявление скрытых аномалий и рисков (оцени группы AZ и CZ). 3. Рекомендации. Пиши емко, списками Markdown. Используй деловой снабженческий сленг.
         """
         with st.spinner(f"🔮 ИИ генерирует чистый отчет для контекста '{data_context}'..."):
             response = client.models.generate_content(
-                model='gemini-2.5-flash', 
+                model='gemini-3.5-flash', 
                 contents=f"Матрица плотности ({data_context}):\n{pivot_matrix_df.to_string()}", 
                 config=types.GenerateContentConfig(system_instruction=system_instruction, temperature=0.2)
             )
@@ -125,20 +137,29 @@ def internal_show_abc_xyz_page(filtered_df, api_key, data_context):
             ai_generate_text_report(pivot_m, report_type="ABC/XYZ", data_context=data_context, api_key=api_key)
             
         st.dataframe(df_m.sort_values(by=abc_value, ascending=False), use_container_width=True)
+        
+        towrite = io.BytesIO()
+        df_m.to_excel(towrite, index=False, engine='openpyxl')
+        st.download_button(label="📥 Скачать результаты аналитики в Excel", data=towrite.getvalue(), file_name="abc_xyz_output.xlsx", mime="application/vnd.ms-excel")
+        
     except Exception as e: 
         st.error(f"Ошибка расчета ABC/XYZ: {e}")
 # 👥 МОДУЛЬ 4: УНИВЕРСАЛЬНЫЙ КОНСТРУКТОР RFM С ДИНАМИЧЕСКИМ ВЫБОРОМ КОЛОНОК
 def internal_show_rfm_page(filtered_df, api_key, data_context):
     st.title("👥 Модуль RFM-сегментации номенклатуры и категорий")
     if filtered_df.empty: 
-        return st.info("ℹ️ Текущий срез пуст. Выберите другие фильтры.")
+        return st.info("ℹ️ Текущий срез пуст. Выберите другие фильтры в сайдбаре.")
     df = filtered_df.copy()
     available_cols = list(df.columns)
     
     st.markdown("### 🎯 Настройка объекта сегментации")
+    
     rc1, rc2 = st.columns(2)
-    with rc1: rfm_target = st.selectbox("Выберите анализируемое поле:", [c for c in available_cols if c not in ['Сумма', 'Количество']], key="rfm_target_select")
-    with rc2: rfm_value_col = st.selectbox("Выберите поле стоимости/суммы:", ['Сумма', 'Количество'], key="rfm_value_select")
+    with rc1:
+        rfm_target = st.selectbox("Выберите анализируемое поле:", [c for c in available_cols if c not in ['Сумма', 'Количество']], key="rfm_target_select")
+    with rc2:
+        detected_sum_col = 'Сумма' if 'Сумма' in available_cols else (available_cols if available_cols else None)
+        rfm_value_col = st.selectbox("Выберите поле стоимости/суммы:", available_cols, index=available_cols.index(detected_sum_col) if detected_sum_col in available_cols else 0, key="rfm_value_select")
     
     try:
         df[rfm_value_col] = pd.to_numeric(df[rfm_value_col], errors='coerce').fillna(0.0)
@@ -146,6 +167,7 @@ def internal_show_rfm_page(filtered_df, api_key, data_context):
         rfm.columns = ['Объект Анализа', 'F', 'M']
         
         if len(rfm) < 3 or rfm['F'].nunique() <= 1 or rfm['M'].nunique() <= 1:
+            st.warning("⚠️ Недостаточно уникальных данных в выбранных полях для разделения на квантили (qcut). Выведен общий список.")
             st.dataframe(rfm.sort_values(by='M', ascending=False), use_container_width=True)
             return
 
@@ -154,35 +176,91 @@ def internal_show_rfm_page(filtered_df, api_key, data_context):
         rfm['RFM'] = rfm['F_Score'] + rfm['M_Score']
         seg_counts = rfm.groupby('RFM').size().reset_index(name='Количество объектов')
         
-        st.plotly_chart(px.bar(seg_counts, x='RFM', y='Количество объектов', text_auto=True, title=f"📊 Динамическое RFM-распределение", color='RFM', color_continuous_scale="Purples"), use_container_width=True)
+        st.plotly_chart(px.bar(seg_counts, x='RFM', y='Количество объектов', text_auto=True, title=f"📊 Динамическое RFM-распределение по полю: {rfm_target}", color='RFM', color_continuous_scale="Purples"), use_container_width=True)
+        
+        if st.button("👥 Сгенерировать ИИ-отчет по матрице RFM", key="ai_report_rfm_btn"):
+            ai_generate_text_report(seg_counts, report_type=f"RFM-Сегментации ({rfm_target})", data_context=data_context, api_key=api_key)
+            
         st.dataframe(rfm.sort_values(by='M', ascending=False), use_container_width=True)
     except Exception as rfe: 
         st.error(f"❌ Ошибка расчета RFM: {rfe}")
-# 📊 ФУНКЦИЯ 5: КЛАССИЧЕСКИЙ БЕЗОПАСНЫЙ ГРАФИЧЕСКИЙ ДВИЖОК PLOTLY EXPRESS
-def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_round, f_size, f_color, f_pos, horiz, rot, top_limit, i):
+# 📊 ФУНКЦИЯ 5: ГРАФИЧЕСКИЙ ДВИЖОК PLOTLY С УМНОЙ ОБРАБОТКОЙ ВРЕМЕНИ И СВОБОДНЫМ ТЕКСТОМ ВАЛЮТЫ
+def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_round, f_size, f_color, f_pos, horiz, rot, top_limit, i, date_format_type="Исходный", custom_currency=""):
     try:
         df_c = active_df.copy()
         df_c[y_ax] = pd.to_numeric(df_c[y_ax], errors='coerce').fillna(0)
-        df_g = df_c.groupby(x_ax, as_index=False)[y_ax].sum().sort_values(by=y_ax, ascending=False).head(top_limit)
-        if horiz: df_g = df_g.sort_values(by=y_ax, ascending=True)
+        
+        # ⚡ МОДИФИЦИРОВАНО: Префикс валюты берется напрямую из текстового поля ввода
+        clean_currency = str(custom_currency).strip()
+        curr_suffix = f" {clean_currency}" if clean_currency else ""
+        
+        # Проверка временной шкалы по оси X
+        converted_dates = pd.to_datetime(df_c[x_ax], errors='coerce')
+        is_date_axis = converted_dates.notna().sum() > (0.5 * len(df_c))
+        
+        if is_date_axis:
+            df_c['_datetime_clean_'] = converted_dates
+            df_c = df_c.dropna(subset=['_datetime_clean_'])
+            df_g = df_c.groupby('_datetime_clean_', as_index=False)[y_ax].sum()
+            df_g = df_g.sort_values(by='_datetime_clean_', ascending=True).head(top_limit)
+            
+            format_mapping = {
+                "ММ.ГГГГ (01.2014)": "%m.%Y",
+                "Месяц ГГГГ (Янв 2014)": "%b %Y",
+                "ДД.ММ.ГГГГ (15.01.2014)": "%d.%m.%Y",
+                "ГГГГ (2014)": "%Y"
+            }
+            chosen_pattern = format_mapping.get(date_format_type, None)
+            if chosen_pattern:
+                df_g[x_ax] = df_g['_datetime_clean_'].dt.strftime(chosen_pattern)
+            else:
+                df_g[x_ax] = df_g['_datetime_clean_'].astype(str)
+        else:
+            df_g = df_c.groupby(x_ax, as_index=False)[y_ax].sum().sort_values(by=y_ax, ascending=False).head(top_limit)
+            if horiz: 
+                df_g = df_g.sort_values(by=y_ax, ascending=True)
 
-        if "Waterfall" in style: fig = px.bar(df_g, x=x_ax, y=y_ax, text_auto=True, color_discrete_sequence=[color])
-        elif "Donut" in style: fig = px.pie(df_g, names=x_ax, values=y_ax, hole=0.4)
-        elif "Line" in style: fig = px.line(df_g, x=x_ax, y=y_ax, markers=True, color_discrete_sequence=[color])
-        else: fig = px.bar(df_g, x=y_ax if horiz else x_ax, y=x_ax if horiz else y_ax, orientation="h" if horiz else "v", text_auto=True, color_discrete_sequence=[color])
+        txt = []
+        for v in df_g[y_ax]:
+            if f_format == "Финансовый":
+                formatted_val = f"{round(v, f_round):,}".replace(",", " ") + curr_suffix
+            elif f_format == "Сжатый (млн/млрд)":
+                if abs(v) >= 1_000_000_000:
+                    formatted_val = f"{v / 1_000_000_000:,.2f} млрд{curr_suffix}"
+                else:
+                    formatted_val = f"{v / 1_000_000:,.2f} млн{curr_suffix}"
+            else:  # Обычный числовой
+                formatted_val = f"{round(v, f_round):,}".replace(",", " ")
+            txt.append(formatted_val)
+
+        safe_pos = f_pos if ("Donut" not in style or f_pos in ["inside", "outside", "auto"]) else "auto"
+        if "Line" in style: safe_pos = "top center"
+        
+        fig = go.Figure()
+        if "Waterfall" in style: 
+            fig.add_trace(go.Waterfall(x=list(df_g[x_ax].astype(str)) + ["ИТОГО"], y=list(df_g[y_ax]) + [df_g[y_ax].sum()], text=txt + [f"{df_g[y_ax].sum():,}"], textposition=safe_pos, measure=["relative"] * len(df_g[y_ax]) + ["total"], increasing={"marker": {"color": color}}))
+        elif "Donut" in style: 
+            fig.add_trace(go.Pie(labels=df_g[x_ax], values=df_g[y_ax], hole=0.4, rotation=rot, textinfo="label+value" if lbl else "none", textposition=safe_pos, texttemplate="%{label}<br>%{text}" if lbl else None, text=txt))
+        elif "Line" in style: 
+            fig.add_trace(go.Scatter(x=df_g[x_ax], y=df_g[y_ax], mode="lines+markers+text" if lbl else "lines+markers", text=txt, textposition=safe_pos, line=dict(color=color, width=4), marker=dict(size=8)))
+        else: 
+            fig.add_trace(go.Bar(y=df_g[x_ax] if horiz else df_g[y_ax], x=df_g[y_ax] if horiz else df_g[x_ax], text=txt if lbl else None, textposition=safe_pos, orientation="h" if horiz else "v", marker_color=color))
             
         fig.update_layout(xaxis=dict(type='category', tickangle=45 if not horiz else 0))
+        if lbl:
+            fig.update_traces(textfont=dict(size=f_size, color=f_color))
+            if "Donut" in style: 
+                fig.update_traces(insidetextfont=dict(size=f_size, color=f_color), outsidetextfont=dict(size=f_size, color=f_color))
         st.plotly_chart(fig, use_container_width=True, key=f"p_{i}")
     except Exception as chart_err:
         st.error(f"Ошибка графика №{i+1}: {chart_err}")
 
-# 🛠️ МОДУЛЬ СБОРКИ ДАННЫХ: КЛАССИЧЕСКИЙ CONCAT БЕЗ РИСКОВ (ИСПОЛЬЗУЕТ СТАНДАРТНЫЙ OPENPYXL)
+# ДВИЖОК ОЧИСТКИ И СБОРКИ ДАННЫХ
 def power_query_clean_engine(uploaded_files_list, gemini_key):
-    frames = []
-    for f_obj in uploaded_files_list:
+    frames = {}
+    for f in uploaded_files_list:
         try:
-            # ⚙️ ИСПРАВЛЕНО: calamine заменен на openpyxl для 100% совместимости с сервером
-            df = pd.read_csv(f_obj, dtype=str) if f_obj.name.endswith('.csv') else pd.read_excel(f_obj, dtype=str, engine='openpyxl')
+            df = pd.read_csv(f, dtype=str) if f.name.endswith('.csv') else pd.read_excel(f, dtype=str, engine='calamine')
             raw_cols = [str(c).strip() for c in df.columns]
             ai_map = ai_column_mapper_engine(raw_cols, gemini_key)
             mapped = []
@@ -190,33 +268,42 @@ def power_query_clean_engine(uploaded_files_list, gemini_key):
                 if col in ai_map: mapped.append(ai_map[col])
                 else:
                     c_low = col.lower()
-                    if any(w in c_low for w in ['озм', 'код', 'номенклатур']): mapped.append('ОЗМ')
+                    if any(w in c_low for w in ['озм', 'код материала', 'номенклатур']): mapped.append('ОЗМ')
                     elif any(w in c_low for w in ['наименование', 'материал']): mapped.append('Наименование материала')
-                    elif any(w in c_low for w in ['количество', 'кол-во']): mapped.append('Количество')
-                    elif any(w in c_low for w in ['сумма', 'стоимость']): mapped.append('Сумма')
+                    elif any(w in c_low for w in ['количество', 'кол-во', 'объем']): mapped.append('Количество')
+                    elif any(w in c_low for w in ['сумма', 'стоимость', 'цена']): mapped.append('Сумма')
                     else: mapped.append(col)
             df.columns = mapped
             df = df.loc[:, ~df.columns.str.contains('^Без названия|^Unnamed|^Unnamed:')].loc[:, ~df.columns.duplicated()]
-            frames.append(df.dropna(how='all'))
+            df['Источник (Файл)'] = f.name.replace(".xlsx", "").replace(".csv", "")
+            frames[f.name] = df.dropna(how='all')
         except Exception as file_err:
-            st.sidebar.error(f"Ошибка файла {f_obj.name}: {file_err}")
-            
+            st.sidebar.error(f"Ошибка файла {f.name}: {file_err}")
     if not frames: return pd.DataFrame()
-    base_df = pd.concat(frames, ignore_index=True, join='outer')
+    res = pd.concat(frames.values(), ignore_index=True, join='outer')
     for c in ['Количество', 'Сумма']:
-        if c in base_df.columns: 
-            base_df[c] = pd.to_numeric(base_df[c].astype(str).str.replace(r'\s+', '', regex=True).str.replace(',', '.'), errors='coerce').fillna(0.0)
-    return base_df.dropna(how='all')
+        if c in res.columns: res[c] = pd.to_numeric(res[c].astype(str).str.replace(r'\s+', '', regex=True).str.replace(',', '.'), errors='coerce').fillna(0.0)
+    return res.dropna(how='all')
 # ⚙️ ИНИЦИАЛИЗАЦИЯ И СТАТИЧЕСКИЕ КОЛЛБЭКИ ВМЕСТО ST.RERUN
 if "manual_charts" not in st.session_state: st.session_state.manual_charts = 1
 if "manual_cards" not in st.session_state: st.session_state.manual_cards = 1
 if "main_df" not in st.session_state: st.session_state.main_df = pd.DataFrame()
 
+def add_chart_cb(): st.session_state.manual_charts += 1
+def remove_chart_cb(): 
+    if st.session_state.manual_charts > 1: st.session_state.manual_charts -= 1
+def add_card_cb(): st.session_state.manual_cards += 1
+def remove_card_cb(): 
+    if st.session_state.manual_cards > 1: st.session_state.manual_cards -= 1
+
 st.sidebar.markdown("### 🤖 Интеллектуальный ИИ-Ассистент")
 gemini_api_key = st.sidebar.text_input("Введите Gemini API Key:", type="password")
 
 ai_context_mode = st.sidebar.selectbox("Тип данных (Контекст для AI):", [
-    "📅 Закупки (Планируемые)", "📦 Запасы (Складские остатки)", "📉 Расход (Потребление)", "💰 Продажи / Сбыт"
+    "📅 Закупки (Планируемые) / Бизнес-планы материалов и услуг", 
+    "📦 Запасы (Складские остатки / ТМЦ без движения)", 
+    "📉 Расход (Реальное потребление / Выдача в производство)", 
+    "💰 Продажи / Сбыт (Коммерческий оборот и ритейл)"
 ])
 
 uploaded_files = st.file_uploader("Загрузите файлы Excel/CSV:", type=["csv", "xlsx"], accept_multiple_files=True)
@@ -231,8 +318,6 @@ if uploaded_files:
     if not main_df.empty:
         if st.sidebar.button("♻️ Сбросить/Очистить базу данных"):
             st.session_state.main_df = pd.DataFrame()
-            st.session_state.manual_charts = 1
-            st.session_state.manual_cards = 1
             st.rerun()
             
         all_cols = ["-- Выберите заголовок --"] + list(main_df.columns)
@@ -255,29 +340,79 @@ if uploaded_files:
             card_cols = st.columns(st.session_state.manual_cards)
             for j in range(st.session_state.manual_cards):
                 with card_cols[j % len(card_cols)]:
-                    t_col = st.selectbox(f"Поле метрики №{j+1}:", columns_input, key=f"c_t_{j}")
+                    st.markdown(f"**📌 Карточка № {j+1}**")
+                    t_col = st.selectbox(f"Поле метрики (Числовое):", columns_input, key=f"c_t_{j}")
+                    c_mode = st.selectbox(f"Агрегация:", ["Сумма", "Среднее"], key=f"c_m_{j}")
+                    st.markdown("---")
+                    group_col = st.selectbox(f"Группировать по полю:", ["-- Без фильтра --"] + columns_input, key=f"c_g_{j}")
+                    filter_value = None
+                    if group_col != "-- Без фильтра --":
+                        unique_vals = list(act_df[group_col].astype(str).unique())
+                        filter_value = st.selectbox(f"Значение элемента:", unique_vals, key=f"c_v_{j}")
+                    
+                    with st.expander("🎨 Настройки отображения"):
+                        c_fmt = st.selectbox("Формат:", ["Числовой", "Финансовый", "Сжатый (млн/млрд)"], key=f"c_f_{j}")
+                        
+                        # ⚡ МОДИФИЦИРОВАНО: Свободный текстовый ввод валюты/единиц измерения для карточки
+                        c_curr_text = st.text_input("Валюта/Ед. изм. (вручную):", value="₸", key=f"c_cur_tx_{j}", help="Оставьте пустым, чтобы скрыть обозначение")
+                        curr_sym = f" {c_curr_text.strip()}" if c_curr_text.strip() else ""
+                        
+                        c_rnd = st.slider("Округление:", 0, 4, 2, key=f"c_r_{j}")
+                        c_sz = st.slider("Шрифт (px):", 16, 48, 26, key=f"c_s_{j}")
+                    
                     if t_col != "-- Выберите заголовок --":
                         try:
-                            dataframe_input[t_col] = pd.to_numeric(dataframe_input[t_col], errors='coerce').fillna(0)
-                            cv = dataframe_input[t_col].sum()
-                            st.metric(label=f"Сумма {t_col}", value=f"{cv:,.2f}")
+                            df_card = act_df.copy()
+                            if group_col != "-- Без фильтра --" and filter_value is not None:
+                                df_card = df_card[df_card[group_col].astype(str) == str(filter_value)]
+                            df_card[t_col] = pd.to_numeric(df_card[t_col], errors='coerce').fillna(0)
+                            cv = df_card[t_col].sum() if "Сумма" in c_mode else df_card[t_col].mean()
+                            if c_fmt == "Финансовый": lbl = f"{round(cv, c_rnd):,}".replace(",", " ") + curr_sym
+                            elif c_fmt == "Сжатый (млн/млрд)":
+                                if abs(cv) >= 1_000_000_000: lbl = f"{cv / 1_000_000_000:,.2f} млрд{curr_sym}"
+                                else: lbl = f"{cv / 1_000_000:,.2f} млн{curr_sym}"
+                            else: lbl = f"{round(cv, c_rnd):,}".replace(",", " ")
+                            card_title = f"{t_col}"
+                            if group_col != "-- Без фильтра --": card_title += f" ({filter_value})"
+                            st.markdown(f'<div style="background-color:#f8f9fa; border:1px solid #dee2e6; border-radius:10px; padding:20px; text-align:center; margin-bottom:15px;"><div style="color:#6c757d; font-size:13px; font-weight:bold; height:40px; display:flex; align-items:center; justify-content:center;">{card_title}</div><div style="color:#1f77b4; font-size:{c_sz}px; font-weight:bold;">{lbl}</div></div>', unsafe_allow_html=True)
                         except: pass
                             
+            cc1, cc2 = st.columns(2)
+            with cc1: st.button("➕ Добавить карточку", on_click=add_card_cb)
+            with cc2: st.button("🗑️ Удалить карточку", on_click=remove_card_cb)
             st.markdown("---")
             st.subheader("🛠️ No-Code Конструктор Графиков")
             for i in range(st.session_state.manual_charts):
                 c1, c2, c3, c4 = st.columns(4)
-                with c1: style = st.selectbox(f"Тип №{i+1}:", ["Столбчатая диаграмма (Bar)", "Линейный тренд (Line)", "Кольцевая долей (Donut)"], key=f"s_{i}")
+                with c1: style = st.selectbox(f"Тип №{i+1}:", ["Столбчатая диаграмма (Bar)", "Линейный тренд (Line)", "Кольцевая долей (Donut)", "Диаграмма Водопад (Waterfall)"], key=f"s_{i}")
                 with c2: x_ax = st.selectbox(f"Ось X №{i+1}:", columns_input, key=f"x_{i}")
                 with c3: y_ax = st.selectbox(f"Ось Y №{i+1}:", columns_input, key=f"y_{i}")
                 with c4: color = st.color_picker(f"Цвет №{i+1}:", "#1f77b4", key=f"col_{i}")
-                
-                horiz = st.checkbox("Горизонтально", value=False, key=f"h_{i}") if "Bar" in style else False
-                top_limit = st.slider("🔝 ТОП позиций:", 5, 200, 15, key=f"top_{i}")
+                with st.expander("🎨 Настройки надписей и Временной оси"):
+                    cu1, cu2, cu3 = st.columns(3)
+                    with cu1:
+                        lbl_g = st.checkbox("Показывать значения", value=True, key=f"lbl_{i}")
+                        f_format = st.selectbox("Формат надписей:", ["Числовой", "Финансовый", "Сжатый (млн/млрд)"], key=f"fmt_{i}")
+                        f_round = st.slider("Округление:", 0, 4, 0, key=f"rnd_{i}")
+                    with cu2:
+                        f_size = st.slider("Шрифт (px):", 8, 24, 12, key=f"sz_{i}")
+                        f_color = st.color_picker("Цвет:", "#000000", key=f"fcol_{i}")
+                        
+                        # ⚡ МОДИФИЦИРОВАНО: Свободный текстовый ввод валюты/единиц измерения для меток графика
+                        f_curr_text = st.text_input("Валюта/Ед. изм. графика:", value="$", key=f"fcur_tx_{i}")
+                    with cu3:
+                        f_pos = st.selectbox("Положение:", ["auto", "inside", "outside"], key=f"pos_{i}")
+                        horiz = st.checkbox("Горизонтально", value=False, key=f"h_{i}") if "Bar" in style else False
+                        rot = st.slider("🔄 Поворот:", 0, 360, 0, step=15, key=f"rot_{i}") if "Donut" in style else 0
+                        top_limit = st.slider("🔝 ТОП позиций:", 5, 200, 15, key=f"top_{i}")
+                        d_fmt = st.selectbox("Формат даты (Excel):", ["Исходный", "ММ.ГГГГ (01.2014)", "Месяц ГГГГ (Янв 2014)", "ДД.ММ.ГГГГ (15.01.2014)", "ГГГГ (2014)"], key=f"dfmt_{i}")
                         
                 if x_ax != "-- Выберите заголовок --" and y_ax != "-- Выберите заголовок --":
-                    render_custom_chart(dataframe_input, x_ax, y_ax, style, color, True, "Числовой", 0, 12, "#0000", "auto", horiz, 0, top_limit, i)
+                    render_custom_chart(act_df, x_ax, y_ax, style, color, lbl_g, f_format, f_round, f_size, f_color, f_pos, horiz, rot, top_limit, i, date_format_type=d_fmt, custom_currency=f_curr_text)
                 st.markdown("<hr style='border:1px dashed #ddd'>", unsafe_allow_html=True)
+            b1, b2 = st.columns(2)
+            with b1: st.button("➕ Добавить диаграмму", on_click=add_chart_cb)
+            with b2: st.button("🗑️ Удалить диаграмму", on_click=remove_chart_cb)
 
         router_pages = {
             "🗂️ 1. Загрузка и очистка данных": lambda: show_page_1(main_df, all_cols),
