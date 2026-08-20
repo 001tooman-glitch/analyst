@@ -7,17 +7,9 @@ import plotly.express as px
 import plotly.graph_objects as go
 from google import genai
 from google.genai import types
-from pydantic import BaseModel, Field
 
+# Инициализация конфигурации страницы на самом старте
 st.set_page_config(layout="wide", page_title="BI Enterprise Platform")
-
-# Схема для гарантированного JSON-ответа от Gemini Developer API
-class ColumnMappingSchema(BaseModel):
-    model_config = {"extra": "forbid"}
-    
-    mapping: dict[str, str] = Field(
-        description="Словарь, где ключ - исходное имя колонки, а значение - строго одно из fields: 'ОЗМ', 'Наименование материала', 'Количество' или 'Сумма'"
-    )
 # 🤖 МОДУЛЬ 1: ИИ-АВТОМАППИНГ С ОПТИМИЗАЦИЕЙ И КЭШЕМ
 @st.cache_data(show_spinner=False)
 def ai_column_mapper_engine(raw_columns_list, api_key):
@@ -28,7 +20,7 @@ def ai_column_mapper_engine(raw_columns_list, api_key):
         sys_instruction = (
             "Ты — BI-аналитик. Сопоставь заголовки закупщика с полями: "
             "'ОЗМ', 'Наименование материала', 'Количество', 'Сумма'. "
-            "Используй контекст и смысл слов."
+            "Возвращай СТРОГО JSON-словарь, где ключ - исходная колонка, а значение - новая."
         )
         
         response = client.models.generate_content(
@@ -37,12 +29,10 @@ def ai_column_mapper_engine(raw_columns_list, api_key):
             config=types.GenerateContentConfig(
                 system_instruction=sys_instruction,
                 response_mime_type="application/json",
-                response_schema=ColumnMappingSchema,
                 temperature=0.1
             ),
         )
-        res_json = json.loads(response.text)
-        mapping_result = res_json.get("mapping", {})
+        mapping_result = json.loads(response.text)
         return mapping_result
     except Exception as e:
         return {}
@@ -141,13 +131,13 @@ def internal_show_abc_xyz_page(filtered_df, api_key, data_context):
 def internal_show_rfm_page(filtered_df, api_key, data_context):
     st.title("👥 Модуль RFM-сегментации номенклатуры и категорий")
     if filtered_df.empty: 
-        return st.info("ℹ Lent: Текущий срез пуст. Выберите другие фильтры.")
+        return st.info("ℹ️ Текущий срез пуст. Выберите другие фильтры.")
     df = filtered_df.copy()
     available_cols = list(df.columns)
     
     st.markdown("### 🎯 Настройка объекта сегментации")
     rc1, rc2 = st.columns(2)
-    with rc1: rfm_target = st.selectbox("Выберите аналистрируемое поле:", [c for c in available_cols if c not in ['Сумма', 'Количество']], key="rfm_target_select")
+    with rc1: rfm_target = st.selectbox("Выберите анализируемое поле:", [c for c in available_cols if c not in ['Сумма', 'Количество']], key="rfm_target_select")
     with rc2: rfm_value_col = st.selectbox("Выберите поле стоимости/суммы:", ['Сумма', 'Количество'], key="rfm_value_select")
     
     try:
@@ -186,12 +176,13 @@ def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_ro
     except Exception as chart_err:
         st.error(f"Ошибка графика №{i+1}: {chart_err}")
 
-# 🛠️ МОДУЛЬ СБОРКИ ДАННЫХ: КЛАССИЧЕСКИЙ CONCAT БЕЗ ГОРИЗОНТАЛЬНЫХ MERGE-РИСКОВ
+# 🛠️ МОДУЛЬ СБОРКИ ДАННЫХ: КЛАССИЧЕСКИЙ CONCAT БЕЗ РИСКОВ (ИСПОЛЬЗУЕТ СТАНДАРТНЫЙ OPENPYXL)
 def power_query_clean_engine(uploaded_files_list, gemini_key):
     frames = []
-    for f in uploaded_files_list:
+    for f_obj in uploaded_files_list:
         try:
-            df = pd.read_csv(f, dtype=str) if f.name.endswith('.csv') else pd.read_excel(f, dtype=str, engine='calamine')
+            # ⚙️ ИСПРАВЛЕНО: calamine заменен на openpyxl для 100% совместимости с сервером
+            df = pd.read_csv(f_obj, dtype=str) if f_obj.name.endswith('.csv') else pd.read_excel(f_obj, dtype=str, engine='openpyxl')
             raw_cols = [str(c).strip() for c in df.columns]
             ai_map = ai_column_mapper_engine(raw_cols, gemini_key)
             mapped = []
@@ -208,7 +199,7 @@ def power_query_clean_engine(uploaded_files_list, gemini_key):
             df = df.loc[:, ~df.columns.str.contains('^Без названия|^Unnamed|^Unnamed:')].loc[:, ~df.columns.duplicated()]
             frames.append(df.dropna(how='all'))
         except Exception as file_err:
-            st.sidebar.error(f"Ошибка файла {f.name}: {file_err}")
+            st.sidebar.error(f"Ошибка файла {f_obj.name}: {file_err}")
             
     if not frames: return pd.DataFrame()
     base_df = pd.concat(frames, ignore_index=True, join='outer')
@@ -272,7 +263,6 @@ if uploaded_files:
                             st.metric(label=f"Сумма {t_col}", value=f"{cv:,.2f}")
                         except: pass
                             
-            st.button("➕ Добавить карточку", on_click=add_card_cb)
             st.markdown("---")
             st.subheader("🛠️ No-Code Конструктор Графиков")
             for i in range(st.session_state.manual_charts):
@@ -288,7 +278,6 @@ if uploaded_files:
                 if x_ax != "-- Выберите заголовок --" and y_ax != "-- Выберите заголовок --":
                     render_custom_chart(dataframe_input, x_ax, y_ax, style, color, True, "Числовой", 0, 12, "#0000", "auto", horiz, 0, top_limit, i)
                 st.markdown("<hr style='border:1px dashed #ddd'>", unsafe_allow_html=True)
-            st.button("➕ Добавить диаграмму", on_click=add_chart_cb)
 
         router_pages = {
             "🗂️ 1. Загрузка и очистка данных": lambda: show_page_1(main_df, all_cols),
