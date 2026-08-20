@@ -30,7 +30,6 @@ def ai_column_mapper_engine(raw_columns_list, api_key):
             "должны мапиться в 'Сумма', а 'Units', 'Volume' — в 'Количество')."
         )
         
-        # Переключено на gemini-2.5-flash для идеальной совместимости с Structured Outputs
         response = client.models.generate_content(
             model='gemini-2.5-flash',
             contents=f"Выполни маппинг списка заголовков: {str(raw_columns_list)}",
@@ -193,7 +192,7 @@ def internal_show_rfm_page(filtered_df, api_key, data_context):
         st.dataframe(rfm.sort_values(by='M', ascending=False), use_container_width=True)
     except Exception as rfe: 
         st.error(f"❌ Ошибка расчета RFM: {rfe}")
-# 📊 ФУНКЦИЯ 5: ГРАФИЧЕСКИЙ ДВИЖОК С АВТОМАТИЧЕСКИМ ВЫЧИСЛЕНИЕМ ДЕЛЬТЫ ВРЕМЕННЫХ ИНТЕРВАЛОВ
+# 📊 ФУНКЦИЯ 5: ГРАФИЧЕСКИЙ ДВИЖОК С АВТОМАТИЧЕСКОЙ ЗАЩИТОЙ ПОЛОЖЕНИЯ ТЕКСТА И КАСТОМИЗАЦИЕЙ ШРИФТОВ
 def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_round, f_size, f_color, f_pos, horiz, rot, top_limit, i, date_format_type="Исходный", custom_currency="", forecast_periods=0):
     try:
         df_c = active_df.copy()
@@ -202,9 +201,11 @@ def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_ro
         clean_currency = str(custom_currency).strip()
         curr_suffix = f" {clean_currency}" if clean_currency else ""
         
-        safe_pos = f_pos
-        if "Line" in style or forecast_periods > 0:
-            if safe_pos == "auto": safe_pos = "top center"
+        # 🛡️ ИСПРАВЛЕНО: Умный перевод некорректных положений (inside/outside/auto) в географические для Scatter
+        scatter_pos = f_pos
+        if "Line" in style or forecast_periods > 0 or (pd.to_datetime(df_c[x_ax], errors='coerce').notna().sum() > (0.5 * len(df_c))):
+            if scatter_pos in ["inside", "outside", "auto"]:
+                scatter_pos = "top center"
 
         def get_formatted_text(value_array):
             labels = []
@@ -237,11 +238,15 @@ def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_ro
             
             fig = go.Figure()
             
+            # Слой Факта
             fact_x = df_fact['_month_period_'].dt.strftime(chosen_pattern).astype(str)
             fact_y = df_fact[y_ax].values
             fact_txt = get_formatted_text(fact_y)
-            fig.add_trace(go.Scatter(x=fact_x, y=fact_y, mode="lines+markers+text" if lbl else "lines+markers", name="Факт", line=dict(color=color, width=4), marker=dict(size=8), text=fact_txt if lbl else None, textposition=safe_pos))
             
+            # 🛡️ ИСПРАВЛЕНО: Интегрирован textfont для 100% контроля размера и цвета текста на графиках
+            fig.add_trace(go.Scatter(x=fact_x, y=fact_y, mode="lines+markers+text" if lbl else "lines+markers", name="Факт", line=dict(color=color, width=4), marker=dict(size=8), text=fact_txt if lbl else None, textposition=scatter_pos, textfont=dict(size=f_size, color=f_color)))
+            
+            # Слой Прогноза
             if forecast_periods > 0 and len(df_fact) > 1:
                 last_value = df_fact[y_ax].iloc[-1]
                 pct_changes = df_fact[y_ax].pct_change().dropna()
@@ -261,39 +266,42 @@ def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_ro
                 last_date = df_fact['_month_period_'].max()
                 future_dates = []
                 for m in range(1, forecast_periods + 1):
-                    if is_yearly_data:
-                        future_dates.append(last_date + pd.DateOffset(years=m))
-                    else:
-                        future_dates.append(last_date + pd.DateOffset(months=m))
+                    if is_yearly_data: future_dates.append(last_date + pd.DateOffset(years=m))
+                    else: future_dates.append(last_date + pd.DateOffset(months=m))
                 
                 fc_x_dates = [df_fact['_month_period_'].iloc[-1]] + future_dates
                 fc_x = [d.strftime(chosen_pattern) for d in fc_x_dates]
                 fc_y = [last_value] + future_values
                 fc_txt = get_formatted_text(fc_y)
                 
-                fig.add_trace(go.Scatter(x=fc_x, y=fc_y, mode="lines+markers+text" if lbl else "lines+markers", name="Прогноз ИИ", line=dict(color="#ff4b4b", width=4, dash="dash"), marker=dict(size=8, symbol="diamond"), text=fc_txt if lbl else None, textposition=safe_pos))
+                # 🛡️ ИСПРАВЛЕНО: Интегрирован textfont и для прогнозного слоя
+                fig.add_trace(go.Scatter(x=fc_x, y=fc_y, mode="lines+markers+text" if lbl else "lines+markers", name="Прогноз ИИ", line=dict(color="#ff4b4b", width=4, dash="dash"), marker=dict(size=8, symbol="diamond"), text=fc_txt if lbl else None, textposition=scatter_pos, textfont=dict(size=f_size, color=f_color)))
                 
             fig.update_layout(xaxis=dict(type='category', tickangle=45 if not horiz else 0))
             st.plotly_chart(fig, use_container_width=True, key=f"p_{i}")
             return
+            
         else:
+            # Бизнес-категории (Без дат)
             df_g = df_c.groupby(x_ax, as_index=False)[y_ax].sum().sort_values(by=y_ax, ascending=False).head(top_limit).reset_index(drop=True)
             txt = get_formatted_text(df_g[y_ax].values)
             if horiz: df_g = df_g.sort_values(by=y_ax, ascending=True).reset_index(drop=True)
 
-            donut_pos = safe_pos if ("Donut" not in style or safe_pos in ["inside", "outside", "auto"]) else "auto"
+            donut_pos = f_pos if ("Donut" not in style or f_pos in ["inside", "outside", "auto"]) else "auto"
             fig = go.Figure()
-            if "Waterfall" in style: fig.add_trace(go.Waterfall(x=list(df_g[x_ax].astype(str)) + ["ИТОГО"], y=list(df_g[y_ax]) + [df_g[y_ax].sum()], text=txt + [f"{df_g[y_ax].sum():,}"], textposition=safe_pos, measure=["relative"] * len(df_g[y_ax]) + ["total"], increasing={"marker": {"color": color}}))
+            if "Waterfall" in style: fig.add_trace(go.Waterfall(x=list(df_g[x_ax].astype(str)) + ["ИТОГО"], y=list(df_g[y_ax]) + [df_g[y_ax].sum()], text=txt + [f"{df_g[y_ax].sum():,}"], textposition=f_pos, measure=["relative"] * len(df_g[y_ax]) + ["total"], increasing={"marker": {"color": color}}))
             elif "Donut" in style: fig.add_trace(go.Pie(labels=df_g[x_ax], values=df_g[y_ax], hole=0.4, rotation=rot, textinfo="label+value" if lbl else "none", textposition=donut_pos, texttemplate="%{label}<br>%{text}" if lbl else None, text=txt))
-            elif "Line" in style: fig.add_trace(go.Scatter(x=df_g[x_ax], y=df_g[y_ax], mode="lines+markers+text" if lbl else "lines+markers", text=txt, textposition=safe_pos, line=dict(color=color, width=4), marker=dict(size=8)))
-            else: fig.add_trace(go.Bar(y=df_g[x_ax] if horiz else df_g[y_ax], x=df_g[y_ax] if horiz else df_g[x_ax], text=txt if lbl else None, textposition=safe_pos, orientation="h" if horiz else "v", marker_color=color))
+            elif "Line" in style: fig.add_trace(go.Scatter(x=df_g[x_ax], y=df_g[y_ax], mode="lines+markers+text" if lbl else "lines+markers", text=txt, textposition=scatter_pos, line=dict(color=color, width=4), marker=dict(size=8), textfont=dict(size=f_size, color=f_color)))
+            else: fig.add_trace(go.Bar(y=df_g[x_ax] if horiz else df_g[y_ax], x=df_g[y_ax] if horiz else df_g[x_ax], text=txt if lbl else None, textposition=f_pos, orientation="h" if horiz else "v", marker_color=color))
             
             fig.update_layout(xaxis=dict(type='category', tickangle=45 if not horiz else 0))
+            if lbl and ("Donut" in style or "Bar" in style or "Waterfall" in style):
+                fig.update_traces(textfont=dict(size=f_size, color=f_color))
             st.plotly_chart(fig, use_container_width=True, key=f"p_{i}")
     except Exception as chart_err:
         st.error(f"Ошибка графика №{i+1}: {chart_err}")
 
-# 🛠️ ИСПРАВЛЕНО: Полностью устранен AttributeError 'list' object has no attribute 'columns'
+# ДВИЖОК ОЧИСТКИ И СБОРКИ ДАННЫХ
 def power_query_clean_engine(uploaded_files_list, gemini_key):
     frames = []
     for f in uploaded_files_list:
@@ -319,9 +327,7 @@ def power_query_clean_engine(uploaded_files_list, gemini_key):
             
     if not frames: return pd.DataFrame()
     
-    # Задаем первый DataFrame как основу для слияния
     base_df = frames[0].copy()
-    
     for extra_df in frames[1:]:
         common_keys = list(set(base_df.columns) & set(extra_df.columns))
         common_keys = [k for k in common_keys if k not in ['Сумма', 'Количество']]
@@ -378,7 +384,7 @@ if uploaded_files:
             f_v1 = st.sidebar.selectbox("Значение среза №1:", u_v1, key="fl_v1")
             if f_v1 != "-- Все значения --": act_df = act_df[act_df[f_col1].astype(str) == str(f_v1)]
         
-        page = st.sidebar.radio("Перейти к разделу:", ["🗂️ 1. Загрузка и очистка данных", "📊 2. Executive Диаграммы", "🗮️ 3. ABC/XYZ-аналитика ОЗМ", "👥 4. RFM-сегментация"])
+        page = st.sidebar.radio("Перейти к разделу:", ["🗂️ 1. Загрузка и очистка данных", "📊 2. Executive Диаграммы", "🧮 3. ABC/XYZ-аналитика ОЗМ", "👥 4. RFM-сегментация"])
         
         def show_page_1(dataframe_input, columns_input):
             st.success(f"📊 База сформирована! Строк: {len(dataframe_input):,}")
@@ -463,8 +469,8 @@ if uploaded_files:
         router_pages = {
             "🗂️ 1. Загрузка и очистка данных": lambda: show_page_1(main_df, all_cols),
             "📊 2. Executive Диаграммы": lambda: show_page_2(act_df, all_cols),
-            "🗮️ 3. ABC/XYZ-аналитика ОЗМ": lambda: internal_show_abc_xyz_page(act_df, gemini_api_key, ai_context_mode),
-            "👥 4. RFM-сегментация": lambda: internal_show_rfm_page(act_df, gemini_api_key, ai_context_mode)
+            "🗮️ 3. ABC/XYZ-аналитика ОЗМ": lambda: internal_show_abc_xyz_page(act_df, gemini_api_key, api_context_mode),
+            "👥 4. RFM-сегментация": lambda: internal_show_rfm_page(act_df, gemini_api_key, api_context_mode)
         }
         router_pages[page]()
 else:
