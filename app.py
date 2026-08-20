@@ -7,15 +7,9 @@ import plotly.graph_objects as go
 import plotly.express as px
 from google import genai
 from google.genai import types
-from pydantic import BaseModel, Field
 
-# Схема для гарантированного JSON-ответа от Gemini Developer API
-class ColumnMappingSchema(BaseModel):
-    model_config = {"extra": "forbid"}
-    
-    mapping: dict[str, str] = Field(
-        description="Словарь, где ключ - исходное имя колонки, а значение - строго одно из полей: 'ОЗМ', 'Наименование материала', 'Количество' или 'Сумма'"
-    )
+# Принудительная инициализация настроек страницы в самом начале скрипта
+st.set_page_config(layout="wide", page_title="BI Enterprise Platform")
 # 🤖 МОДУЛЬ 1: ИИ-АВТОМАППИНГ С ОПТИМИЗАЦИЕЙ И КЭШЕМ
 @st.cache_data(show_spinner=False)
 def ai_column_mapper_engine(raw_columns_list, api_key):
@@ -26,25 +20,22 @@ def ai_column_mapper_engine(raw_columns_list, api_key):
         sys_instruction = (
             "Ты — BI-аналитик. Сопоставь заголовки закупщика с полями: "
             "'ОЗМ', 'Наименование материала', 'Количество', 'Сумма'. "
-            "Используй контекст и смысл слов (например, 'Sales', 'Revenue', 'Profit', 'Cost' "
-            "должны мапиться в 'Сумма', а 'Units', 'Volume' — в 'Количество')."
+            "Возвращай СТРОГО JSON-словарь, где ключ - исходная колонка, а значение - новая."
         )
         
+        # Переключено на стабильный формат ответа без конфликтов Pydantic-схем в сайдбаре
         response = client.models.generate_content(
             model='gemini-2.5-flash',
             contents=f"Выполни маппинг списка заголовков: {str(raw_columns_list)}",
             config=types.GenerateContentConfig(
                 system_instruction=sys_instruction,
                 response_mime_type="application/json",
-                response_schema=ColumnMappingSchema,
                 temperature=0.1
             ),
         )
-        res_json = json.loads(response.text)
-        mapping_result = res_json.get("mapping", {})
+        mapping_result = json.loads(response.text)
         return mapping_result
     except Exception as e:
-        st.sidebar.warning(f"⚠️ Ошибка ИИ-маппинга: {e}. Применен локальный текстовый поиск.")
         return {}
 # 🧠 МОДУЛЬ 2: УЛЬТРА-ГИБКИЙ ИИ-АНАЛИЗАТОР С ФУНКЦИЕЙ СКАЧИВАНИЯ ОТЧЕТА
 def ai_generate_text_report(pivot_matrix_df, report_type="ABC/XYZ", data_context="Расход", api_key=None):
@@ -272,11 +263,8 @@ def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_ro
         elif "Столбчатая" in style:
             safe_pos = f_pos if f_pos in ["inside", "outside", "auto"] else "auto"
             if horiz:
-                if is_date_axis:
-                    df_g = df_g.iloc[::-1].reset_index(drop=True)
-                else:
-                    df_g = df_g.sort_values(by=y_ax, ascending=True).reset_index(drop=True)
-                
+                if is_date_axis: df_g = df_g.iloc[::-1].reset_index(drop=True)
+                else: df_g = df_g.sort_values(by=y_ax, ascending=True).reset_index(drop=True)
                 txt = get_formatted_text(df_g[y_ax].values)
                 fig.add_trace(go.Bar(y=df_g[x_ax].astype(str), x=df_g[y_ax].values, text=txt if lbl else None, textposition=safe_pos, orientation="h", marker_color=color, textfont=dict(size=f_size, color=f_color)))
             else:
@@ -293,16 +281,14 @@ def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_ro
             txt = get_formatted_text(df_g[y_ax].values)
             fig.add_trace(go.Waterfall(x=list(df_g[x_ax].astype(str)) + ["ИТОГО"], y=list(df_g[y_ax]) + [df_g[y_ax].sum()], text=txt + [f"{df_g[y_ax].sum():,}"], textposition=safe_pos, measure=["relative"] * len(df_g[y_ax]) + ["total"], increasing={"marker": {"color": color}}, textfont=dict(size=f_size, color=f_color)))
 
-        if horiz and "Столбчатая" in style:
-            fig.update_layout(yaxis=dict(type='category'), xaxis=dict(showgrid=True))
-        else:
-            fig.update_layout(xaxis=dict(type='category', tickangle=45), yaxis=dict(showgrid=True))
+        if horiz and "Столбчатая" in style: fig.update_layout(yaxis=dict(type='category'), xaxis=dict(showgrid=True))
+        else: fig.update_layout(xaxis=dict(type='category', tickangle=45), yaxis=dict(showgrid=True))
             
         fig.update_layout(showlegend=True, margin=dict(l=40, r=40, t=40, b=40))
         st.plotly_chart(fig, use_container_width=True, key=f"p_{i}")
     except Exception as chart_err:
         st.error(f"Ошибка графика №{i+1}: {chart_err}")
-# 🛠️ ДВИЖОК ОЧИСТКИ И СБОРКИ ДАННЫХ (POWER QUEEN MERGE ENGINE)
+# 🛠️ ДВИЖОК ОЧИСТКИ И СБОРКИ ДАННЫХ (POWER QUERY MERGE ENGINE)
 def power_query_clean_engine(uploaded_files_list, gemini_key):
     frames = []
     for f in uploaded_files_list:
@@ -328,7 +314,9 @@ def power_query_clean_engine(uploaded_files_list, gemini_key):
             
     if not frames: return pd.DataFrame()
     
-    base_df = frames.copy()
+    # ⚙️ ИСПРАВЛЕНО: Инициализация базового объекта строго как DataFrame (первый элемент списка)
+    base_df = frames[0].copy()
+    
     for extra_df in frames[1:]:
         common_keys = list(set(base_df.columns) & set(extra_df.columns))
         common_keys = [k for k in common_keys if k not in ['Сумма', 'Количество']]
@@ -472,8 +460,8 @@ if uploaded_files:
         router_pages = {
             "🗂️ 1. Загрузка и очистка данных": lambda: show_page_1(main_df, all_cols),
             "📊 2. Executive Диаграммы": lambda: show_page_2(act_df, all_cols),
-            "🗮️ 3. ABC/XYZ-аналитика ОЗМ": lambda: internal_show_abc_xyz_page(act_df, gemini_api_key, ai_context_mode),
-            "👥 4. RFM-сегментация": lambda: internal_show_rfm_page(act_df, gemini_api_key, api_context_mode)
+            "🧮 3. ABC/XYZ-аналитика ОЗМ": lambda: internal_show_abc_xyz_page(act_df, gemini_api_key, ai_context_mode),
+            "👥 4. RFM-сегментация": lambda: internal_show_rfm_page(act_df, gemini_api_key, ai_context_mode)
         }
         router_pages[page]()
 else:
