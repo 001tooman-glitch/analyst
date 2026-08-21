@@ -107,21 +107,25 @@ def internal_show_abc_xyz_page(filtered_df, api_key, data_context):
     with tc1:
         chosen_turnover_period = st.selectbox("Выберите анализируемый период времени:", ["Год (365 дней)", "Полугодие (182 дня)", "Квартал (90 дней)", "Месяц (30 дней)"], key="t_period_sel")
     with tc2:
-        abc_target = st.selectbox("Объект анализа ТМЦ:", [c for c in available_cols if c not in ['Сумма', 'Количество']], key="abc_t")
+        abc_target = st.selectbox("Объект анализа ТМЦ (обычно ОЗМ):", [c for c in available_cols if 'Сумма' not in c and 'Количество' not in c], key="abc_t")
         
     days_mapping = {"Год (365 дней)": 365, "Полугодие (182 дня)": 182, "Квартал (90 дней)": 90, "Месяц (30 дней)": 30}
     selected_days = days_mapping[chosen_turnover_period]
     
+    # Автоподбор колонок на основе реляционной сборки
+    def_sales = 'Сумма_Расход' if 'Сумма_Расход' in available_cols else ('Сумма' if 'Сумма' in available_cols else available_cols[0])
+    def_stock = 'Сумма_Запасы' if 'Сумма_Запасы' in available_cols else available_cols[0]
+    
     c1, c2 = st.columns(2)
     with c1: 
-        abc_value = st.selectbox("Критерий масштаба расхода/продаж:", [c for c in ['Сумма', 'Количество'] if c in available_cols] + available_cols, key="abc_v")
+        abc_value = st.selectbox("Критерий расхода/потребления ТМЦ:", available_cols, index=available_cols.index(def_sales) if def_sales in available_cols else 0, key="abc_v")
     with c2: 
-        stock_col = st.selectbox("Столбец текущего остатка ТМЦ (для оборачиваемости):", ["-- Рассчитать аппроксимацию (расход * 1.15) --"] + available_cols, key="abc_stock_col")
+        stock_col = st.selectbox("Столбец складского остатка:", ["-- Рассчитать аппроксимацию (расход * 1.15) --"] + available_cols, index=available_cols.index(def_stock) + 1 if def_stock in available_cols else 0, key="abc_stock_col")
         
-    xyz_period = st.selectbox("Шкала времени (для XYZ):", [c for c in available_cols if c != abc_target], key="xyz_p")
+    xyz_period = st.selectbox("Шкала времени (Столбец Год/Месяц для XYZ):", [c for c in available_cols if c != abc_target], key="xyz_p")
     
-    a_lim = st.slider("Grad_A (%):", 50, 90, 80, key="abc_s")
-    x_lim = st.slider("Grad_X (KV ≤ %):", 5, 50, 10, key="xyz_s")
+    a_lim = st.slider("Граница класса А (%):", 50, 90, 80, key="abc_s")
+    x_lim = st.slider("Граница класса X (KV ≤ %):", 5, 50, 10, key="xyz_s")
     try:
         df[abc_value] = pd.to_numeric(df[abc_value], errors='coerce').fillna(0.0)
         df = df[(df[abc_target].astype(str).str.strip() != "") & (df[xyz_period].astype(str).str.strip() != "")]
@@ -173,7 +177,12 @@ def internal_show_abc_xyz_page(filtered_df, api_key, data_context):
         if st.button("✍️ Сгенерировать ИИ-отчет по матрице ABC/XYZ", key="ai_report_abc_btn"):
             ai_generate_text_report(pivot_m, report_type="ABC/XYZ", data_context=data_context, api_key=api_key)
             
+        st.markdown(f"#### 🔎 Реестр оборачиваемости и складских остатков номенклатуры")
         st.dataframe(df_m.sort_values(by=abc_value, ascending=False), use_container_width=True)
+        
+        towrite = io.BytesIO()
+        df_m.to_excel(towrite, index=False, engine='openpyxl')
+        st.download_button(label="📥 Скачать результаты аналитики в Excel", data=towrite.getvalue(), file_name="abc_xyz_turnover_output.xlsx", mime="application/vnd.ms-excel")
         
     except Exception as e: 
         st.error(f"Ошибка расчета ABC/XYZ: {e}")
@@ -188,10 +197,10 @@ def internal_show_rfm_page(filtered_df, api_key, data_context):
     st.markdown("### 🎯 Настройка объекта сегментации")
     rc1, rc2 = st.columns(2)
     with rc1:
-        rfm_target = st.selectbox("Выберите анализируемое поле:", [c for c in available_cols if c not in ['Сумма', 'Количество']], key="rfm_target_select")
+        rfm_target = st.selectbox("Выберите анализируемое поле:", [c for c in available_cols if 'Сумма' not in c and 'Количество' not in c], key="rfm_target_select")
     with rc2:
-        detected_sum_col = 'Сумма' if 'Сумма' in available_cols else (available_cols if available_cols else None)
-        rfm_value_col = st.selectbox("Выберите поле стоимости/суммы:", available_cols, index=available_cols.index(detected_sum_col) if detected_sum_col in available_cols else 0, key="rfm_value_select")
+        def_v = 'Сумма_Расход' if 'Сумма_Расход' in available_cols else ('Сумма' if 'Сумма' in available_cols else available_cols[0])
+        rfm_value_col = st.selectbox("Выберите числовое поле стоимости/объема:", available_cols, index=available_cols.index(def_v) if def_v in available_cols else 0, key="rfm_value_select")
     
     try:
         df[rfm_value_col] = pd.to_numeric(df[rfm_value_col], errors='coerce').fillna(0.0)
@@ -203,6 +212,7 @@ def internal_show_rfm_page(filtered_df, api_key, data_context):
             st.dataframe(rfm.sort_values(by='M', ascending=False), use_container_width=True)
             return
 
+        # ЗАЩИТА: Использование рангов 'first' исключает сбой уникальности перцентилей в qcut
         rfm['F_Score'] = pd.qcut(rfm['F'].rank(method='first'), 3, labels=['3', '2', '1']).astype(str)
         rfm['M_Score'] = pd.qcut(rfm['M'].rank(method='first'), 3, labels=['3', '2', '1']).astype(str)
         rfm['RFM'] = rfm['F_Score'] + rfm['M_Score']
@@ -287,6 +297,7 @@ def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_ro
             df_g["Тип данных"] = "Факт"
             idx_split = len(df_g) - 1
             
+            # Прогноз для текстовых лет по среднему темпу прироста
             if forecast_periods > 0 and is_year_col and len(df_g) > 1:
                 try:
                     last_year_numeric = int(float(df_g[x_ax].iloc[-1]))
@@ -351,37 +362,75 @@ def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_ro
         st.plotly_chart(fig, use_container_width=True, key=f"p_{i}")
     except Exception as chart_err:
         st.error(f"Ошибка графика №{i+1}: {chart_err}")
-# 🛠️ МОДУЛЬ СБОРКИ ДАННЫХ (ENTERPRISE CONCAT ENGINE)
+# 🛠️ МОДУЛЬ СБОРКИ ДАННЫХ И СВЯЗЫВАНИЯ СТРУКТУР (ДИНАМИКА ЗАПАСОВ + РЕАЛЬНЫЙ РАСХОД)
 def power_query_clean_engine(uploaded_files_list, gemini_key):
-    frames = []
+    stock_frames = []
+    consumption_frames = []
+    
     for f_item in uploaded_files_list:
         try:
             df = pd.read_csv(f_item) if f_item.name.endswith('.csv') else pd.read_excel(f_item, engine='openpyxl')
             raw_cols = [str(c).strip() for c in df.columns]
-            ai_map = ai_column_mapper_engine(raw_cols, gemini_key)
-            mapped = []
+            
+            c_low = [c.lower() for c in raw_cols]
+            is_stock_file = any(w in c_low for w in ['склад', 'остаток', 'тип запаса', 'хранения'])
+            
+            mapped_cols = {}
             for col in raw_cols:
-                if col in ai_map: mapped.append(ai_map[col])
-                else:
-                    c_low = col.lower()
-                    if any(w in c_low for w in ['озм', 'код материала', 'номенклатур']): mapped.append('ОЗМ')
-                    elif any(w in c_low for w in ['наименование', 'материал']): mapped.append('Наименование материала')
-                    elif any(w in c_low for w in ['количество', 'кол-во', 'объем']): mapped.append('Quantity')
-                    elif any(w in c_low for w in ['сумма', 'стоимость', 'цена']): mapped.append('Сумма')
-                    else: mapped.append(col)
-            df.columns = [c if c != 'Quantity' else 'Количество' for c in mapped]
+                cl = col.lower()
+                if any(w in cl for w in ['озм', 'код материала', 'номенклатур']): mapped_cols[col] = 'ОЗМ'
+                elif any(w in cl for w in ['наименование', 'материал']): mapped_cols[col] = 'Наименование материала'
+                elif any(w in cl for w in ['сумма', 'стоимость', 'цена', 'объем средств']): 
+                    mapped_cols[col] = 'Сумма_Запасы' if is_stock_file else 'Сумма_Расход'
+                elif any(w in cl for w in ['количество', 'кол-во', 'объем']):
+                    mapped_cols[col] = 'Количество_Запасы' if is_stock_file else 'Количество_Расход'
+            
+            df = df.rename(columns=mapped_cols)
             df = df.loc[:, ~df.columns.str.contains('^Без названия|^Unnamed|^Unnamed:')].loc[:, ~df.columns.duplicated()]
-            frames.append(df.dropna(how='all'))
+            df = df.dropna(subset=['ОЗМ'])
+            
+            if is_stock_file: stock_frames.append(df)
+            else: consumption_frames.append(df)
         except Exception as file_err:
             st.sidebar.error(f"Ошибка файла {f_item.name}: {file_err}")
             
-    if not frames: return pd.DataFrame()
-    base_df = pd.concat(frames, ignore_index=True, join='outer')
+    # Реляционное пересечение по ОЗМ (Outer Join витрины BI)
+    if stock_frames and consumption_frames:
+        df_st = pd.concat(stock_frames, ignore_index=True)
+        df_cn = pd.concat(consumption_frames, ignore_index=True)
+        
+        for c in ['Сумма_Запасы', 'Количество_Запасы']:
+            if c in df_st.columns: df_st[c] = pd.to_numeric(df_st[c].astype(str).str.replace(r'\s+', '', regex=True).str.replace(',', '.'), errors='coerce').fillna(0.0)
+        for c in ['Сумма_Расход', 'Количество_Расход']:
+            if c in df_cn.columns: df_cn[c] = pd.to_numeric(df_cn[c].astype(str).str.replace(r'\s+', '', regex=True).str.replace(',', '.'), errors='coerce').fillna(0.0)
             
-    for c in ['Количество', 'Сумма']:
-        if c in base_df.columns: 
-            base_df[c] = pd.to_numeric(base_df[c].astype(str).str.replace(r'\s+', '', regex=True).str.replace(',', '.'), errors='coerce').fillna(0.0)
-    return base_df.dropna(how='all')
+        other_stock_cols = [c for c in df_st.columns if c not in ['ОЗМ', 'Наименование материала', 'Сумма_Запасы', 'Количество_Запасы']]
+        other_cn_cols = [c for c in df_cn.columns if c not in ['ОЗМ', 'Наименование材料', 'Сумма_Расход', 'Количество_Расход'] and c not in df_st.columns]
+        
+        st_agg_dict = {'Сумма_Запасы': 'mean', 'Количество_Запасы': 'mean'}
+        for c in other_stock_cols: st_agg_dict[c] = 'first'
+        st_agg = df_st.groupby(['ОЗМ', 'Наименование материала'], as_index=False).agg(st_agg_dict)
+        
+        cn_agg_dict = {'Сумма_Расход': 'sum', 'Количество_Расход': 'sum'}
+        for c in other_cn_cols: cn_agg_dict[c] = 'first'
+        cn_agg = df_cn.groupby(['ОЗМ'], as_index=False).agg(cn_agg_dict)
+        
+        merged_bi_table = pd.merge(st_agg, cn_agg, on='ОЗМ', how='outer').fillna(0.0)
+        merged_bi_table['Сумма'] = merged_bi_table['Сумма_Расход']
+        merged_bi_table['Количество'] = merged_bi_table['Количество_Расход']
+        return merged_bi_table
+        
+    elif stock_frames or consumption_frames:
+        single_tier = stock_frames if stock_frames else consumption_frames
+        res_df = pd.concat(single_tier, ignore_index=True)
+        for c in res_df.columns:
+            if 'Сумма_Расход' in c or 'Сумма_Запасы' in c: res_df = res_df.rename(columns={c: 'Сумма'})
+            if 'Количество_Расход' in c or 'Количество_Запасы' in c: res_df = res_df.rename(columns={c: 'Количество'})
+        if 'Сумма' in res_df.columns: res_df['Сумма'] = pd.to_numeric(res_df['Сумма'].astype(str).str.replace(r'\s+', '', regex=True).str.replace(',', '.'), errors='coerce').fillna(0.0)
+        if 'Количество' in res_df.columns: res_df['Количество'] = pd.to_numeric(res_df['Количество'].astype(str).str.replace(r'\s+', '', regex=True).str.replace(',', '.'), errors='coerce').fillna(0.0)
+        return res_df
+        
+    return pd.DataFrame()
 
 # ⚙️ ИНИЦИАЛИЗАЦИЯ И СТАТИЧЕСКИЕ КОЛЛБЭКИ СЕССИИ
 if "manual_charts" not in st.session_state: st.session_state.manual_charts = 1
@@ -395,7 +444,7 @@ def remove_chart_cb():
 def add_card_cb(): st.session_state.manual_cards += 1
 def remove_card_cb(): 
     if st.session_state.manual_cards > 1: st.session_state.manual_cards -= 1
-# 💬 ЭКСПЕРТНЫЙ ИИ ЧАТ-АССИСТЕНТ С ДВИЖКОМ CODE INTERPRETER И ФИКСАЦИЕЙ ТАЙМСТАМПОВ
+# 💬 ЭКСПЕРТНЫЙ ИИ ЧАТ-АССИСТЕНТ С ДВИЖКОМ АВТОМАТИЧЕСКОГО ИСПОЛНЕНИЯ PYTHON-КОДА (CODE INTERPRETER)
 def render_ai_sidebar_chat(current_dataframe, api_key, context_mode_text):
     st.sidebar.markdown("---")
     st.sidebar.markdown("### 💬 Чат-ассистент к данным")
@@ -429,7 +478,7 @@ def render_ai_sidebar_chat(current_dataframe, api_key, context_mode_text):
         try:
             client = genai.Client(api_key=api_key)
             
-            # ИСПРАВЛЕНО: Принудительно и глубоко превращаем абсолютно ВСЕ нечисловые типы колонок в str для защиты от Timestamp-ошибки
+            # ЗАЩИТА: Принудительное текстовое форматирование всех нечисловых шкал (изоляция от Timestamp Error)
             sample_df = current_dataframe.head(3).copy()
             for c in sample_df.columns:
                 if not pd.api.types.is_numeric_dtype(sample_df[c]):
@@ -452,9 +501,9 @@ def render_ai_sidebar_chat(current_dataframe, api_key, context_mode_text):
             1. Возвращай ИСКЛЮЧИТЕЛЬНО чистый код на Python. Никакого текста, никаких пояснений, никаких знаков ```python. Только код.
             2. Результат вычисления ОБЯЗАТЕЛЬНО присваивай переменной 'result_output'.
             3. Примеры правильного ответа:
-               - Если спросили топ 10: result_output = current_dataframe.groupby('ОЗМ')['Сумма'].sum().sort_values(ascending=False).head(10)
-               - Если спросили про лидера по затратам: result_output = current_dataframe.groupby('ПфМ')['Сумма'].sum().idxmax()
-               - Если спросили общую сумму: result_output = current_dataframe['Сумма'].sum()
+               - result_output = current_dataframe.groupby('ОЗМ')['Сумма'].sum().sort_values(ascending=False).head(10)
+               - result_output = current_dataframe.groupby('ПфМ')['Сумма'].sum().idxmax()
+               - result_output = current_dataframe['Сумма'].sum()
             """
             
             with chat_container:
@@ -467,13 +516,15 @@ def render_ai_sidebar_chat(current_dataframe, api_key, context_mode_text):
                         )
                         raw_code = response.text.strip().replace("```python", "").replace("```", "")
                         
+                        # Локальное исполнение на процессоре компьютера
                         local_vars = {"current_dataframe": current_dataframe, "result_output": None}
                         exec(raw_code, {}, local_vars)
                         execution_result = local_vars.get("result_output")
                         
                         formatting_prompt = f"""
-                        Ты — BI-аналитик. Переведи технический результат вычисления Python на понятный человеческий язык для руководства.
+                        Ты — BI-аналитик уровня Синьор. Переведи технический результат выполнения Pandas-кода на понятный человеческий язык для руководства компании.
                         Бизнес-контекст: {context_mode_text}. Вопрос пользователя: '{user_prompt}'
+                        Отвечай структурированно, кратко, по делу. Цифры форматируй пробелами (например, 150 000 000).
                         """
                         
                         final_response = client.models.generate_content(
