@@ -151,10 +151,14 @@ def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_ro
     try:
         df_c = active_df.copy()
         
-        # 🛡️ Рокировка осей, если поле даты ошибочно поставили на ось Y
-        check_y_dates = pd.to_datetime(df_c[y_ax], errors='coerce')
-        if check_y_dates.notna().sum() > (0.5 * len(df_c)):
+        # 🛡️ Продвинутая конвертация временных меток с поддержкой смешанных форматов (dayfirst=True)
+        converted_dates = pd.to_datetime(df_c[x_ax], errors='coerce', dayfirst=True, format='mixed')
+        check_y_dates = pd.to_datetime(df_c[y_ax], errors='coerce', dayfirst=True, format='mixed')
+        
+        # Автоматическая рокировка осей, если поле даты ошибочно поставили на ось Y
+        if check_y_dates.notna().sum() > (0.5 * len(df_c)) and converted_dates.notna().sum() <= (0.5 * len(df_c)):
             x_ax, y_ax = y_ax, x_ax
+            converted_dates = check_y_dates
             
         df_c[y_ax] = pd.to_numeric(df_c[y_ax], errors='coerce').fillna(0)
         curr_suffix = f" {custom_currency.strip()}" if custom_currency.strip() else ""
@@ -173,19 +177,23 @@ def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_ro
                 labels.append(f_val)
             return labels
 
-        converted_dates = pd.to_datetime(df_c[x_ax], errors='coerce')
-        is_date_axis = converted_dates.notna().sum() > (0.5 * len(df_c))
+        is_date_axis = converted_dates.notna().sum() > (0.3 * len(df_c))
 
         if is_date_axis:
             df_c['_datetime_clean_'] = converted_dates
+            # Удаляем мусорные записи дат, чтобы не ломать ось в 1970 год
             df_c = df_c.dropna(subset=['_datetime_clean_']).copy()
             df_c['_month_period_'] = df_c['_datetime_clean_'].dt.to_period('M').dt.to_timestamp()
             
-            # 📈 ИСПРАВЛЕНО: Строго сортируем по датам, чтобы месяцы выстроились слева направо для точного ИИ-прогноза
+            # Строго группируем и сортируем хронологически, чтобы тренд шел слева направо
             df_fact = df_c.groupby('_month_period_', as_index=False)[y_ax].sum()
             df_fact = df_fact.sort_values(by='_month_period_', ascending=True).reset_index(drop=True)
             
-            chosen_pattern = {"ММ.ГГГГ (01.2014)": "%m.%Y", "Месяц ГГГГ (Янв 2014)": "%b %Y", "ДД.ММ.ГГГГ (15.01.2014)": "%d.%m.%Y", "ГГГГ (2014)": "%Y"}.get(date_format_type, "%b %Y")
+            if df_fact.empty:
+                st.warning(f"⚠️ Не удалось извлечь валидные даты из колонки {x_ax}.")
+                return
+                
+            chosen_pattern = {"ММ.ГГГГ (01.2014)": "%m.%Y", "Месяц ГГГГ (Янв 2014)": "%b %Y", "ДД.ММ.ГГГГ (15.01.2014)": "%d.%m.%Y", "ГГГГ (2014)": "%Y"}.get(date_format_type, "%m.%Y")
             final_x = list(df_fact['_month_period_'].dt.strftime(chosen_pattern).astype(str))
             final_y = list(df_fact[y_ax].values)
             legend_names = ["Факт"] * len(final_y)
@@ -237,7 +245,7 @@ def power_query_clean_engine(uploaded_files_list, gemini_key):
     frames = []
     for f in uploaded_files_list:
         try:
-            # ⚙️ Автоматическое угадывание разделителя (запятая/точка с запятой)
+            # Автоматическое угадывание разделителя (запятая/точка с запятой)
             if f.name.endswith('.csv'):
                 df = pd.read_csv(f, dtype=str, sep=None, engine='python', encoding='utf-8')
             else:
@@ -305,7 +313,7 @@ if uploaded_files:
         elif "2. Executive Диаграммы" in page:
             st.title("📊 Интерактивная BI-Панель Показателей")
             
-            # 🔥 ВЕРНУЛИ: Интерактивный конструктор динамических KPI-карточек
+            # 🔥 ОБНОВЛЕНО: Интерактивный конструктор KPI-карточек с выбором представления данных
             st.markdown("### 🎴 Конструктор KPI Карточек")
             card_cols = st.columns(st.session_state.manual_cards)
             for j in range(st.session_state.manual_cards):
@@ -314,6 +322,10 @@ if uploaded_files:
                         c_title = st.text_input(f"Название KPI #{j+1}:", f"Показатель {j+1}", key=f"ct_{j}")
                         c_val_col = st.selectbox(f"Поле расчета #{j+1}:", [c for c in all_cols if c != "-- Выберите заголовок --"], key=f"cv_{j}")
                         c_agg = st.selectbox(f"Функция #{j+1}:", ["Сумма (SUM)", "Количество строк (COUNT)", "Уникальных (NUNIQUE)", "Среднее (MEAN)"], key=f"ca_{j}")
+                        
+                        # Добавленные селекторы представления данных для карточки
+                        c_fmt = st.selectbox(f"Представление #{j+1}:", ["Числовой", "Финансовый", "Сжатый (млн/млрд)"], key=f"cfmt_{j}")
+                        c_curr = st.text_input(f"Валюта/Знак #{j+1}:", value="₸", key=f"ccur_{j}")
                         
                         try:
                             if c_agg == "Сумма (SUM)":
@@ -324,7 +336,22 @@ if uploaded_files:
                                 val = act_df[c_val_col].nunique()
                             else:
                                 val = pd.to_numeric(act_df[c_val_col], errors='coerce').mean()
-                            st.metric(label=c_title, value=f"{round(val, 2):,}".replace(",", " "))
+                            
+                            # Логика форматирования представления данных в карточке
+                            suffix = f" {c_curr.strip()}" if c_curr.strip() else ""
+                            if c_fmt == "Финансовый":
+                                formatted_value = f"{round(val, 0):,}".replace(",", " ") + suffix
+                            elif c_fmt == "Сжатый (млн/млрд)":
+                                if abs(val) >= 1e9:
+                                    formatted_value = f"{val/1e9:,.2f} млрд{suffix}"
+                                elif abs(val) >= 1e6:
+                                    formatted_value = f"{val/1e6:,.2f} млн{suffix}"
+                                else:
+                                    formatted_value = f"{round(val, 2):,}".replace(",", " ") + suffix
+                            else:
+                                formatted_value = f"{round(val, 2):,}".replace(",", " ")
+                                
+                            st.metric(label=c_title, value=formatted_value)
                         except:
                             st.metric(label=c_title, value="0")
             
@@ -353,7 +380,7 @@ if uploaded_files:
                     f_round = st.slider("Округление:", 0, 4, 0, key=f"rnd_{i}")
                     f_size = st.slider("Шрифт (px):", 8, 24, 14, key=f"sz_{i}")
                     f_color = st.color_picker("Цвет:", "#000000", key=f"fcol_{i}")
-                    f_curr_text = st.text_input("Валюта:", value="$", key=f"fcur_tx_{i}")
+                    f_curr_text = st.text_input("Валюта:", value="₸", key=f"fcur_tx_{i}")
                     f_pos = st.selectbox("Положение:", ["auto", "inside", "outside"], key=f"pos_{i}")
                     horiz = st.checkbox("Горизонтально", value=False, key=f"h_{i}") if "Bar" in style else False
                     rot = st.slider("🔄 Поворот:", 0, 360, 0, step=15, key=f"rot_{i}") if "Donut" in style else 0
