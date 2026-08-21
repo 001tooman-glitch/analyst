@@ -57,26 +57,24 @@ def ai_generate_text_report(pivot_matrix_df, report_type="ABC/XYZ", data_context
         client = genai.Client(api_key=api_key)
         
         context_mapping = {
-            "Закупки": "Данные — это ПЛАНИРУЕМЫЕ ЗАКУПКИ / БИЗНЕС-ПЛАНЫ. Группа AZ — это стратегические контракты (риск срыва сроков проектов). Группа CZ — мелкая операционная текучка (риск бюрократии, недоосвоения бюджета).",
-            "Зазапасы": "Данные — это СУЩЕСТВУЮЩИЕ СКЛАДСКИЕ ЗАПАСЫ. Группа AZ — это жестко замороженный рабочий капитал предприятия (дорогие ТМЦ без движения). Группа CZ — складской хлам, неликвиды, забивающие полки.",
-            "Расход": "Данные — это РЕАЛЬНЫЙ ФАКТИЧЕСКИЙ РАСХОД / ПОТРЕБЛЕНИЕ. Группа AZ — это внеплановые, аварийные ремонты оборудования, сжигающие огромный бюджет. Группа CZ — административная нагрузка мелких заявок."
+            "Закупки": "Данные — это ПЛАНИРУЕМЫЕ ЗАКУПКИ / БИЗНЕС-ПЛАНЫ. Группа AZ — это стратегические контракты (риск срыва сроков проектов). Группа CZ — мелкая операционная текучка.",
+            "Зазапасы": "Данные — это СУЩЕСТВУЮЩИЕ СКЛАДСКИЕ ЗАПАСЫ. Группа AZ — это жестко замороженный рабочий капитал предприятия. Группа CZ — складской хлам, неликвиды.",
+            "Расход": "Данные — это РЕАЛЬНЫЙ ФАКТИЧЕСКИЙ РАСХОД / ПОТРЕБЛЕНИЕ. Группа AZ — это внеплановые, аварийные ремонты оборудования. Группа CZ — административная нагрузка."
         }
         
         context_rules = next((v for k, v in context_mapping.items() if k in data_context), 
-                             "Данные — это КОММЕРЧЕСКИЕ ПРОДАЖИ / СБЫТ / РИТЕЙЛ. Группа AZ — это товары-локомотивы, генерирующие 80% выручки (риск упущенной прибыли). Группа CZ — длинный хвост ассортимента с низким чеком.")
+                             "Данные — это КОММЕРЧЕСКИЕ ПРОДАЖИ / СБЫТ / РИТЕЙЛ. Группа AZ — это товары-локомотивы. Группа CZ — длинный хвост ассортимента.")
 
         system_instruction = f"""
         Ты — ведущий бизнес-аналитик предприятия. Напиши аналитический отчет для руководства по матрице {report_type}.
         БИЗНЕС-КОНТЕКСТ ДАННЫХ: {context_rules}
         
         СТРОГИЕ ПРАВИЛА ОФОРМЛЕНИЯ:
-        - Использовать исключительно нейтральные термины: 'предприятие', 'компания', 'организация', 'структура данных'. Категорически запрещено писать слова 'комбинат' или 'эксперт по управлению цепями поставок'.
+        - Использовать исключительно нейтральные термины: 'предприятие', 'компания', 'организация'. Категорически запрещено писать слова 'комбинат'.
         - НАЧИНАЙ ОТЧЕТ СРАЗУ с содержательного анализа (Раздел "1. Анализ текущего процесса").
-        - КАТЕГОРИЧЕСКИ ЗАПРЕЩЕНО писать метаданные документа: "Генеральному директору", "От:", "Дата:", "Тема:", приветствия или вводные подписи.
-        
-        Структура отчета: 1. Анализ текущего процесса ({data_context}). 2. Выявление скрытых аномалий и рисков (оцени группы AZ и CZ). 3. Рекомендации. Пиши емко, списками Markdown. Используй деловой аналитический стиль.
+        - КАТЕГОРИЧЕСКИ ЗАПРЕЩЕНО писать метаданные документа: приветствия или вводные подписи.
         """
-        with st.spinner(f"🔮 ИИ генерирует чистый отчет для контекста '{data_context}'..."):
+        with st.spinner(f"🔮 ИИ генерирует чистый отчет..."):
             response = client.models.generate_content(
                 model='gemini-3.5-flash', 
                 contents=f"Матрица плотности ({data_context}):\n{pivot_matrix_df.to_string()}", 
@@ -97,7 +95,7 @@ def ai_generate_text_report(pivot_matrix_df, report_type="ABC/XYZ", data_context
         st.error(f"❌ Ошибка ИИ: {report_err}")
 # 🧮 МОДУЛЬ 3: УНИВЕРСАЛЬНЫЙ КОНСТРУКТОР ABC/XYZ И ДИНАМИЧЕСКОЙ ОБОРАЧИВАЕМОСТИ
 def internal_show_abc_xyz_page(filtered_df, api_key, data_context):
-    st.title("🧮 Конструктор matrices ABC/XYZ и Модуль оборачиваемости ТМЦ")
+    st.title("🧮 Конструктор матриц ABC/XYZ и Модуль оборачиваемости ТМЦ")
     if filtered_df.empty: 
         return st.info("ℹ️ Выборка пуста. Загрузите файлы.")
     
@@ -146,7 +144,6 @@ def internal_show_abc_xyz_page(filtered_df, api_key, data_context):
         
         df_m = pd.merge(df_abc[[abc_target, abc_value, 'Class_ABC']], pd.DataFrame(xyz_res), on=abc_target)
         
-        # Модернизированное вычисление оборачиваемости ТМЦ на основе реального или расчетного запаса
         if stock_col == "-- Рассчитать аппроксимацию (расход * 1.15) --":
             df_m['Средний запас на складе'] = df_m[abc_value] * 1.15
         else:
@@ -176,12 +173,7 @@ def internal_show_abc_xyz_page(filtered_df, api_key, data_context):
         if st.button("✍️ Сгенерировать ИИ-отчет по матрице ABC/XYZ", key="ai_report_abc_btn"):
             ai_generate_text_report(pivot_m, report_type="ABC/XYZ", data_context=data_context, api_key=api_key)
             
-        st.markdown(f"#### 🔎 Реестр с оборачиваемостью за {chosen_turnover_period}")
         st.dataframe(df_m.sort_values(by=abc_value, ascending=False), use_container_width=True)
-        
-        towrite = io.BytesIO()
-        df_m.to_excel(towrite, index=False, engine='openpyxl')
-        st.download_button(label="📥 Скачать результаты аналитики и оборачиваемости в Excel", data=towrite.getvalue(), file_name="abc_xyz_turnover_output.xlsx", mime="application/vnd.ms-excel")
         
     except Exception as e: 
         st.error(f"Ошибка расчета ABC/XYZ: {e}")
@@ -194,7 +186,6 @@ def internal_show_rfm_page(filtered_df, api_key, data_context):
     available_cols = list(df.columns)
     
     st.markdown("### 🎯 Настройка объекта сегментации")
-    
     rc1, rc2 = st.columns(2)
     with rc1:
         rfm_target = st.selectbox("Выберите анализируемое поле:", [c for c in available_cols if c not in ['Сумма', 'Количество']], key="rfm_target_select")
@@ -208,17 +199,16 @@ def internal_show_rfm_page(filtered_df, api_key, data_context):
         rfm.columns = ['Объект Анализа', 'F', 'M']
         
         if len(rfm) < 3:
-            st.warning("⚠️ Недостаточно уникальных данных для квантования. Выведен общий список.")
+            st.warning("⚠️ Недостаточно уникальных данных для квантования.")
             st.dataframe(rfm.sort_values(by='M', ascending=False), use_container_width=True)
             return
 
-        # ЗАЩИТА: Применяем rank(method='first') перед qcut во избежание падения из-за дубликатов частот
         rfm['F_Score'] = pd.qcut(rfm['F'].rank(method='first'), 3, labels=['3', '2', '1']).astype(str)
         rfm['M_Score'] = pd.qcut(rfm['M'].rank(method='first'), 3, labels=['3', '2', '1']).astype(str)
         rfm['RFM'] = rfm['F_Score'] + rfm['M_Score']
         seg_counts = rfm.groupby('RFM').size().reset_index(name='Количество объектов')
         
-        st.plotly_chart(px.bar(seg_counts, x='RFM', y='Количество объектов', text_auto=True, title=f"📊 Динамическое RFM-распределение по полю: {rfm_target}", color='RFM', color_continuous_scale="Purples"), use_container_width=True)
+        st.plotly_chart(px.bar(seg_counts, x='RFM', y='Количество объектов', text_auto=True, title=f"📊 Динамическое RFM-распределение: {rfm_target}", color='RFM', color_continuous_scale="Purples"), use_container_width=True)
         
         if st.button("👥 Сгенерировать ИИ-отчет по матрице RFM", key="ai_report_rfm_btn"):
             ai_generate_text_report(seg_counts, report_type=f"RFM-Сегментации ({rfm_target})", data_context=data_context, api_key=api_key)
@@ -256,7 +246,7 @@ def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_ro
         converted_dates = pd.to_datetime(df_c[x_ax], errors='coerce')
         is_date_axis = converted_dates.notna().sum() > (0.5 * len(df_c)) and not is_year_col
         
-        idx_split = -1 # Технический маркер разделения факта и прогноза
+        idx_split = -1
         
         if is_date_axis:
             df_c['_datetime_clean_'] = converted_dates
@@ -297,14 +287,13 @@ def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_ro
             df_g["Тип данных"] = "Факт"
             idx_split = len(df_g) - 1
             
-            # УНИВЕРСАЛЬНЫЙ АПГРЕЙД: Добавляем математический прогноз, если ось Х - это простые годы
             if forecast_periods > 0 and is_year_col and len(df_g) > 1:
                 try:
                     last_year_numeric = int(float(df_g[x_ax].iloc[-1]))
                     last_val = df_g[y_ax].iloc[-1]
                     pct_changes = df_g[y_ax].pct_change().dropna()
                     avg_growth = pct_changes.tail(2).mean() if len(pct_changes) >= 2 else pct_changes.mean()
-                    if avg_growth < -0.20: avg_growth = -0.20 # Ограничитель резкого обвала тренда
+                    if avg_growth < -0.20: avg_growth = -0.20
                     
                     f_x_list = list(df_g[x_ax].astype(str).values)
                     f_y_list = list(df_g[y_ax].values)
@@ -398,6 +387,7 @@ def power_query_clean_engine(uploaded_files_list, gemini_key):
 if "manual_charts" not in st.session_state: st.session_state.manual_charts = 1
 if "manual_cards" not in st.session_state: st.session_state.manual_cards = 1
 if "main_df" not in st.session_state: st.session_state.main_df = pd.DataFrame()
+if "chat_history" not in st.session_state: st.session_state.chat_history = []
 
 def add_chart_cb(): st.session_state.manual_charts += 1
 def remove_chart_cb(): 
@@ -405,7 +395,99 @@ def remove_chart_cb():
 def add_card_cb(): st.session_state.manual_cards += 1
 def remove_card_cb(): 
     if st.session_state.manual_cards > 1: st.session_state.manual_cards -= 1
+# 💬 ЭКСПЕРТНЫЙ ИИ ЧАТ-АССИСТЕНТ С ДВИЖКОМ CODE INTERPRETER И ФИКСАЦИЕЙ ТАЙМСТАМПОВ
+def render_ai_sidebar_chat(current_dataframe, api_key, context_mode_text):
+    st.sidebar.markdown("---")
+    st.sidebar.markdown("### 💬 Чат-ассистент к данным")
+    
+    if current_dataframe.empty:
+        st.sidebar.info("Загрузите файлы для активации чата.")
+        return
+        
+    if st.sidebar.button("🧹 Очистить историю чата", key="clear_chat_btn"):
+        st.session_state.chat_history = []
+        st.sidebar.success("История очищена!")
+        
+    chat_container = st.sidebar.container(height=300)
+    with chat_container:
+        for message in st.session_state.chat_history:
+            with st.chat_message(message["role"]):
+                st.write(message["content"])
 
+    if user_prompt := st.sidebar.chat_input("Спросить ИИ о таблице...", key="chat_input_text"):
+        st.session_state.chat_history.append({"role": "user", "content": user_prompt})
+        with chat_container:
+            with st.chat_message("user"):
+                st.write(user_prompt)
+                
+        if not api_key:
+            with chat_container:
+                with st.chat_message("assistant"):
+                    st.error("Ошибка: Введите API Key выше.")
+            return
+
+        try:
+            client = genai.Client(api_key=api_key)
+            
+            # ИСПРАВЛЕНО: Принудительно и глубоко превращаем абсолютно ВСЕ нечисловые типы колонок в str для защиты от Timestamp-ошибки
+            sample_df = current_dataframe.head(3).copy()
+            for c in sample_df.columns:
+                if not pd.api.types.is_numeric_dtype(sample_df[c]):
+                    sample_df[c] = sample_df[c].astype(str)
+                    
+            columns_schema = {str(col): str(current_dataframe[col].dtype) for col in current_dataframe.columns}
+            sample_json = sample_df.to_dict(orient='records')
+            
+            sys_prompt = f"""
+            Ты — эксперт по анализу данных на Python и Pandas. Твоя задача — написать ОДНУ строчку кода на Python, которая ответит на вопрос пользователя.
+            Исходный датафрейм называется 'current_dataframe'. Колонки 'Сумма' и 'Количество' уже гарантированно приведены к числовому типу (float).
+            
+            СТРУКТУРА ТАБЛИЦЫ (Имена колонок и типы):
+            {json.dumps(columns_schema, ensure_ascii=False)}
+            
+            ПРИМЕР СТРОК ДЛЯ ПОНИМАНИЯ КОНТЕКСТА:
+            {json.dumps(sample_json, ensure_ascii=False)}
+            
+            СТРОГИЕ ПРАВИЛА:
+            1. Возвращай ИСКЛЮЧИТЕЛЬНО чистый код на Python. Никакого текста, никаких пояснений, никаких знаков ```python. Только код.
+            2. Результат вычисления ОБЯЗАТЕЛЬНО присваивай переменной 'result_output'.
+            3. Примеры правильного ответа:
+               - Если спросили топ 10: result_output = current_dataframe.groupby('ОЗМ')['Сумма'].sum().sort_values(ascending=False).head(10)
+               - Если спросили про лидера по затратам: result_output = current_dataframe.groupby('ПфМ')['Сумма'].sum().idxmax()
+               - Если спросили общую сумму: result_output = current_dataframe['Сумма'].sum()
+            """
+            
+            with chat_container:
+                with st.chat_message("assistant"):
+                    with st.spinner("🤖 Генерирую аналитический скрипт..."):
+                        response = client.models.generate_content(
+                            model='gemini-3.5-flash',
+                            contents=f"Вопрос пользователя: {user_prompt}",
+                            config=types.GenerateContentConfig(system_instruction=sys_prompt, temperature=0.1)
+                        )
+                        raw_code = response.text.strip().replace("```python", "").replace("```", "")
+                        
+                        local_vars = {"current_dataframe": current_dataframe, "result_output": None}
+                        exec(raw_code, {}, local_vars)
+                        execution_result = local_vars.get("result_output")
+                        
+                        formatting_prompt = f"""
+                        Ты — BI-аналитик. Переведи технический результат вычисления Python на понятный человеческий язык для руководства.
+                        Бизнес-контекст: {context_mode_text}. Вопрос пользователя: '{user_prompt}'
+                        """
+                        
+                        final_response = client.models.generate_content(
+                            model='gemini-3.5-flash',
+                            contents=f"Технический результат выполнения Pandas-кода:\n{str(execution_result)}",
+                            config=types.GenerateContentConfig(system_instruction=formatting_prompt, temperature=0.2)
+                        )
+                        
+                        assistant_response = final_response.text
+                        st.write(assistant_response)
+                        
+            st.session_state.chat_history.append({"role": "assistant", "content": assistant_response})
+        except Exception as chat_err:
+            st.sidebar.error(f"Ошибка чата: {chat_err}")
 st.sidebar.markdown("### 🤖 Интеллектуальный ИИ-Ассистент")
 gemini_api_key = st.sidebar.text_input("Введите Gemini API Key:", type="password")
 
@@ -417,6 +499,7 @@ ai_context_mode = st.sidebar.selectbox("Тип данных (Контекст д
 ])
 
 uploaded_files = st.file_uploader("Загрузите файлы Excel/CSV:", type=["csv", "xlsx"], accept_multiple_files=True)
+
 if uploaded_files:
     if st.session_state.main_df.empty:
         with st.spinner("⏳ Идёт глубокая сборка данных..."):
@@ -425,10 +508,13 @@ if uploaded_files:
             
     main_df = st.session_state.main_df
     if not main_df.empty:
+        render_ai_sidebar_chat(main_df, gemini_api_key, ai_context_mode)
+        
         if st.sidebar.button("♻️ Сбросить/Очистить базу данных"):
             st.session_state.main_df = pd.DataFrame()
             st.session_state.manual_charts = 1
             st.session_state.manual_cards = 1
+            st.session_state.chat_history = []
             st.rerun()
             
         all_cols = ["-- Выберите заголовок --"] + list(main_df.columns)
@@ -512,7 +598,7 @@ if uploaded_files:
                         rot = st.slider("🔄 Поворот:", 0, 360, 0, step=15, key=f"rot_{i}") if "Donut" in style else 0
                         top_limit = st.slider("🔝 ТОП позиций:", 5, 200, 15, key=f"top_{i}")
                         d_fmt = st.selectbox("Формат даты (Excel):", ["Исходный", "ММ.ГГГГ (01.2014)", "Месяц ГГГГ (Янв 2014)", "ДД.ММ.ГГГГ (15.01.2014)", "ГГГГ (2014)"], key=f"dfmt_{i}")
-                        f_cast = st.slider("🔮 Прогноз (в периодах таблицы):", 0, 5, 2, key=f"fcast_{i}") # По умолчанию ставим 2 периода вперед
+                        f_cast = st.slider("🔮 Прогноз (в периодах таблицы):", 0, 5, 2, key=f"fcast_{i}")
                         
                 if x_ax != "-- Выберите заголовок --" and y_ax != "-- Выберите заголовок --":
                     render_custom_chart(act_df, x_ax, y_ax, style, color, lbl_g, f_format, f_round, f_size, f_color, f_pos, horiz, rot, top_limit, i, date_format_type=d_fmt, custom_currency=f_curr_text, forecast_periods=f_cast)
