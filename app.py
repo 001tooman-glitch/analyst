@@ -399,7 +399,7 @@ def remove_chart_cb():
 def add_card_cb(): st.session_state.manual_cards += 1
 def remove_card_cb(): 
     if st.session_state.manual_cards > 1: st.session_state.manual_cards -= 1
-# 💬 МОДЕРНИЗИРОВАННЫЙ ИИ ЧАТ-АССИСТЕНТ (АНАЛИЗИРУЕТ ВСЕ КОЛОНКИ ТАБЛИЦЫ БЕЗ ОГРАНИЧЕНИЙ)
+# 💬 ЭКСПЕРТНЫЙ ИИ ЧАТ-АССИСТЕНТ С ДВИЖКОМ АВТОМАТИЧЕСКОГО ИСПОЛНЕНИЯ PYTHON-КОДА (CODE INTERPRETER)
 def render_ai_sidebar_chat(current_dataframe, api_key, context_mode_text):
     st.sidebar.markdown("---")
     st.sidebar.markdown("### 💬 Чат-ассистент к данным")
@@ -432,51 +432,64 @@ def render_ai_sidebar_chat(current_dataframe, api_key, context_mode_text):
 
         try:
             client = genai.Client(api_key=api_key)
-            df_anal = current_dataframe.copy()
             
-            summary_dict = {}
-            summary_dict["Всего строк в таблице"] = len(df_anal)
-            summary_dict["Доступные колонки"] = list(df_anal.columns)
-            
-            for col in df_anal.columns:
-                if df_anal[col].dtype in [np.float64, np.int64]:
-                    summary_dict[f"Сумма по полю {col}"] = float(df_anal[col].sum())
-                    summary_dict[f"Среднее по полю {col}"] = float(df_anal[col].mean())
-            
-            # УМНЫЙ АПГРЕЙД: Убрали срез [:2]. Теперь ИИ видит рейтинги абсолютно ВСЕХ текстовых полей (Цех, Склад, Поставщик)
-            target_sum_col = 'Сумма' if 'Сумма' in df_anal.columns else None
-            if target_sum_col:
-                df_anal[target_sum_col] = pd.to_numeric(df_anal[target_sum_col], errors='coerce').fillna(0)
-                
-                obj_cols = [c for c in df_anal.columns if c not in ['Сумма', 'Количество'] and df_anal[c].dtype == object]
-                for obj_c in obj_cols:
-                    top10_df = df_anal.groupby(obj_c)[target_sum_col].sum().sort_values(ascending=False).head(10).reset_index()
-                    top10_list = []
-                    for idx, row in top10_df.iterrows():
-                        top10_list.append(f"Место {idx+1}: {row[obj_c]} (Сумма: {row[target_sum_col]:,})")
-                    summary_dict[f"ТОП-10 бизнес-рейтинг элементов {obj_c} по убыванию Суммы"] = top10_list
-
-            data_snapshot_str = json.dumps(summary_dict, ensure_ascii=False, indent=2)
+            # Передаем ИИ только схему метаданных и 3 строки структуры для минимизации размера токенов
+            sample_df = current_dataframe.head(3).copy()
+            for c in sample_df.columns:
+                if sample_df[c].dtype == object:
+                    sample_df[c] = sample_df[c].astype(str)
+                    
+            columns_schema = {str(col): str(current_dataframe[col].dtype) for col in current_dataframe.columns}
+            sample_json = sample_df.to_dict(orient='records')
             
             sys_prompt = f"""
-            Ты — корпоративный BI-аналитик уровня Синьор. Отвечай на вопросы строго на основе предоставленного JSON-контекста.
-            Контекст бизнес-процесса: {context_mode_text}
+            Ты — эксперт по анализу данных на Python и Pandas. Твоя задача — написать ОДНУ строчку кода на Python, которая ответит на вопрос пользователя.
+            Исходный датафрейм называется 'current_dataframe'. Колонки 'Сумма' и 'Количество' уже гарантированно приведены к числовому типу (float).
             
-            ПРАВИЛА:
-            - Отвечай четко, емко, профессионально, используя списки.
-            - Опирайся на блоки 'ТОП-10 бизнес-рейтинг', чтобы находить лидерство по цехам, поставщикам, ОЗМ и любым другим столбцам.
-            - Если информации нет в JSON, вежливо скажи: 'В текущей сводке данных нет точной информации по вашему запросу'.
+            СТРУКТУРА ТАБЛИЦЫ (Имена колонок и типы):
+            {json.dumps(columns_schema, ensure_ascii=False)}
+            
+            ПРИМЕР СТРОК ДЛЯ ПОНИМАНИЯ КОНТЕКСТА:
+            {json.dumps(sample_json, ensure_ascii=False)}
+            
+            СТРОГИЕ ПРАВИЛА:
+            1. Возвращай ИСКЛЮЧИТЕЛЬНО чистый код на Python. Никакого текста, никаких пояснений, никаких знаков ```python. Только код.
+            2. Результат вычисления ОБЯЗАТЕЛЬНО присваивай переменной 'result_output'.
+            3. Примеры правильного ответа:
+               - Если спросили топ 10 элементов: result_output = current_dataframe.groupby('ОЗМ')['Сумма'].sum().sort_values(ascending=False).head(10)
+               - Если спросили про лидера по затратам: result_output = current_dataframe.groupby('ПфМ')['Сумма'].sum().idxmax()
+               - Если спросили общую сумму: result_output = current_dataframe['Сумма'].sum()
             """
             
             with chat_container:
                 with st.chat_message("assistant"):
-                    with st.spinner("🧠 Анализирую реестр..."):
+                    with st.spinner("🤖 Генерирую аналитический скрипт..."):
+                        # Шаг 1: ИИ пишет точный Pandas-скрипт под ваш вопрос
                         response = client.models.generate_content(
                             model='gemini-3.5-flash',
-                            contents=f"JSON Сводная аналитика и ТОП-рейтинги:\n{data_snapshot_str}\n\nИстория:\n{str(st.session_state.chat_history[-4:])}\n\nВопрос: {user_prompt}",
-                            config=types.GenerateContentConfig(system_instruction=sys_prompt, temperature=0.2)
+                            contents=f"Вопрос пользователя: {user_prompt}",
+                            config=types.GenerateContentConfig(system_instruction=sys_prompt, temperature=0.1)
                         )
-                        assistant_response = response.text
+                        raw_code = response.text.strip().replace("```python", "").replace("```", "")
+                        
+                        # Шаг 2: Безопасно исполняем этот код локально на сервере Streamlit
+                        local_vars = {"current_dataframe": current_dataframe, "result_output": None}
+                        exec(raw_code, {}, local_vars)
+                        execution_result = local_vars.get("result_output")
+                        
+                        # Шаг 3: Передаем результат вычисления обратно ИИ для формирования красивого ответа человеку
+                        formatting_prompt = f"""
+                        Ты — BI-аналитик. Переведи технический результат вычисления Python на понятный человеческий язык для руководства.
+                        Бизнес-контекст: {context_mode_text}. Вопрос пользователя: '{user_prompt}'
+                        """
+                        
+                        final_response = client.models.generate_content(
+                            model='gemini-3.5-flash',
+                            contents=f"Технический результат выполнения Pandas-кода:\n{str(execution_result)}",
+                            config=types.GenerateContentConfig(system_instruction=formatting_prompt, temperature=0.2)
+                        )
+                        
+                        assistant_response = final_response.text
                         st.write(assistant_response)
                         
             st.session_state.chat_history.append({"role": "assistant", "content": assistant_response})
