@@ -9,7 +9,7 @@ from google import genai
 from google.genai import types
 from pydantic import BaseModel, Field
 
-# Принудительная инициализация разметки страницы на самом старте скрипта
+# Принудительная初始化 разметки страницы на самом старте скрипта
 st.set_page_config(layout="wide", page_title="BI Enterprise Platform")
 
 # Схема для гарантированного JSON-ответа от Gemini Developer API
@@ -58,7 +58,7 @@ def ai_generate_text_report(pivot_matrix_df, report_type="ABC/XYZ", data_context
         
         context_mapping = {
             "Закупки": "Данные — это ПЛАНИРУЕМЫЕ ЗАКУПКИ / БИЗНЕС-ПЛАНЫ. Группа AZ — это стратегические контракты (риск срыва сроков проектов). Группа CZ — мелкая операционная текучка (риск бюрократии, недоосвоения бюджета).",
-            "Зазапасы": "Данные — это СУЩЕСТВУЮЩИЕ СКЛАДСКИЕ ЗАПАСЫ. Группа AZ — это жестко замороженный рабочий капитал предприятия (дорогие ТМЦ без движения). Группа CZ — складской хлам, неликвиды, забивающие полки.",
+            "Зазапасы": "Данные — это СУЩЕСТВУЮЩИЕ СКЛАДСКИЕ ЗАПАСЫ. Группа AZ — это жестко замороженный рабочий капитал предприятия (дорогие ТМЦ без движения). Группа CZ — складской хлам, неликвивы, забивающие полки.",
             "Расход": "Данные — это РЕАЛЬНЫЙ ФАКТИЧЕСКИЙ РАСХОД / ПОТРЕБЛЕНИЕ. Группа AZ — это внеплановые, аварийные ремонты оборудования, сжигающие огромный бюджет. Группа CZ — административная нагрузка мелких заявок."
         }
         
@@ -146,7 +146,7 @@ def internal_show_abc_xyz_page(filtered_df, api_key, data_context):
         
         df_m = pd.merge(df_abc[[abc_target, abc_value, 'Class_ABC']], pd.DataFrame(xyz_res), on=abc_target)
         
-        # Исправленное вычисление оборачиваемости ТМЦ на основе реального или расчетного запаса
+        # Модернизированное вычисление оборачиваемости ТМЦ на основе реального или расчетного запаса
         if stock_col == "-- Рассчитать аппроксимацию (расход * 1.15) --":
             df_m['Средний запас на складе'] = df_m[abc_value] * 1.15
         else:
@@ -189,7 +189,7 @@ def internal_show_abc_xyz_page(filtered_df, api_key, data_context):
 def internal_show_rfm_page(filtered_df, api_key, data_context):
     st.title("👥 Модуль RFM-сегментации номенклатуры и категорий")
     if filtered_df.empty: 
-        return st.info("ℹ专 Текущий срез пуст. Выберите другие фильтры в сайдбаре.")
+        return st.info("ℹ️ Текущий срез пуст. Выберите другие фильтры в сайдбаре.")
     df = filtered_df.copy()
     available_cols = list(df.columns)
     
@@ -212,7 +212,7 @@ def internal_show_rfm_page(filtered_df, api_key, data_context):
             st.dataframe(rfm.sort_values(by='M', ascending=False), use_container_width=True)
             return
 
-        # ЗАЩИТА ОТ ДУБЛИКАТОВ: Применяем rank(method='first') перед qcut во избежание падения из-за одинаковых частот
+        # ЗАЩИТА: Применяем rank(method='first') перед qcut во избежание падения из-за дубликатов частот
         rfm['F_Score'] = pd.qcut(rfm['F'].rank(method='first'), 3, labels=['3', '2', '1']).astype(str)
         rfm['M_Score'] = pd.qcut(rfm['M'].rank(method='first'), 3, labels=['3', '2', '1']).astype(str)
         rfm['RFM'] = rfm['F_Score'] + rfm['M_Score']
@@ -226,7 +226,7 @@ def internal_show_rfm_page(filtered_df, api_key, data_context):
         st.dataframe(rfm.sort_values(by='M', ascending=False), use_container_width=True)
     except Exception as rfe: 
         st.error(f"❌ Ошибка расчета RFM: {rfe}")
-# 📊 ФУНКЦИЯ 5: МОДЕРНИЗИРОВАННЫЙ ГРАФИЧЕСКИЙ ДВИЖОК С АВТОМАТИЧЕСКОЙ ЗАЩИТОЙ ИЗОЛЯЦИИ ВЕРТИКАЛЬНЫХ И ГОРИЗОНТАЛЬНЫХ СЛОЕВ В BAR
+# 📊 ФУНКЦИЯ 5: МОДЕРНИЗИРОВАННЫЙ ГРАФИЧЕСКИЙ ДВИЖОК С АВТОМАТИЧЕСКОЙ ЗАЩИТОЙ ИЗОЛЯЦИИ СЛОЕВ И ИСПРАВЛЕНИЕМ ОСИ Х ДЛЯ ГОДОВ
 def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_round, f_size, f_color, f_pos, horiz, rot, top_limit, i, date_format_type="Исходный", custom_currency="", forecast_periods=0):
     try:
         df_c = active_df.copy()
@@ -252,8 +252,11 @@ def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_ro
                 labels.append(formatted_val)
             return labels
 
+        # ИСПРАВЛЕНО: Проверяем, содержит ли ось Х упоминание года. Если да, исключаем её из временного парсинга
+        is_year_col = "год" in str(x_ax).lower() or "year" in str(x_ax).lower()
         converted_dates = pd.to_datetime(df_c[x_ax], errors='coerce')
-        is_date_axis = converted_dates.notna().sum() > (0.5 * len(df_c))
+        is_date_axis = converted_dates.notna().sum() > (0.5 * len(df_c)) and not is_year_col
+        
         if is_date_axis:
             df_c['_datetime_clean_'] = converted_dates
             df_c = df_c.dropna(subset=['_datetime_clean_'])
@@ -284,11 +287,13 @@ def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_ro
                     current_val = current_val * (1 + avg_drop)
                     final_x.append(next_date.strftime(chosen_pattern))
                     final_y.append(current_val)
-                    legend_names.append("Прогноз (Экстраполяция)")
+                    legend_names.append("Прогноз ИИ")
             
             df_g = pd.DataFrame({x_ax: final_x, y_ax: final_y, "Тип данных": legend_names})
         else:
-            df_g = df_c.groupby(x_ax, as_index=False)[y_ax].sum().sort_values(by=y_ax, ascending=False).head(top_limit).reset_index(drop=True)
+            # Для простых числовых годов сортируем строго по хронологии возрастания, для остальных - по величине значения
+            sort_asc = is_year_col
+            df_g = df_c.groupby(x_ax, as_index=False)[y_ax].sum().sort_values(by=x_ax if sort_asc else y_ax, ascending=sort_asc).head(top_limit).reset_index(drop=True)
             df_g["Тип данных"] = "Факт"
 
         fig = go.Figure()
@@ -299,7 +304,7 @@ def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_ro
                 txt_full = get_formatted_text(df_g[y_ax].values)
                 
                 fig.add_trace(go.Scatter(x=df_g[x_ax].iloc[:idx_split+1], y=df_g[y_ax].iloc[:idx_split+1], mode="lines+markers+text" if lbl else "lines+markers", name="Факт", line=dict(color=color, width=4), marker=dict(size=8), text=txt_full[:idx_split+1] if lbl else None, textposition=scatter_pos, textfont=dict(size=f_size, color=f_color)))
-                fig.add_trace(go.Scatter(x=df_g[x_ax].iloc[idx_split:], y=df_g[y_ax].iloc[idx_split:], mode="lines+markers+text" if lbl else "lines+markers", name="Прогноз (Трендовый)", line=dict(color="#ff4b4b", width=4, dash="dash"), marker=dict(size=8, symbol="diamond"), text=txt_full[idx_split:] if lbl else None, textposition=scatter_pos, textfont=dict(size=f_size, color=f_color)))
+                fig.add_trace(go.Scatter(x=df_g[x_ax].iloc[idx_split:], y=df_g[y_ax].iloc[idx_split:], mode="lines+markers+text" if lbl else "lines+markers", name="Прогноз ИИ", line=dict(color="#ff4b4b", width=4, dash="dash"), marker=dict(size=8, symbol="diamond"), text=txt_full[idx_split:] if lbl else None, textposition=scatter_pos, textfont=dict(size=f_size, color=f_color)))
             else:
                 txt = get_formatted_text(df_g[y_ax].values)
                 fig.add_trace(go.Scatter(x=df_g[x_ax], y=df_g[y_ax], mode="lines+markers+text" if lbl else "lines+markers", name="Факт", line=dict(color=color, width=4), marker=dict(size=8), text=txt if lbl else None, textposition=scatter_pos, textfont=dict(size=f_size, color=f_color)))
@@ -337,10 +342,10 @@ def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_ro
 # 🛠️ МОДУЛЬ СБОРКИ ДАННЫХ (ENTERPRISE CONCAT ENGINE)
 def power_query_clean_engine(uploaded_files_list, gemini_key):
     frames = []
-    for f in uploaded_files_list:
+    for f_item in uploaded_files_list:
         try:
-            # ОПТИМИЗАЦИЯ: Читаем с автоматическим определением типов, чтобы не перегружать память строками
-            df = pd.read_csv(f) if f.name.endswith('.csv') else pd.read_excel(f, engine='openpyxl')
+            # ОПТИМИЗАЦИЯ: Читаем данные адаптивно, без принудительного жесткого приведения всего к тексту
+            df = pd.read_csv(f_item) if f_item.name.endswith('.csv') else pd.read_excel(f_item, engine='openpyxl')
             raw_cols = [str(c).strip() for c in df.columns]
             ai_map = ai_column_mapper_engine(raw_cols, gemini_key)
             mapped = []
@@ -357,7 +362,7 @@ def power_query_clean_engine(uploaded_files_list, gemini_key):
             df = df.loc[:, ~df.columns.str.contains('^Без названия|^Unnamed|^Unnamed:')].loc[:, ~df.columns.duplicated()]
             frames.append(df.dropna(how='all'))
         except Exception as file_err:
-            st.sidebar.error(f"Ошибка файла {f.name}: {file_err}")
+            st.sidebar.error(f"Ошибка файла {f_item.name}: {file_err}")
             
     if not frames: return pd.DataFrame()
     base_df = pd.concat(frames, ignore_index=True, join='outer')
