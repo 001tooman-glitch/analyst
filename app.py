@@ -14,7 +14,7 @@ st.set_page_config(layout="wide", page_title="BI Enterprise Platform")
 class ColumnMappingSchema(BaseModel):
     model_config = {"extra": "forbid"}
     mapping: dict[str, str] = Field(
-        description="Словарь, где ключ - исходное имя колонки, а значение - строго одно из полей: 'ОЗМ', 'Наименование材料', 'Количество' или 'Сумма'"
+        description="Словарь, где ключ - исходное имя колонки, а значение - строго одно из полей: 'ОЗМ', 'Наименование материала', 'Количество' или 'Сумма'"
     )
 @st.cache_data(show_spinner=False)
 def ai_column_mapper_engine(raw_columns_list, api_key):
@@ -150,6 +150,12 @@ def internal_show_rfm_page(filtered_df, api_key, data_context):
 def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_round, f_size, f_color, f_pos, horiz, rot, top_limit, i, date_format_type="Исходный", custom_currency="", forecast_periods=0):
     try:
         df_c = active_df.copy()
+        
+        # 🛡️ Рокировка осей, если поле даты ошибочно поставили на ось Y
+        check_y_dates = pd.to_datetime(df_c[y_ax], errors='coerce')
+        if check_y_dates.notna().sum() > (0.5 * len(df_c)):
+            x_ax, y_ax = y_ax, x_ax
+            
         df_c[y_ax] = pd.to_numeric(df_c[y_ax], errors='coerce').fillna(0)
         curr_suffix = f" {custom_currency.strip()}" if custom_currency.strip() else ""
         
@@ -169,11 +175,15 @@ def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_ro
 
         converted_dates = pd.to_datetime(df_c[x_ax], errors='coerce')
         is_date_axis = converted_dates.notna().sum() > (0.5 * len(df_c))
+
         if is_date_axis:
             df_c['_datetime_clean_'] = converted_dates
             df_c = df_c.dropna(subset=['_datetime_clean_']).copy()
             df_c['_month_period_'] = df_c['_datetime_clean_'].dt.to_period('M').dt.to_timestamp()
-            df_fact = df_c.groupby('_month_period_', as_index=False)[y_ax].sum().sort_values(by='_month_period_', ascending=True).reset_index(drop=True)
+            
+            # 📈 ИСПРАВЛЕНО: Строго сортируем по датам, чтобы месяцы выстроились слева направо для точного ИИ-прогноза
+            df_fact = df_c.groupby('_month_period_', as_index=False)[y_ax].sum()
+            df_fact = df_fact.sort_values(by='_month_period_', ascending=True).reset_index(drop=True)
             
             chosen_pattern = {"ММ.ГГГГ (01.2014)": "%m.%Y", "Месяц ГГГГ (Янв 2014)": "%b %Y", "ДД.ММ.ГГГГ (15.01.2014)": "%d.%m.%Y", "ГГГГ (2014)": "%Y"}.get(date_format_type, "%b %Y")
             final_x = list(df_fact['_month_period_'].dt.strftime(chosen_pattern).astype(str))
@@ -186,8 +196,9 @@ def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_ro
                 avg_drop = max(pct_changes.tail(3).mean() if len(pct_changes)>=3 else pct_changes.mean(), -0.15)
                 current_val = last_value
                 last_date = df_fact['_month_period_'].max()
+                
                 for m in range(1, forecast_periods + 1):
-                    next_date = last_date + pd.DateOffset(years=m) if (df_fact['_month_period_'].diff().dropna().dt.days.mean()>300) else last_date + pd.DateOffset(months=m)
+                    next_date = last_date + pd.DateOffset(months=m)
                     current_val *= (1 + avg_drop)
                     final_x.append(next_date.strftime(chosen_pattern))
                     final_y.append(current_val)
@@ -222,13 +233,11 @@ def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_ro
         fig.update_layout(yaxis=dict(type='category' if (horiz and "Столбчатая" in style) else None), xaxis=dict(type='category' if not (horiz and "Столбчатая" in style) else None, tickangle=45), showlegend=True, margin=dict(l=40, r=40, t=40, b=40))
         st.plotly_chart(fig, use_container_width=True, key=f"p_{i}")
     except Exception as chart_err: st.error(f"Ошибка графика №{i+1}: {chart_err}")
-
-# 🛠️ МОДУЛЬ СБОРКИ ДАННЫХ С АВТООПРЕДЕЛЕНИЕМ РАЗДЕЛИТЕЛЕЙ (ЗАПЯТАЯ / ТОЧКА С ЗАПЯТОЙ)
 def power_query_clean_engine(uploaded_files_list, gemini_key):
     frames = []
     for f in uploaded_files_list:
         try:
-            # ⚙️ ИСПРАВЛЕНО: sep=None и engine='python' заставляют Pandas автоматически угадывать разделитель (запятая/точка с запятой)
+            # ⚙️ Автоматическое угадывание разделителя (запятая/точка с запятой)
             if f.name.endswith('.csv'):
                 df = pd.read_csv(f, dtype=str, sep=None, engine='python', encoding='utf-8')
             else:
@@ -256,6 +265,7 @@ def power_query_clean_engine(uploaded_files_list, gemini_key):
     for c in ['Количество', 'Сумма']:
         if c in base_df.columns: base_df[c] = pd.to_numeric(base_df[c].astype(str).str.replace(r'\s+', '', regex=True).str.replace(',', '.'), errors='coerce').fillna(0.0)
     return base_df.dropna(how='all')
+# Инициализация сессий
 if "manual_charts" not in st.session_state: st.session_state.manual_charts = 1
 if "manual_cards" not in st.session_state: st.session_state.manual_cards = 1
 if "main_df" not in st.session_state: st.session_state.main_df = pd.DataFrame()
@@ -291,11 +301,49 @@ if uploaded_files:
         if "1. Загрузка и очистка данных" in page:
             st.success(f"📊 База сформирована! Строк: {len(act_df):,}")
             st.dataframe(act_df.head(100), use_container_width=True)
+            
         elif "2. Executive Диаграммы" in page:
             st.title("📊 Интерактивная BI-Панель Показателей")
+            
+            # 🔥 ВЕРНУЛИ: Интерактивный конструктор динамических KPI-карточек
+            st.markdown("### 🎴 Конструктор KPI Карточек")
+            card_cols = st.columns(st.session_state.manual_cards)
+            for j in range(st.session_state.manual_cards):
+                with card_cols[j]:
+                    with st.container(border=True):
+                        c_title = st.text_input(f"Название KPI #{j+1}:", f"Показатель {j+1}", key=f"ct_{j}")
+                        c_val_col = st.selectbox(f"Поле расчета #{j+1}:", [c for c in all_cols if c != "-- Выберите заголовок --"], key=f"cv_{j}")
+                        c_agg = st.selectbox(f"Функция #{j+1}:", ["Сумма (SUM)", "Количество строк (COUNT)", "Уникальных (NUNIQUE)", "Среднее (MEAN)"], key=f"ca_{j}")
+                        
+                        try:
+                            if c_agg == "Сумма (SUM)":
+                                val = pd.to_numeric(act_df[c_val_col], errors='coerce').sum()
+                            elif c_agg == "Количество строк (COUNT)":
+                                val = act_df[c_val_col].count()
+                            elif c_agg == "Уникальных (NUNIQUE)":
+                                val = act_df[c_val_col].nunique()
+                            else:
+                                val = pd.to_numeric(act_df[c_val_col], errors='coerce').mean()
+                            st.metric(label=c_title, value=f"{round(val, 2):,}".replace(",", " "))
+                        except:
+                            st.metric(label=c_title, value="0")
+            
+            cc1, cc2 = st.columns(2)
+            with cc1:
+                if st.button("➕ Добавить KPI карточку"):
+                    st.session_state.manual_cards += 1
+                    st.rerun()
+            with cc2:
+                if st.button("➖ Удалить карточку") and st.session_state.manual_cards > 1:
+                    st.session_state.manual_cards -= 1
+                    st.rerun()
+            st.markdown("---")
+            
+            # 📊 Настройка диаграмм с автосортировкой дат
+            st.markdown("### 📈 Настройка диаграмм")
             for i in range(st.session_state.manual_charts):
                 c1, c2, c3, c4 = st.columns(4)
-                with c1: style = st.selectbox(f"Тип №{i+1}:", ["Столбчатая диаграмма (Bar)", "Линейный тренд (Line)", "Кольцевая долей (Donut)", "Диаграмма Водопад (Waterfall)"], key=f"s_{i}")
+                with c1: style = st.selectbox(f"Тип №{i+1}:", ["Линейный тренд (Line)", "Столбчатая диаграмма (Bar)", "Кольцевая долей (Donut)", "Диаграмма Водопад (Waterfall)"], key=f"s_{i}")
                 with c2: x_ax = st.selectbox(f"Ось X №{i+1}:", all_cols, key=f"x_{i}")
                 with c3: y_ax = st.selectbox(f"Ось Y №{i+1}:", all_cols, key=f"y_{i}")
                 with c4: color = st.color_picker(f"Цвет №{i+1}:", "#1f77b4", key=f"col_{i}")
