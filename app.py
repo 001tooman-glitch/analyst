@@ -9,7 +9,7 @@ from google import genai
 from google.genai import types
 from pydantic import BaseModel, Field
 
-# Принудительная初始化 разметки страницы на самом старте скрипта
+# Принудительная инициализация разметки страницы на самом старте скрипта
 st.set_page_config(layout="wide", page_title="BI Enterprise Platform")
 
 # Схема для гарантированного JSON-ответа от Gemini Developer API
@@ -58,7 +58,7 @@ def ai_generate_text_report(pivot_matrix_df, report_type="ABC/XYZ", data_context
         
         context_mapping = {
             "Закупки": "Данные — это ПЛАНИРУЕМЫЕ ЗАКУПКИ / БИЗНЕС-ПЛАНЫ. Группа AZ — это стратегические контракты (риск срыва сроков проектов). Группа CZ — мелкая операционная текучка (риск бюрократии, недоосвоения бюджета).",
-            "Зазапасы": "Данные — это СУЩЕСТВУЮЩИЕ СКЛАДСКИЕ ЗАПАСЫ. Группа AZ — это жестко замороженный рабочий капитал предприятия (дорогие ТМЦ без движения). Группа CZ — складской хлам, неликвивы, забивающие полки.",
+            "Зазапасы": "Данные — это СУЩЕСТВУЮЩИЕ СКЛАДСКИЕ ЗАПАСЫ. Группа AZ — это жестко замороженный рабочий капитал предприятия (дорогие ТМЦ без движения). Группа CZ — складской хлам, неликвиды, забивающие полки.",
             "Расход": "Данные — это РЕАЛЬНЫЙ ФАКТИЧЕСКИЙ РАСХОД / ПОТРЕБЛЕНИЕ. Группа AZ — это внеплановые, аварийные ремонты оборудования, сжигающие огромный бюджет. Группа CZ — административная нагрузка мелких заявок."
         }
         
@@ -97,7 +97,7 @@ def ai_generate_text_report(pivot_matrix_df, report_type="ABC/XYZ", data_context
         st.error(f"❌ Ошибка ИИ: {report_err}")
 # 🧮 МОДУЛЬ 3: УНИВЕРСАЛЬНЫЙ КОНСТРУКТОР ABC/XYZ И ДИНАМИЧЕСКОЙ ОБОРАЧИВАЕМОСТИ
 def internal_show_abc_xyz_page(filtered_df, api_key, data_context):
-    st.title("🧮 Конструктор матриц ABC/XYZ и Модуль оборачиваемости ТМЦ")
+    st.title("🧮 Конструктор matrices ABC/XYZ и Модуль оборачиваемости ТМЦ")
     if filtered_df.empty: 
         return st.info("ℹ️ Выборка пуста. Загрузите файлы.")
     
@@ -226,7 +226,7 @@ def internal_show_rfm_page(filtered_df, api_key, data_context):
         st.dataframe(rfm.sort_values(by='M', ascending=False), use_container_width=True)
     except Exception as rfe: 
         st.error(f"❌ Ошибка расчета RFM: {rfe}")
-# 📊 ФУНКЦИЯ 5: МОДЕРНИЗИРОВАННЫЙ ГРАФИЧЕСКИЙ ДВИЖОК С АВТОМАТИЧЕСКОЙ ЗАЩИТОЙ ИЗОЛЯЦИИ СЛОЕВ И ИСПРАВЛЕНИЕМ ОСИ Х ДЛЯ ГОДОВ
+# 📊 ФУНКЦИЯ 5: МОДЕРНИЗИРОВАННЫЙ ГРАФИЧЕСКИЙ ДВИЖОК С АВТОПРОГНОЗОМ ДЛЯ ТЕКСТОВЫХ И ЧИСЛОВЫХ ЛЕТ
 def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_round, f_size, f_color, f_pos, horiz, rot, top_limit, i, date_format_type="Исходный", custom_currency="", forecast_periods=0):
     try:
         df_c = active_df.copy()
@@ -252,10 +252,11 @@ def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_ro
                 labels.append(formatted_val)
             return labels
 
-        # ИСПРАВЛЕНО: Проверяем, содержит ли ось Х упоминание года. Если да, исключаем её из временного парсинга
         is_year_col = "год" in str(x_ax).lower() or "year" in str(x_ax).lower()
         converted_dates = pd.to_datetime(df_c[x_ax], errors='coerce')
         is_date_axis = converted_dates.notna().sum() > (0.5 * len(df_c)) and not is_year_col
+        
+        idx_split = -1 # Технический маркер разделения факта и прогноза
         
         if is_date_axis:
             df_c['_datetime_clean_'] = converted_dates
@@ -269,16 +270,16 @@ def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_ro
             final_x = list(df_fact['_month_period_'].dt.strftime(chosen_pattern).astype(str))
             final_y = list(df_fact[y_ax].values)
             legend_names = ["Факт"] * len(final_y)
+            idx_split = len(df_fact) - 1
             
             if forecast_periods > 0 and len(df_fact) > 1:
                 last_value = df_fact[y_ax].iloc[-1]
                 pct_changes = df_fact[y_ax].pct_change().dropna()
                 avg_drop = pct_changes.tail(3).mean() if len(pct_changes) >= 3 else pct_changes.mean()
-                if avg_drop < 0: avg_drop = max(avg_drop, -0.15)
+                if avg_drop < -0.15: avg_drop = -0.15
                 
                 date_diffs = df_fact['_month_period_'].diff().dropna()
                 is_yearly_data = date_diffs.dt.days.mean() > 300
-                
                 current_val = last_value
                 last_date = df_fact['_month_period_'].max()
                 
@@ -291,18 +292,40 @@ def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_ro
             
             df_g = pd.DataFrame({x_ax: final_x, y_ax: final_y, "Тип данных": legend_names})
         else:
-            # Для простых числовых годов сортируем строго по хронологии возрастания, для остальных - по величине значения
             sort_asc = is_year_col
             df_g = df_c.groupby(x_ax, as_index=False)[y_ax].sum().sort_values(by=x_ax if sort_asc else y_ax, ascending=sort_asc).head(top_limit).reset_index(drop=True)
             df_g["Тип данных"] = "Факт"
+            idx_split = len(df_g) - 1
+            
+            # УНИВЕРСАЛЬНЫЙ АПГРЕЙД: Добавляем математический прогноз, если ось Х - это простые годы
+            if forecast_periods > 0 and is_year_col and len(df_g) > 1:
+                try:
+                    last_year_numeric = int(float(df_g[x_ax].iloc[-1]))
+                    last_val = df_g[y_ax].iloc[-1]
+                    pct_changes = df_g[y_ax].pct_change().dropna()
+                    avg_growth = pct_changes.tail(2).mean() if len(pct_changes) >= 2 else pct_changes.mean()
+                    if avg_growth < -0.20: avg_growth = -0.20 # Ограничитель резкого обвала тренда
+                    
+                    f_x_list = list(df_g[x_ax].astype(str).values)
+                    f_y_list = list(df_g[y_ax].values)
+                    f_leg_list = ["Факт"] * len(df_g)
+                    
+                    curr_val = last_val
+                    for offset in range(1, forecast_periods + 1):
+                        next_year_str = str(last_year_numeric + offset)
+                        curr_val = curr_val * (1 + avg_growth)
+                        f_x_list.append(next_year_str)
+                        f_y_list.append(curr_val)
+                        f_leg_list.append("Прогноз ИИ")
+                        
+                    df_g = pd.DataFrame({x_ax: f_x_list, y_ax: f_y_list, "Тип данных": f_leg_list})
+                except: pass
 
         fig = go.Figure()
         
         if "Линейный" in style or (is_date_axis and "Столбчатая" not in style and "Кольцевая" not in style and "Водопад" not in style):
-            if is_date_axis and forecast_periods > 0:
-                idx_split = len(df_fact) - 1
+            if forecast_periods > 0 and idx_split > 0 and len(df_g) > idx_split + 1:
                 txt_full = get_formatted_text(df_g[y_ax].values)
-                
                 fig.add_trace(go.Scatter(x=df_g[x_ax].iloc[:idx_split+1], y=df_g[y_ax].iloc[:idx_split+1], mode="lines+markers+text" if lbl else "lines+markers", name="Факт", line=dict(color=color, width=4), marker=dict(size=8), text=txt_full[:idx_split+1] if lbl else None, textposition=scatter_pos, textfont=dict(size=f_size, color=f_color)))
                 fig.add_trace(go.Scatter(x=df_g[x_ax].iloc[idx_split:], y=df_g[y_ax].iloc[idx_split:], mode="lines+markers+text" if lbl else "lines+markers", name="Прогноз ИИ", line=dict(color="#ff4b4b", width=4, dash="dash"), marker=dict(size=8, symbol="diamond"), text=txt_full[idx_split:] if lbl else None, textposition=scatter_pos, textfont=dict(size=f_size, color=f_color)))
             else:
@@ -344,7 +367,6 @@ def power_query_clean_engine(uploaded_files_list, gemini_key):
     frames = []
     for f_item in uploaded_files_list:
         try:
-            # ОПТИМИЗАЦИЯ: Читаем данные адаптивно, без принудительного жесткого приведения всего к тексту
             df = pd.read_csv(f_item) if f_item.name.endswith('.csv') else pd.read_excel(f_item, engine='openpyxl')
             raw_cols = [str(c).strip() for c in df.columns]
             ai_map = ai_column_mapper_engine(raw_cols, gemini_key)
@@ -490,7 +512,7 @@ if uploaded_files:
                         rot = st.slider("🔄 Поворот:", 0, 360, 0, step=15, key=f"rot_{i}") if "Donut" in style else 0
                         top_limit = st.slider("🔝 ТОП позиций:", 5, 200, 15, key=f"top_{i}")
                         d_fmt = st.selectbox("Формат даты (Excel):", ["Исходный", "ММ.ГГГГ (01.2014)", "Месяц ГГГГ (Янв 2014)", "ДД.ММ.ГГГГ (15.01.2014)", "ГГГГ (2014)"], key=f"dfmt_{i}")
-                        f_cast = st.slider("🔮 Прогноз (в периодах таблицы):", 0, 5, 0, key=f"fcast_{i}")
+                        f_cast = st.slider("🔮 Прогноз (в периодах таблицы):", 0, 5, 2, key=f"fcast_{i}") # По умолчанию ставим 2 периода вперед
                         
                 if x_ax != "-- Выберите заголовок --" and y_ax != "-- Выберите заголовок --":
                     render_custom_chart(act_df, x_ax, y_ax, style, color, lbl_g, f_format, f_round, f_size, f_color, f_pos, horiz, rot, top_limit, i, date_format_type=d_fmt, custom_currency=f_curr_text, forecast_periods=f_cast)
