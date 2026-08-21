@@ -28,7 +28,7 @@ def ai_column_mapper_engine(raw_columns_list, api_key):
         client = genai.Client(api_key=api_key)
         sys_instruction = (
             "Ты — BI-аналитик. Сопоставь заголовки закупщика с полями: "
-            "'ОЗМ', 'Наименование材料', 'Количество', 'Сумма'. "
+            "'ОЗМ', 'Наименование материала', 'Количество', 'Сумма'. "
             "Используй контекст и смысл слов (например, 'Sales', 'Revenue', 'Profit', 'Cost' "
             "должны мапиться в 'Сумма', а 'Units', 'Volume' — в 'Количество')."
         )
@@ -399,7 +399,7 @@ def remove_chart_cb():
 def add_card_cb(): st.session_state.manual_cards += 1
 def remove_card_cb(): 
     if st.session_state.manual_cards > 1: st.session_state.manual_cards -= 1
-# 💬 ИНТЕГРИРОВАННЫЙ ИИ ЧАТ-АССИСТЕНТ
+# 💬 ИНТЕГРИРОВАННЫЙ ИИ ЧАТ-АССИСТЕНТ С ЗАЩИТОЙ СЕРИАЛИЗАЦИИ ВРЕМЕННЫХ МЕТОК
 def render_ai_sidebar_chat(current_dataframe, api_key, context_mode_text):
     st.sidebar.markdown("---")
     st.sidebar.markdown("### 💬 Чат-ассистент к данным")
@@ -408,19 +408,16 @@ def render_ai_sidebar_chat(current_dataframe, api_key, context_mode_text):
         st.sidebar.info("Загрузите файлы для активации чата.")
         return
         
-    # Кнопка быстрой очистки памяти диалога
     if st.sidebar.button("🧹 Очистить историю чата", key="clear_chat_btn"):
         st.session_state.chat_history = []
         st.sidebar.success("История очищена!")
         
-    # Блок вывода прокрутки сообщений
     chat_container = st.sidebar.container(height=300)
     with chat_container:
         for message in st.session_state.chat_history:
             with st.chat_message(message["role"]):
                 st.write(message["content"])
 
-    # Окно ввода нового вопроса
     if user_prompt := st.sidebar.chat_input("Спросить ИИ о таблице...", key="chat_input_text"):
         st.session_state.chat_history.append({"role": "user", "content": user_prompt})
         with chat_container:
@@ -436,7 +433,6 @@ def render_ai_sidebar_chat(current_dataframe, api_key, context_mode_text):
         try:
             client = genai.Client(api_key=api_key)
             
-            # Генерация компактного агрегированного JSON-контекста, чтобы не перегружать лимиты токенов LLM
             summary_dict = {}
             summary_dict["Всего строк в таблице"] = len(current_dataframe)
             summary_dict["Доступные колонки"] = list(current_dataframe.columns)
@@ -446,7 +442,8 @@ def render_ai_sidebar_chat(current_dataframe, api_key, context_mode_text):
                     summary_dict[f"Сумма по полю {col}"] = float(current_dataframe[col].sum())
                     summary_dict[f"Среднее по полю {col}"] = float(current_dataframe[col].mean())
                 else:
-                    top_vals = current_dataframe[col].value_counts().head(5).to_dict()
+                    # ЗАЩИТА: Принудительно приводим индексы value_counts (включая дат) к тексту str
+                    top_vals = current_dataframe[col].astype(str).value_counts().head(5).to_dict()
                     summary_dict[f"Топ-5 частых значений в {col}"] = top_vals
             
             data_snapshot_str = json.dumps(summary_dict, ensure_ascii=False, indent=2)
@@ -494,7 +491,6 @@ if uploaded_files:
             
     main_df = st.session_state.main_df
     if not main_df.empty:
-        # Запуск модуля чата, встроенного в сайдбар под загрузчиком файлов
         render_ai_sidebar_chat(main_df, gemini_api_key, ai_context_mode)
         
         if st.sidebar.button("♻️ Сбросить/Очистить базу данных"):
