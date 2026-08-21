@@ -175,10 +175,6 @@ def internal_show_abc_xyz_page(filtered_df, api_key, data_context):
             
         st.dataframe(df_m.sort_values(by=abc_value, ascending=False), use_container_width=True)
         
-        towrite = io.BytesIO()
-        df_m.to_excel(towrite, index=False, engine='openpyxl')
-        st.download_button(label="📥 Скачать результаты аналитики в Excel", data=towrite.getvalue(), file_name="abc_xyz_turnover_output.xlsx", mime="application/vnd.ms-excel")
-        
     except Exception as e: 
         st.error(f"Ошибка расчета ABC/XYZ: {e}")
 # 👥 МОДУЛЬ 4: УНИВЕРСАЛЬНЫЙ КОНСТРУКТОР RFM С ДИНАМИЧЕСКИМ ВЫБОРОМ КОЛОНОК
@@ -399,7 +395,7 @@ def remove_chart_cb():
 def add_card_cb(): st.session_state.manual_cards += 1
 def remove_card_cb(): 
     if st.session_state.manual_cards > 1: st.session_state.manual_cards -= 1
-# 💬 ЭКСПЕРТНЫЙ ИИ ЧАТ-АССИСТЕНТ С ДВИЖКОМ АВТОМАТИЧЕСКОГО ИСПОЛНЕНИЯ PYTHON-КОДА (CODE INTERPRETER)
+# 💬 ЭКСПЕРТНЫЙ ИИ ЧАТ-АССИСТЕНТ С ДВИЖКОМ CODE INTERPRETER И ФИКСАЦИЕЙ ТАЙМСТАМПОВ
 def render_ai_sidebar_chat(current_dataframe, api_key, context_mode_text):
     st.sidebar.markdown("---")
     st.sidebar.markdown("### 💬 Чат-ассистент к данным")
@@ -433,10 +429,10 @@ def render_ai_sidebar_chat(current_dataframe, api_key, context_mode_text):
         try:
             client = genai.Client(api_key=api_key)
             
-            # Передаем ИИ только схему метаданных и 3 строки структуры для минимизации размера токенов
+            # ИСПРАВЛЕНО: Принудительно и глубоко превращаем абсолютно ВСЕ нечисловые типы колонок в str для защиты от Timestamp-ошибки
             sample_df = current_dataframe.head(3).copy()
             for c in sample_df.columns:
-                if sample_df[c].dtype == object:
+                if not pd.api.types.is_numeric_dtype(sample_df[c]):
                     sample_df[c] = sample_df[c].astype(str)
                     
             columns_schema = {str(col): str(current_dataframe[col].dtype) for col in current_dataframe.columns}
@@ -456,7 +452,7 @@ def render_ai_sidebar_chat(current_dataframe, api_key, context_mode_text):
             1. Возвращай ИСКЛЮЧИТЕЛЬНО чистый код на Python. Никакого текста, никаких пояснений, никаких знаков ```python. Только код.
             2. Результат вычисления ОБЯЗАТЕЛЬНО присваивай переменной 'result_output'.
             3. Примеры правильного ответа:
-               - Если спросили топ 10 элементов: result_output = current_dataframe.groupby('ОЗМ')['Сумма'].sum().sort_values(ascending=False).head(10)
+               - Если спросили топ 10: result_output = current_dataframe.groupby('ОЗМ')['Сумма'].sum().sort_values(ascending=False).head(10)
                - Если спросили про лидера по затратам: result_output = current_dataframe.groupby('ПфМ')['Сумма'].sum().idxmax()
                - Если спросили общую сумму: result_output = current_dataframe['Сумма'].sum()
             """
@@ -464,7 +460,6 @@ def render_ai_sidebar_chat(current_dataframe, api_key, context_mode_text):
             with chat_container:
                 with st.chat_message("assistant"):
                     with st.spinner("🤖 Генерирую аналитический скрипт..."):
-                        # Шаг 1: ИИ пишет точный Pandas-скрипт под ваш вопрос
                         response = client.models.generate_content(
                             model='gemini-3.5-flash',
                             contents=f"Вопрос пользователя: {user_prompt}",
@@ -472,12 +467,10 @@ def render_ai_sidebar_chat(current_dataframe, api_key, context_mode_text):
                         )
                         raw_code = response.text.strip().replace("```python", "").replace("```", "")
                         
-                        # Шаг 2: Безопасно исполняем этот код локально на сервере Streamlit
                         local_vars = {"current_dataframe": current_dataframe, "result_output": None}
                         exec(raw_code, {}, local_vars)
                         execution_result = local_vars.get("result_output")
                         
-                        # Шаг 3: Передаем результат вычисления обратно ИИ для формирования красивого ответа человеку
                         formatting_prompt = f"""
                         Ты — BI-аналитик. Переведи технический результат вычисления Python на понятный человеческий язык для руководства.
                         Бизнес-контекст: {context_mode_text}. Вопрос пользователя: '{user_prompt}'
