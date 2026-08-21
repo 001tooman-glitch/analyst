@@ -355,7 +355,51 @@ def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_ro
         st.plotly_chart(fig, use_container_width=True, key=f"p_{i}")
     except Exception as chart_err:
         st.error(f"Ошибка графика №{i+1}: {chart_err}")
-# 💬 МОДЕРНИЗИРОВАННЫЙ ИИ ЧАТ-АССИСТЕНТ С РАСШИРЕННЫМ БИЗНЕС-КОНТЕКСТОМ (ТОП-10 И РЕЙТИНГИ)
+# 🛠️ МОДУЛЬ СБОРКИ ДАННЫХ (ENTERPRISE CONCAT ENGINE)
+def power_query_clean_engine(uploaded_files_list, gemini_key):
+    frames = []
+    for f_item in uploaded_files_list:
+        try:
+            df = pd.read_csv(f_item) if f_item.name.endswith('.csv') else pd.read_excel(f_item, engine='openpyxl')
+            raw_cols = [str(c).strip() for c in df.columns]
+            ai_map = ai_column_mapper_engine(raw_cols, gemini_key)
+            mapped = []
+            for col in raw_cols:
+                if col in ai_map: mapped.append(ai_map[col])
+                else:
+                    c_low = col.lower()
+                    if any(w in c_low for w in ['озм', 'код материала', 'номенклатур']): mapped.append('ОЗМ')
+                    elif any(w in c_low for w in ['наименование', 'материал']): mapped.append('Наименование материала')
+                    elif any(w in c_low for w in ['количество', 'кол-во', 'объем']): mapped.append('Quantity')
+                    elif any(w in c_low for w in ['сумма', 'стоимость', 'цена']): mapped.append('Сумма')
+                    else: mapped.append(col)
+            df.columns = [c if c != 'Quantity' else 'Количество' for c in mapped]
+            df = df.loc[:, ~df.columns.str.contains('^Без названия|^Unnamed|^Unnamed:')].loc[:, ~df.columns.duplicated()]
+            frames.append(df.dropna(how='all'))
+        except Exception as file_err:
+            st.sidebar.error(f"Ошибка файла {f_item.name}: {file_err}")
+            
+    if not frames: return pd.DataFrame()
+    base_df = pd.concat(frames, ignore_index=True, join='outer')
+            
+    for c in ['Количество', 'Сумма']:
+        if c in base_df.columns: 
+            base_df[c] = pd.to_numeric(base_df[c].astype(str).str.replace(r'\s+', '', regex=True).str.replace(',', '.'), errors='coerce').fillna(0.0)
+    return base_df.dropna(how='all')
+
+# ⚙️ ИНИЦИАЛИЗАЦИЯ И СТАТИЧЕСКИЕ КОЛЛБЭКИ СЕССИИ
+if "manual_charts" not in st.session_state: st.session_state.manual_charts = 1
+if "manual_cards" not in st.session_state: st.session_state.manual_cards = 1
+if "main_df" not in st.session_state: st.session_state.main_df = pd.DataFrame()
+if "chat_history" not in st.session_state: st.session_state.chat_history = []
+
+def add_chart_cb(): st.session_state.manual_charts += 1
+def remove_chart_cb(): 
+    if st.session_state.manual_charts > 1: st.session_state.manual_charts -= 1
+def add_card_cb(): st.session_state.manual_cards += 1
+def remove_card_cb(): 
+    if st.session_state.manual_cards > 1: st.session_state.manual_cards -= 1
+# 💬 МОДЕРНИЗИРОВАННЫЙ ИИ ЧАТ-АССИСТЕНТ (АНАЛИЗИРУЕТ ВСЕ КОЛОНКИ ТАБЛИЦЫ БЕЗ ОГРАНИЧЕНИЙ)
 def render_ai_sidebar_chat(current_dataframe, api_key, context_mode_text):
     st.sidebar.markdown("---")
     st.sidebar.markdown("### 💬 Чат-ассистент к данным")
@@ -390,7 +434,6 @@ def render_ai_sidebar_chat(current_dataframe, api_key, context_mode_text):
             client = genai.Client(api_key=api_key)
             df_anal = current_dataframe.copy()
             
-            # 1. Формирование базовых агрегатов
             summary_dict = {}
             summary_dict["Всего строк в таблице"] = len(df_anal)
             summary_dict["Доступные колонки"] = list(df_anal.columns)
@@ -400,14 +443,13 @@ def render_ai_sidebar_chat(current_dataframe, api_key, context_mode_text):
                     summary_dict[f"Сумма по полю {col}"] = float(df_anal[col].sum())
                     summary_dict[f"Среднее по полю {col}"] = float(df_anal[col].mean())
             
-            # 2. РАСШИРЕНИЕ КОНТЕКСТА: Формируем реальные топ-10 рейтинги по стоимости для ИИ
+            # УМНЫЙ АПГРЕЙД: Убрали срез [:2]. Теперь ИИ видит рейтинги абсолютно ВСЕХ текстовых полей (Цех, Склад, Поставщик)
             target_sum_col = 'Сумма' if 'Сумма' in df_anal.columns else None
             if target_sum_col:
                 df_anal[target_sum_col] = pd.to_numeric(df_anal[target_sum_col], errors='coerce').fillna(0)
                 
-                # Поиск текстовых колонок объектов (ОЗМ, Наименование)
                 obj_cols = [c for c in df_anal.columns if c not in ['Сумма', 'Количество'] and df_anal[c].dtype == object]
-                for obj_c in obj_cols[:2]:
+                for obj_c in obj_cols:
                     top10_df = df_anal.groupby(obj_c)[target_sum_col].sum().sort_values(ascending=False).head(10).reset_index()
                     top10_list = []
                     for idx, row in top10_df.iterrows():
@@ -422,7 +464,7 @@ def render_ai_sidebar_chat(current_dataframe, api_key, context_mode_text):
             
             ПРАВИЛА:
             - Отвечай четко, емко, профессионально, используя списки.
-            - Опирайся на блоки 'ТОП-10 бизнес-рейтинг', чтобы выводить списки лидеров по стоимости.
+            - Опирайся на блоки 'ТОП-10 бизнес-рейтинг', чтобы находить лидерство по цехам, поставщикам, ОЗМ и любым другим столбцам.
             - Если информации нет в JSON, вежливо скажи: 'В текущей сводке данных нет точной информации по вашему запросу'.
             """
             
