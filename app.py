@@ -9,7 +9,7 @@ from google import genai
 from google.genai import types
 from pydantic import BaseModel, Field
 
-# Принудительная初始化 разметки страницы на самом старте скрипта
+# Принудительная инициализация разметки страницы на самом старте скрипта
 st.set_page_config(layout="wide", page_title="BI Enterprise Platform")
 
 # Схема для гарантированного JSON-ответа от Gemini Developer API
@@ -48,6 +48,7 @@ def ai_column_mapper_engine(raw_columns_list, api_key):
         return mapping_result
     except Exception as e:
         return {}
+
 # 🧠 МОДУЛЬ 2: УЛЬТРА-ГИБКИЙ ИИ-АНАЛИЗАТОР С ФУНКЦИЕЙ СКАЧИВАНИЯ ОТЧЕТА
 def ai_generate_text_report(pivot_matrix_df, report_type="ABC/XYZ", data_context="Расход", api_key=None):
     if not api_key: 
@@ -64,8 +65,6 @@ def ai_generate_text_report(pivot_matrix_df, report_type="ABC/XYZ", data_context
         context_rules = next((v for k, v in context_mapping.items() if k in data_context), 
                              "Данные — это КОММЕРЧЕСКИЕ ПРОДАЖИ / СБЫТ / РИТЕЙЛ. Группа AZ — это товары-локомотивы, генерирующие 80% выручки (риск упущенной прибыли). Группа CZ — длинный хвост ассортимента с низким чеком.")
 
-        # ⚙️ ИСПРАВЛЕНО: Роль заменена на лаконичную 'Бизнес-аналитик'. 
-        # Добавлено жесткое требование исключить любые сложные фразы про цепи поставок и комбинат.
         system_instruction = f"""
         Ты — ведущий бизнес-аналитик предприятия. Напиши аналитический отчет для руководства по матрице {report_type}.
         БИЗНЕС-КОНТЕКСТ ДАННЫХ: {context_rules}
@@ -116,11 +115,15 @@ def internal_show_abc_xyz_page(filtered_df, api_key, data_context):
     selected_days = days_mapping[chosen_turnover_period]
     
     c1, c2 = st.columns(2)
-    with c1: abc_value = st.selectbox("Критерий масштаба стоимости:", [c for c in ['Сумма', 'Количество'] if c in available_cols] + available_cols, key="abc_v")
-    with c2: xyz_period = st.selectbox("Шкала времени (для XYZ):", [c for c in available_cols if c != abc_target], key="xyz_p")
+    with c1: 
+        abc_value = st.selectbox("Критерий масштаба расхода/продаж:", [c for c in ['Сумма', 'Количество'] if c in available_cols] + available_cols, key="abc_v")
+    with c2: 
+        stock_col = st.selectbox("Столбец текущего остатка ТМЦ (для оборачиваемости):", ["-- Рассчитать аппроксимацию (расход * 1.15) --"] + available_cols, key="abc_stock_col")
+        
+    xyz_period = st.selectbox("Шкала времени (для XYZ):", [c for c in available_cols if c != abc_target], key="xyz_p")
     
     a_lim = st.slider("Grad_A (%):", 50, 90, 80, key="abc_s")
-    x_lim = st.slider("Grad_X (KV ≤ %):", 5, 20, 10, key="xyz_s")
+    x_lim = st.slider("Grad_X (KV ≤ %):", 5, 50, 10, key="xyz_s")
     try:
         df[abc_value] = pd.to_numeric(df[abc_value], errors='coerce').fillna(0.0)
         df = df[(df[abc_target].astype(str).str.strip() != "") & (df[xyz_period].astype(str).str.strip() != "")]
@@ -143,11 +146,18 @@ def internal_show_abc_xyz_page(filtered_df, api_key, data_context):
         
         df_m = pd.merge(df_abc[[abc_target, abc_value, 'Class_ABC']], pd.DataFrame(xyz_res), on=abc_target)
         
-        # Вычисление оборачиваемости ТМЦ в днях
-        df_m['Средний запас на складе'] = df_m[abc_value] * 1.15
+        # Исправленное вычисление оборачиваемости ТМЦ на основе реального или расчетного запаса
+        if stock_col == "-- Рассчитать аппроксимацию (расход * 1.15) --":
+            df_m['Средний запас на складе'] = df_m[abc_value] * 1.15
+        else:
+            df[stock_col] = pd.to_numeric(df[stock_col], errors='coerce').fillna(0.0)
+            df_stock_aggregated = df.groupby(abc_target)[stock_col].mean().reset_index()
+            df_stock_aggregated.columns = [abc_target, 'Средний запас на складе']
+            df_m = pd.merge(df_m, df_stock_aggregated, on=abc_target, how='left').fillna(0.0)
+            
         df_m['Расход за период'] = df_m[abc_value]
-        df_m['Коэф. Оборачиваемости (раз)'] = (df_m['Расход за период'] / df_m['Средний запас на складе']).fillna(0).round(2)
-        df_m['Оборачиваемость (в днях)'] = (selected_days / df_m['Коэф. Оборачиваемости (раз)']).replace([np.inf, -np.inf], 999).fillna(999).astype(int)
+        df_m['Коэф. Оборачиваемости (раз)'] = (df_m['Расход за период'] / df_m['Средний запас на складе']).replace([np.inf, -np.inf], 0).fillna(0).round(2)
+        df_m['Оборачиваемость (в днях)'] = df_m['Коэф. Оборачиваемости (раз)'].map(lambda x: int(selected_days / x) if x > 0 else 999)
         
         raw_pivot = df_m.pivot_table(index='Class_ABC', columns='Класс XYZ', values=abc_target, aggfunc='count', fill_value=0)
         pivot_m = pd.DataFrame(0, index=['A', 'B', 'C'], columns=['X', 'Y', 'Z'])
@@ -179,7 +189,7 @@ def internal_show_abc_xyz_page(filtered_df, api_key, data_context):
 def internal_show_rfm_page(filtered_df, api_key, data_context):
     st.title("👥 Модуль RFM-сегментации номенклатуры и категорий")
     if filtered_df.empty: 
-        return st.info("ℹ️ Текущий срез пуст. Выберите другие фильтры в сайдбаре.")
+        return st.info("ℹ专 Текущий срез пуст. Выберите другие фильтры в сайдбаре.")
     df = filtered_df.copy()
     available_cols = list(df.columns)
     
@@ -197,11 +207,12 @@ def internal_show_rfm_page(filtered_df, api_key, data_context):
         rfm = df.groupby(str(rfm_target)).agg(F=(rfm_value_col, 'count'), M=(rfm_value_col, 'sum')).reset_index()
         rfm.columns = ['Объект Анализа', 'F', 'M']
         
-        if len(rfm) < 3 or rfm['F'].nunique() <= 1 or rfm['M'].nunique() <= 1:
+        if len(rfm) < 3:
             st.warning("⚠️ Недостаточно уникальных данных для квантования. Выведен общий список.")
             st.dataframe(rfm.sort_values(by='M', ascending=False), use_container_width=True)
             return
 
+        # ЗАЩИТА ОТ ДУБЛИКАТОВ: Применяем rank(method='first') перед qcut во избежание падения из-за одинаковых частот
         rfm['F_Score'] = pd.qcut(rfm['F'].rank(method='first'), 3, labels=['3', '2', '1']).astype(str)
         rfm['M_Score'] = pd.qcut(rfm['M'].rank(method='first'), 3, labels=['3', '2', '1']).astype(str)
         rfm['RFM'] = rfm['F_Score'] + rfm['M_Score']
@@ -224,7 +235,6 @@ def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_ro
         clean_currency = str(custom_currency).strip()
         curr_suffix = f" {clean_currency}" if clean_currency else ""
         
-        # Интеллектуальный маппинг положений текста для линий go.Scatter
         scatter_pos = "top center"
         if f_pos == "inside": scatter_pos = "middle center"
         elif f_pos == "outside": scatter_pos = "top center"
@@ -274,7 +284,7 @@ def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_ro
                     current_val = current_val * (1 + avg_drop)
                     final_x.append(next_date.strftime(chosen_pattern))
                     final_y.append(current_val)
-                    legend_names.append("Прогноз ИИ")
+                    legend_names.append("Прогноз (Экстраполяция)")
             
             df_g = pd.DataFrame({x_ax: final_x, y_ax: final_y, "Тип данных": legend_names})
         else:
@@ -289,7 +299,7 @@ def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_ro
                 txt_full = get_formatted_text(df_g[y_ax].values)
                 
                 fig.add_trace(go.Scatter(x=df_g[x_ax].iloc[:idx_split+1], y=df_g[y_ax].iloc[:idx_split+1], mode="lines+markers+text" if lbl else "lines+markers", name="Факт", line=dict(color=color, width=4), marker=dict(size=8), text=txt_full[:idx_split+1] if lbl else None, textposition=scatter_pos, textfont=dict(size=f_size, color=f_color)))
-                fig.add_trace(go.Scatter(x=df_g[x_ax].iloc[idx_split:], y=df_g[y_ax].iloc[idx_split:], mode="lines+markers+text" if lbl else "lines+markers", name="Прогноз ИИ", line=dict(color="#ff4b4b", width=4, dash="dash"), marker=dict(size=8, symbol="diamond"), text=txt_full[idx_split:] if lbl else None, textposition=scatter_pos, textfont=dict(size=f_size, color=f_color)))
+                fig.add_trace(go.Scatter(x=df_g[x_ax].iloc[idx_split:], y=df_g[y_ax].iloc[idx_split:], mode="lines+markers+text" if lbl else "lines+markers", name="Прогноз (Трендовый)", line=dict(color="#ff4b4b", width=4, dash="dash"), marker=dict(size=8, symbol="diamond"), text=txt_full[idx_split:] if lbl else None, textposition=scatter_pos, textfont=dict(size=f_size, color=f_color)))
             else:
                 txt = get_formatted_text(df_g[y_ax].values)
                 fig.add_trace(go.Scatter(x=df_g[x_ax], y=df_g[y_ax], mode="lines+markers+text" if lbl else "lines+markers", name="Факт", line=dict(color=color, width=4), marker=dict(size=8), text=txt if lbl else None, textposition=scatter_pos, textfont=dict(size=f_size, color=f_color)))
@@ -324,13 +334,13 @@ def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_ro
         st.plotly_chart(fig, use_container_width=True, key=f"p_{i}")
     except Exception as chart_err:
         st.error(f"Ошибка графика №{i+1}: {chart_err}")
-
 # 🛠️ МОДУЛЬ СБОРКИ ДАННЫХ (ENTERPRISE CONCAT ENGINE)
 def power_query_clean_engine(uploaded_files_list, gemini_key):
     frames = []
     for f in uploaded_files_list:
         try:
-            df = pd.read_csv(f, dtype=str) if f.name.endswith('.csv') else pd.read_excel(f, dtype=str, engine='openpyxl')
+            # ОПТИМИЗАЦИЯ: Читаем с автоматическим определением типов, чтобы не перегружать память строками
+            df = pd.read_csv(f) if f.name.endswith('.csv') else pd.read_excel(f, engine='openpyxl')
             raw_cols = [str(c).strip() for c in df.columns]
             ai_map = ai_column_mapper_engine(raw_cols, gemini_key)
             mapped = []
@@ -356,6 +366,7 @@ def power_query_clean_engine(uploaded_files_list, gemini_key):
         if c in base_df.columns: 
             base_df[c] = pd.to_numeric(base_df[c].astype(str).str.replace(r'\s+', '', regex=True).str.replace(',', '.'), errors='coerce').fillna(0.0)
     return base_df.dropna(how='all')
+
 # ⚙️ ИНИЦИАЛИЗАЦИЯ И СТАТИЧЕСКИЕ КОЛЛБЭКИ СЕССИИ
 if "manual_charts" not in st.session_state: st.session_state.manual_charts = 1
 if "manual_cards" not in st.session_state: st.session_state.manual_cards = 1
@@ -379,7 +390,6 @@ ai_context_mode = st.sidebar.selectbox("Тип данных (Контекст д
 ])
 
 uploaded_files = st.file_uploader("Загрузите файлы Excel/CSV:", type=["csv", "xlsx"], accept_multiple_files=True)
-
 if uploaded_files:
     if st.session_state.main_df.empty:
         with st.spinner("⏳ Идёт глубокая сборка данных..."):
