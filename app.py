@@ -9,7 +9,7 @@ from google import genai
 from google.genai import types
 from pydantic import BaseModel, Field
 
-# Принудительная инициализация разметки страницы на самом старте скрипта
+# Принудительная初始化 разметки страницы на самом старте скрипта
 st.set_page_config(layout="wide", page_title="BI Enterprise Platform")
 
 # Схема для гарантированного JSON-ответа от Gemini Developer API
@@ -33,7 +33,6 @@ def ai_column_mapper_engine(raw_columns_list, api_key):
             "должны мапиться в 'Сумма', а 'Units', 'Volume' — в 'Количество')."
         )
         
-        # ⚙️ ВОССТАНОВЛЕНО: Используем оригинальную рабочую модель gemini-3.5-flash
         response = client.models.generate_content(
             model='gemini-3.5-flash',
             contents=f"Выполни маппинг списка заголовков: {str(raw_columns_list)}",
@@ -48,7 +47,6 @@ def ai_column_mapper_engine(raw_columns_list, api_key):
         mapping_result = res_json.get("mapping", {})
         return mapping_result
     except Exception as e:
-        st.sidebar.warning(f"⚠️ Ошибка ИИ-маппинга: {e}. Применен локальный текстовый поиск.")
         return {}
 # 🧠 МОДУЛЬ 2: УЛЬТРА-ГИБКИЙ ИИ-АНАЛИЗАТОР С ФУНКЦИЕЙ СКАЧИВАНИЯ ОТЧЕТА
 def ai_generate_text_report(pivot_matrix_df, report_type="ABC/XYZ", data_context="Расход", api_key=None):
@@ -59,25 +57,27 @@ def ai_generate_text_report(pivot_matrix_df, report_type="ABC/XYZ", data_context
         
         context_mapping = {
             "Закупки": "Данные — это ПЛАНИРУЕМЫЕ ЗАКУПКИ / БИЗНЕС-ПЛАНЫ. Группа AZ — это стратегические контракты (риск срыва сроков проектов). Группа CZ — мелкая операционная текучка (риск бюрократии, недоосвоения бюджета).",
-            "Запасы": "Данные — это СУЩЕСТВУЮЩИЕ СКЛАДСКИЕ ЗАПАСЫ. Группа AZ — это жестко замороженный рабочий капитал предприятия (дорогие ТМЦ без движения). Группа CZ — складской хлам, неликвиды, забивающие полки.",
+            "Зазапасы": "Данные — это СУЩЕСТВУЮЩИЕ СКЛАДСКИЕ ЗАПАСЫ. Группа AZ — это жестко замороженный рабочий капитал предприятия (дорогие ТМЦ без движения). Группа CZ — складской хлам, неликвиды, забивающие полки.",
             "Расход": "Данные — это РЕАЛЬНЫЙ ФАКТИЧЕСКИЙ РАСХОД / ПОТРЕБЛЕНИЕ. Группа AZ — это внеплановые, аварийные ремонты оборудования, сжигающие огромный бюджет. Группа CZ — административная нагрузка мелких заявок."
         }
         
         context_rules = next((v for k, v in context_mapping.items() if k in data_context), 
                              "Данные — это КОММЕРЧЕСКИЕ ПРОДАЖИ / СБЫТ / РИТЕЙЛ. Группа AZ — это товары-локомотивы, генерирующие 80% выручки (риск упущенной прибыли). Группа CZ — длинный хвост ассортимента с низким чеком.")
 
+        # ⚙️ ИСПРАВЛЕНО: Роль заменена на лаконичную 'Бизнес-аналитик'. 
+        # Добавлено жесткое требование исключить любые сложные фразы про цепи поставок и комбинат.
         system_instruction = f"""
-        Ты — директор по логистике и снабжению комбината. Напиши аналитический отчет для генерального директора по матрице {report_type}.
+        Ты — ведущий бизнес-аналитик предприятия. Напиши аналитический отчет для руководства по матрице {report_type}.
         БИЗНЕС-КОНТЕКСТ ДАННЫХ: {context_rules}
         
         СТРОГИЕ ПРАВИЛА ОФОРМЛЕНИЯ:
+        - Использовать исключительно нейтральные термины: 'предприятие', 'компания', 'организация', 'структура данных'. Категорически запрещено писать слова 'комбинат' или 'эксперт по управлению цепями поставок'.
         - НАЧИНАЙ ОТЧЕТ СРАЗУ с содержательного анализа (Раздел "1. Анализ текущего процесса").
         - КАТЕГОРИЧЕСКИ ЗАПРЕЩЕНО писать метаданные документа: "Генеральному директору", "От:", "Дата:", "Тема:", приветствия или вводные подписи.
         
-        Структура отчета: 1. Анализ текущего процесса ({data_context}). 2. Выявление скрытых аномалий и рисков (оцени группы AZ и CZ). 3. Рекомендации. Пиши емко, списками Markdown. Используй деловой снабженческий сленг.
+        Структура отчета: 1. Анализ текущего процесса ({data_context}). 2. Выявление скрытых аномалий и рисков (оцени группы AZ и CZ). 3. Рекомендации. Пиши емко, списками Markdown. Используй деловой аналитический стиль.
         """
         with st.spinner(f"🔮 ИИ генерирует чистый отчет для контекста '{data_context}'..."):
-            # ⚙️ ВОССТАНОВЛЕНО: Используем оригинальную рабочую модель gemini-3.5-flash
             response = client.models.generate_content(
                 model='gemini-3.5-flash', 
                 contents=f"Матрица плотности ({data_context}):\n{pivot_matrix_df.to_string()}", 
@@ -119,8 +119,8 @@ def internal_show_abc_xyz_page(filtered_df, api_key, data_context):
     with c1: abc_value = st.selectbox("Критерий масштаба стоимости:", [c for c in ['Сумма', 'Количество'] if c in available_cols] + available_cols, key="abc_v")
     with c2: xyz_period = st.selectbox("Шкала времени (для XYZ):", [c for c in available_cols if c != abc_target], key="xyz_p")
     
-    a_lim = st.slider("Граница группы A (%):", 50, 90, 80, key="abc_s")
-    x_lim = st.slider("Граница группы X (KV ≤ %):", 5, 20, 10, key="xyz_s")
+    a_lim = st.slider("Grad_A (%):", 50, 90, 80, key="abc_s")
+    x_lim = st.slider("Grad_X (KV ≤ %):", 5, 20, 10, key="xyz_s")
     try:
         df[abc_value] = pd.to_numeric(df[abc_value], errors='coerce').fillna(0.0)
         df = df[(df[abc_target].astype(str).str.strip() != "") & (df[xyz_period].astype(str).str.strip() != "")]
@@ -324,7 +324,8 @@ def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_ro
         st.plotly_chart(fig, use_container_width=True, key=f"p_{i}")
     except Exception as chart_err:
         st.error(f"Ошибка графика №{i+1}: {chart_err}")
-# 🛠️ ДВИЖОК ОЧИСТКИ И СБОРКИ ДАННЫХ (ENTERPRISE CONCAT ENGINE)
+
+# 🛠️ МОДУЛЬ СБОРКИ ДАННЫХ (ENTERPRISE CONCAT ENGINE)
 def power_query_clean_engine(uploaded_files_list, gemini_key):
     frames = []
     for f in uploaded_files_list:
