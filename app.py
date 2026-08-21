@@ -355,51 +355,7 @@ def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_ro
         st.plotly_chart(fig, use_container_width=True, key=f"p_{i}")
     except Exception as chart_err:
         st.error(f"Ошибка графика №{i+1}: {chart_err}")
-# 🛠️ МОДУЛЬ СБОРКИ ДАННЫХ (ENTERPRISE CONCAT ENGINE)
-def power_query_clean_engine(uploaded_files_list, gemini_key):
-    frames = []
-    for f_item in uploaded_files_list:
-        try:
-            df = pd.read_csv(f_item) if f_item.name.endswith('.csv') else pd.read_excel(f_item, engine='openpyxl')
-            raw_cols = [str(c).strip() for c in df.columns]
-            ai_map = ai_column_mapper_engine(raw_cols, gemini_key)
-            mapped = []
-            for col in raw_cols:
-                if col in ai_map: mapped.append(ai_map[col])
-                else:
-                    c_low = col.lower()
-                    if any(w in c_low for w in ['озм', 'код материала', 'номенклатур']): mapped.append('ОЗМ')
-                    elif any(w in c_low for w in ['наименование', 'материал']): mapped.append('Наименование материала')
-                    elif any(w in c_low for w in ['количество', 'кол-во', 'объем']): mapped.append('Quantity')
-                    elif any(w in c_low for w in ['сумма', 'стоимость', 'цена']): mapped.append('Сумма')
-                    else: mapped.append(col)
-            df.columns = [c if c != 'Quantity' else 'Количество' for c in mapped]
-            df = df.loc[:, ~df.columns.str.contains('^Без названия|^Unnamed|^Unnamed:')].loc[:, ~df.columns.duplicated()]
-            frames.append(df.dropna(how='all'))
-        except Exception as file_err:
-            st.sidebar.error(f"Ошибка файла {f_item.name}: {file_err}")
-            
-    if not frames: return pd.DataFrame()
-    base_df = pd.concat(frames, ignore_index=True, join='outer')
-            
-    for c in ['Количество', 'Сумма']:
-        if c in base_df.columns: 
-            base_df[c] = pd.to_numeric(base_df[c].astype(str).str.replace(r'\s+', '', regex=True).str.replace(',', '.'), errors='coerce').fillna(0.0)
-    return base_df.dropna(how='all')
-
-# ⚙️ ИНИЦИАЛИЗАЦИЯ И СТАТИЧЕСКИЕ КОЛЛБЭКИ СЕССИИ
-if "manual_charts" not in st.session_state: st.session_state.manual_charts = 1
-if "manual_cards" not in st.session_state: st.session_state.manual_cards = 1
-if "main_df" not in st.session_state: st.session_state.main_df = pd.DataFrame()
-if "chat_history" not in st.session_state: st.session_state.chat_history = []
-
-def add_chart_cb(): st.session_state.manual_charts += 1
-def remove_chart_cb(): 
-    if st.session_state.manual_charts > 1: st.session_state.manual_charts -= 1
-def add_card_cb(): st.session_state.manual_cards += 1
-def remove_card_cb(): 
-    if st.session_state.manual_cards > 1: st.session_state.manual_cards -= 1
-# 💬 ИНТЕГРИРОВАННЫЙ ИИ ЧАТ-АССИСТЕНТ С ЗАЩИТОЙ СЕРИАЛИЗАЦИИ ВРЕМЕННЫХ МЕТОК
+# 💬 МОДЕРНИЗИРОВАННЫЙ ИИ ЧАТ-АССИСТЕНТ С РАСШИРЕННЫМ БИЗНЕС-КОНТЕКСТОМ (ТОП-10 И РЕЙТИНГИ)
 def render_ai_sidebar_chat(current_dataframe, api_key, context_mode_text):
     st.sidebar.markdown("---")
     st.sidebar.markdown("### 💬 Чат-ассистент к данным")
@@ -432,37 +388,50 @@ def render_ai_sidebar_chat(current_dataframe, api_key, context_mode_text):
 
         try:
             client = genai.Client(api_key=api_key)
+            df_anal = current_dataframe.copy()
             
+            # 1. Формирование базовых агрегатов
             summary_dict = {}
-            summary_dict["Всего строк в таблице"] = len(current_dataframe)
-            summary_dict["Доступные колонки"] = list(current_dataframe.columns)
+            summary_dict["Всего строк в таблице"] = len(df_anal)
+            summary_dict["Доступные колонки"] = list(df_anal.columns)
             
-            for col in current_dataframe.columns:
-                if current_dataframe[col].dtype in [np.float64, np.int64]:
-                    summary_dict[f"Сумма по полю {col}"] = float(current_dataframe[col].sum())
-                    summary_dict[f"Среднее по полю {col}"] = float(current_dataframe[col].mean())
-                else:
-                    # ЗАЩИТА: Принудительно приводим индексы value_counts (включая дат) к тексту str
-                    top_vals = current_dataframe[col].astype(str).value_counts().head(5).to_dict()
-                    summary_dict[f"Топ-5 частых значений в {col}"] = top_vals
+            for col in df_anal.columns:
+                if df_anal[col].dtype in [np.float64, np.int64]:
+                    summary_dict[f"Сумма по полю {col}"] = float(df_anal[col].sum())
+                    summary_dict[f"Среднее по полю {col}"] = float(df_anal[col].mean())
             
+            # 2. РАСШИРЕНИЕ КОНТЕКСТА: Формируем реальные топ-10 рейтинги по стоимости для ИИ
+            target_sum_col = 'Сумма' if 'Сумма' in df_anal.columns else None
+            if target_sum_col:
+                df_anal[target_sum_col] = pd.to_numeric(df_anal[target_sum_col], errors='coerce').fillna(0)
+                
+                # Поиск текстовых колонок объектов (ОЗМ, Наименование)
+                obj_cols = [c for c in df_anal.columns if c not in ['Сумма', 'Количество'] and df_anal[c].dtype == object]
+                for obj_c in obj_cols[:2]:
+                    top10_df = df_anal.groupby(obj_c)[target_sum_col].sum().sort_values(ascending=False).head(10).reset_index()
+                    top10_list = []
+                    for idx, row in top10_df.iterrows():
+                        top10_list.append(f"Место {idx+1}: {row[obj_c]} (Сумма: {row[target_sum_col]:,})")
+                    summary_dict[f"ТОП-10 бизнес-рейтинг элементов {obj_c} по убыванию Суммы"] = top10_list
+
             data_snapshot_str = json.dumps(summary_dict, ensure_ascii=False, indent=2)
             
             sys_prompt = f"""
-            Ты — корпоративный BI-аналитик. Отвечай на вопросы пользователя строго на основе предоставленного JSON-среза данных.
+            Ты — корпоративный BI-аналитик уровня Синьор. Отвечай на вопросы строго на основе предоставленного JSON-контекста.
             Контекст бизнес-процесса: {context_mode_text}
             
             ПРАВИЛА:
-            - Отвечай лаконично, профессионально, только фактами из JSON. Не выдумывай цифры.
-            - Если информации нет в JSON-сводке, вежливо скажи: 'В текущем срезе данных нет такой информации'.
+            - Отвечай четко, емко, профессионально, используя списки.
+            - Опирайся на блоки 'ТОП-10 бизнес-рейтинг', чтобы выводить списки лидеров по стоимости.
+            - Если информации нет в JSON, вежливо скажи: 'В текущей сводке данных нет точной информации по вашему запросу'.
             """
             
             with chat_container:
                 with st.chat_message("assistant"):
-                    with st.spinner("🧠 Думаю..."):
+                    with st.spinner("🧠 Анализирую реестр..."):
                         response = client.models.generate_content(
                             model='gemini-3.5-flash',
-                            contents=f"JSON Срез данных:\n{data_snapshot_str}\n\nИстория переписки:\n{str(st.session_state.chat_history[-4:])}\n\nВопрос: {user_prompt}",
+                            contents=f"JSON Сводная аналитика и ТОП-рейтинги:\n{data_snapshot_str}\n\nИстория:\n{str(st.session_state.chat_history[-4:])}\n\nВопрос: {user_prompt}",
                             config=types.GenerateContentConfig(system_instruction=sys_prompt, temperature=0.2)
                         )
                         assistant_response = response.text
