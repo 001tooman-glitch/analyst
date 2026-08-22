@@ -22,19 +22,23 @@ if "map_target" not in st.session_state: st.session_state.map_target = ""
 if "map_value" not in st.session_state: st.session_state.map_value = ""
 if "map_time" not in st.session_state: st.session_state.map_time = ""
 
+# ПАМЯТЬ ДЛЯ КРОСС-СТРУКТУРНОГО МЭППИНГА КАТЕГОРИЙ И ЭЛЕМЕНТОВ
+if "category_mapping_dict" not in st.session_state: st.session_state.category_mapping_dict = {}
+if "raw_file_frames" not in st.session_state: st.session_state.raw_file_frames = {}
+
 def add_chart_cb(): st.session_state.manual_charts += 1
 def remove_chart_cb(): 
     if st.session_state.manual_charts > 1: st.session_state.manual_charts -= 1
 def add_card_cb(): st.session_state.manual_cards += 1
 def remove_card_cb(): 
     if st.session_state.manual_cards > 1: st.session_state.manual_cards -= 1
-# 🧠 МОДУЛЬ ИИ-АНАЛИЗАТОРA МАТРИЦ ABC/XYZ И RFM
+# 🧠 МОДУЛЬ ИИ-АНАЛИЗАТОРA МАТРИЦ
 def ai_generate_text_report(pivot_matrix_df, report_type="ABC/XYZ", data_context="Расход", api_key=None):
     if not api_key: 
         return st.warning("⚠️ Введите API Key Gemini в сайдбаре для активации ИИ.")
     try:
         client = genai.Client(api_key=api_key)
-        context_rules = f"Отчет строится по бизнес-направлению: {data_context}."
+        context_rules = f"Отчет строится в рамках контекста: {data_context}."
         
         system_instruction = f"""
         Ты — ведущий бизнес-аналитик международной компании. Напиши краткий аналитический отчет по матрице {report_type}.
@@ -130,7 +134,7 @@ def internal_show_rfm_page(filtered_df, api_key, data_context):
     if not t_col or not v_col or t_col == "-- Выберите --" or v_col == "-- Выберите --":
         return st.warning("⚠️ Сначала настройте ручной маппинг колонок во вкладке '1. Загрузка и очистка данных'!")
         
-    st.markdown(f"### 🎯 Сегментация по шкалам: Объект **{t_col}** | Стоимость/Ценность **{v_col}**")
+    st.markdown(f"### 🎯 Segments по шкалам: Объект **{t_col}** | Стоимость/Ценность **{v_col}**")
     try:
         df = filtered_df.copy()
         df[v_col] = pd.to_numeric(df[v_col], errors='coerce').fillna(0.0)
@@ -197,12 +201,9 @@ def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_ro
             legend_names = ["Факт"] * len(final_y)
             idx_split = len(df_fact) - 1
             
-            # УСТОЙЧИВЫЙ АПГРЕЙД: Замена pct_change на Линейную регрессию методом наименьших квадратов
             if forecast_periods > 0 and len(df_fact) > 1:
                 y_arr = df_fact[y_ax].values
                 x_arr = np.arange(len(y_arr))
-                
-                # Математический расчет глобального тренда
                 slope, intercept = np.polyfit(x_arr, y_arr, 1)
                 
                 date_diffs = df_fact['_month_period_'].diff().dropna()
@@ -213,7 +214,7 @@ def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_ro
                     next_date = last_date + pd.DateOffset(years=m) if is_yearly_data else last_date + pd.DateOffset(months=m)
                     f_index = len(y_arr) - 1 + m
                     pred_val = slope * f_index + intercept
-                    if pred_val < 0: pred_val = 0.0 # Защита от отрицательных продаж
+                    if pred_val < 0: pred_val = 0.0
                     
                     final_x.append(next_date.strftime(chosen_pattern))
                     final_y.append(pred_val)
@@ -230,7 +231,6 @@ def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_ro
                     last_year_numeric = int(float(df_g[x_ax].iloc[-1]))
                     y_arr = df_g[y_ax].values
                     x_arr = np.arange(len(y_arr))
-                    
                     slope, intercept = np.polyfit(x_arr, y_arr, 1)
                     
                     f_x_list = list(df_g[x_ax].astype(str).values)
@@ -275,24 +275,18 @@ def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_ro
         st.plotly_chart(fig, use_container_width=True, key=f"p_{i}")
     except Exception as chart_err:
         st.error(f"Ошибка графика №{i+1}: {chart_err}")
-# 🛠️ МОДУЛЬ СБОРА ДАННЫХ (БЕЗ СКРЫТЫХ ПЕРЕИМЕНОВАНИЙ КОЛОНОК)
+# 🛠️ МОДУЛЬ ЧИСТОЙ ЗАГРУЗКИ ФАЙЛОВ С ХРАНЕНИЕМ СТРУКТУРЫ КАЖДОГО ФАЙЛА ПО ОТДЕЛЬНОСТИ
 def power_query_clean_engine(uploaded_files_list):
-    frames = []
+    file_registry = {}
     for f_item in uploaded_files_list:
         try:
-            # Читаем данные «как есть», сохраняя исходную структуру колонок пользователя
             df = pd.read_csv(io.StringIO(f_item.getvalue().decode('utf-8'))) if f_item.name.endswith('.csv') else pd.read_excel(f_item, engine='openpyxl')
             df = df.loc[:, ~df.columns.str.contains('^Без названия|^Unnamed|^Unnamed:')].loc[:, ~df.columns.duplicated()]
-            frames.append(df.dropna(how='all'))
+            file_registry[f_item.name] = df.dropna(how='all')
         except Exception as file_err:
             st.sidebar.error(f"Ошибка обработки файла {f_item.name}: {file_err}")
-            
-    if not frames: 
-        return pd.DataFrame()
-        
-    combined_df = pd.concat(frames, ignore_index=True, join='outer')
-    return combined_df.dropna(how='all')
-# 💬 УНИВЕРСАЛЬНЫЙ ИИ ЧАТ-АССИСТЕНТ (ДИHАМИЧЕСКИ ПИШЕТ Pandas-КОД ПОД РУЧНУЮ СТРУКТУРУ КОЛОНОК)
+    return file_registry
+# 💬 УНИВЕРСАЛЬНЫЙ СУПЕР-УМНЫЙ ЧАТ С ПОДДЕРЖКОЙ СРАВНИТЕЛЬНОГО КРОСС-АНАЛИЗА СТРУКТУР
 def render_ai_sidebar_chat(current_dataframe, api_key, context_mode_text):
     st.sidebar.markdown("---")
     st.sidebar.markdown("### 💬 Чат-ассистент к данным")
@@ -308,14 +302,12 @@ def render_ai_sidebar_chat(current_dataframe, api_key, context_mode_text):
     chat_container = st.sidebar.container(height=250)
     with chat_container:
         for message in st.session_state.chat_history:
-            with st.chat_message(message["role"]):
-                st.write(message["content"])
+            with st.chat_message(message["role"]): st.write(message["content"])
 
     if user_prompt := st.sidebar.chat_input("Спросить ИИ о таблице...", key="chat_input_text"):
         st.session_state.chat_history.append({"role": "user", "content": user_prompt})
         with chat_container:
-            with st.chat_message("user"):
-                st.write(user_prompt)
+            with st.chat_message("user"): st.write(user_prompt)
                 
         if not api_key:
             with chat_container:
@@ -326,7 +318,6 @@ def render_ai_sidebar_chat(current_dataframe, api_key, context_mode_text):
             client = genai.Client(api_key=api_key)
             sample_df = current_dataframe.head(3).copy()
             
-            # Защита от Timestamp Error в JSON сериализации
             for c in sample_df.columns:
                 if not pd.api.types.is_numeric_dtype(sample_df[c]):
                     sample_df[c] = sample_df[c].astype(str)
@@ -335,19 +326,19 @@ def render_ai_sidebar_chat(current_dataframe, api_key, context_mode_text):
             sample_json = sample_df.to_dict(orient='records')
             
             sys_prompt = f"""
-            Ты — эксперт по анализу данных на Python и Pandas. Твоя задача — написать ОДНУ строчку кода на Python, которая ответит на вопрос пользователя.
-            Исходный датафрейм называется 'current_dataframe'.
+            Ты — эксперт по анализу данных на Python и Pandas. Напиши ОДНУ строчку кода на Python, которая ответит на вопрос пользователя.
+            Исходный датафрейм называется 'current_dataframe'. 
+            Если активирован режим 'Сравнительный кросс-анализ', колонка 'Тип_Слоя' разделяет исходные массивы данных, а 'Унифицированная_Категория' содержит связанные пользователем значения.
             
-            ТЕКУЩАЯ СТРУКТУРА ТАБЛИЦЫ (Имена колонок и типы):
+            СТРУКТУРА ТАБЛИЦЫ (Имена колонок и типы):
             {json.dumps(columns_schema, ensure_ascii=False)}
             
-            ПРИМЕР РЕАЛЬНЫХ СТРОК ИЗ ЗАГРУЖЕННОГО ФАЙЛА:
+            ПРИМЕР СТРОК:
             {json.dumps(sample_json, ensure_ascii=False)}
             
             СТРОГИЕ ПРАВИЛА:
-            1. Возвращай ИСКЛЮЧИТЕЛЬНО чистый код на Python. Никакого текста, никаких пояснений, никаких знаков ```python. Только код.
+            1. Возвращай ИСКЛЮЧИТЕЛЬНО чистый код на Python. Никакого текста, никаких пояснений. Только код.
             2. Результат вычисления ОБЯЗАТЕЛЬНО присваивай переменной 'result_output'.
-            3. Перед написанием кода внимательно посмотри на имена колонок из примера. Пиши код строго под те названия, которые видны в примере.
             """
             
             with chat_container:
@@ -359,15 +350,13 @@ def render_ai_sidebar_chat(current_dataframe, api_key, context_mode_text):
                             config=types.GenerateContentConfig(system_instruction=sys_prompt, temperature=0.1)
                         )
                         raw_code = response.text.strip().replace("```python", "").replace("```", "")
-                        
                         local_vars = {"current_dataframe": current_dataframe, "result_output": None}
                         exec(raw_code, {}, local_vars)
                         execution_result = local_vars.get("result_output")
                         
                         formatting_prompt = f"""
-                        Ты — корпоративный BI-аналитик уровня Синьор. Переведи технический результат выполнения кода {str(execution_result)} на понятный человеческий язык для руководства.
+                        Ты — BI-аналитик. Переведи технический результат {str(execution_result)} на понятный человеческий язык.
                         Бизнес-контекст: {context_mode_text}. Вопрос: '{user_prompt}'
-                        Отвечай структурированно, кратко, цифры форматируй пробелами.
                         """
                         final_response = client.models.generate_content(
                             model='gemini-3.5-flash',
@@ -380,34 +369,103 @@ def render_ai_sidebar_chat(current_dataframe, api_key, context_mode_text):
             st.session_state.chat_history.append({"role": "assistant", "content": assistant_response})
         except Exception as chat_err:
             st.sidebar.error(f"Ошибка чата: {chat_err}")
+# 🛠️ ФУНКЦИЯ ПОСТРОЕНИЯ ИНТЕРФЕЙСА РУЧНОГО СОПОСТАВЛЕНИЯ РАЗНОРОДНЫХ СТРУКТУР И КАТЕГОРИЙ
+def render_cross_file_mapping_ui(file_registry):
+    st.markdown("---")
+    st.markdown("### 🔀 Панель ручного сопоставления разнородных структур данных")
+    
+    file_names = list(file_registry.keys())
+    if len(file_names) < 2:
+        st.info("ℹ️ Для настройки кросс-анализа загрузите 2 файла с различающейся номенклатурой / справочниками.")
+        return pd.DataFrame()
+        
+    f1_name, f2_name = file_names, file_names
+    df1, df2 = file_registry[f1_name], file_registry[f2_name]
+    
+    c1, c2 = st.columns(2)
+    with c1: f1_col = st.selectbox(f"Базовый столбец в слое 1 ({f1_name}):", ["-- Выберите --"] + list(df1.columns), key="cf_ui_1")
+    with c2: f2_col = st.selectbox(f"Сравниваемый столбец в слое 2 ({f2_name}):", ["-- Выберите --"] + list(df2.columns), key="cf_ui_2")
+    
+    if f1_col == "-- Выберите --" or f2_col == "-- Выберите --":
+        st.warning("⚠️ Укажите связующие столбцы в обоих слоях данных.")
+        return pd.DataFrame()
+        
+    unique_f1_vals = list(df1[f1_col].dropna().astype(str).unique())
+    unique_f2_vals = ["-- Не сопоставлено / Игнорировать --"] + list(df2[f2_col].dropna().astype(str).unique())
+    
+    st.markdown("#### 🔗 Установите логические соответствия между элементами вручную:")
+    grid_cols = st.columns(2)
+    
+    temp_mapping = {}
+    for idx, val_f1 in enumerate(unique_f1_vals):
+        col_side = grid_cols[idx % 2]
+        with col_side:
+            prev_sel = st.session_state.category_mapping_dict.get(val_f1, "-- Не сопоставлено / Игнорировать --")
+            def_idx = unique_f2_vals.index(prev_sel) if prev_sel in unique_f2_vals else 0
+            
+            chosen_f2_val = st.selectbox(f"Элемент '{val_f1}' эквивалентен:", unique_f2_vals, index=def_idx, key=f"map_item_{idx}")
+            if chosen_f2_val != "-- Не сопоставлено / Игнорировать --":
+                temp_mapping[val_f1] = chosen_f2_val
+                
+    st.session_state.category_mapping_dict = temp_mapping
+    
+    if st.button("🚀 Применить кросс-маппинг и собрать объединенную витрину", key="apply_cross_map_btn"):
+        clean_df1 = df1.copy()
+        clean_df2 = df2.copy()
+        
+        clean_df1['Унифицированная_Категория'] = clean_df1[f1_col].astype(str)
+        clean_df1['Тип_Слоя'] = f"Слой_1 ({f1_name})"
+        
+        inv_map = {v: k for k, v in temp_mapping.items()}
+        clean_df2['Унифицированная_Категория'] = clean_df2[f2_col].astype(str).map(inv_map)
+        clean_df2['Тип_Слоя'] = f"Слой_2 ({f2_name})"
+        
+        clean_df2 = clean_df2.dropna(subset=['Унифицированная_Категория'])
+        united_bi_warehouse = pd.concat([clean_df1, clean_df2], ignore_index=True, join='outer')
+        st.session_state.main_df = united_bi_warehouse
+        st.success("✅ Универсальная витрина кросс-анализа успешно сформирована! Поле связи: 'Унифицированная_Категория'.")
+        st.rerun()
 st.sidebar.markdown("### 🤖 Настройки ИИ-Слой")
 gemini_api_key = st.sidebar.text_input("Введите Gemini API Key:", type="password")
-ai_context_mode = st.sidebar.selectbox("Контекст для AI:", ["📊 Продажи / Сбыт / Ритейл", "📅 Закупки / Материальное обеспечение", "📦 Запасы / Складские остатки"])
+ai_context_mode = st.sidebar.selectbox("Контекст для AI:", [
+    "📊 Сравнительный кросс-анализ структур и категорий",
+    "📊 Продажи / Сбыт / Ритейл", 
+    "📅 Закупки / Материальное обеспечение", 
+    "📦 Запасы / Складские остатки"
+])
 
 uploaded_files = st.file_uploader("Загрузите файлы Excel/CSV:", type=["csv", "xlsx"], accept_multiple_files=True)
 
 if uploaded_files:
-    if st.session_state.main_df.empty:
+    if not st.session_state.raw_file_frames:
         with st.spinner("⏳ Чтение структуры файлов..."):
-            calc_df = power_query_clean_engine(uploaded_files)
-            if not calc_df.empty: st.session_state.main_df = calc_df
+            st.session_state.raw_file_frames = power_query_clean_engine(uploaded_files)
             
+    if "Сравнительный" in ai_context_mode:
+        if st.session_state.main_df.empty:
+            render_cross_file_mapping_ui(st.session_state.raw_file_frames)
+    else:
+        if st.session_state.main_df.empty:
+            frames_list = list(st.session_state.raw_file_frames.values())
+            if frames_list: st.session_state.main_df = pd.concat(frames_list, ignore_index=True, join='outer')
+
     main_df = st.session_state.main_df
     if not main_df.empty:
         render_ai_sidebar_chat(main_df, gemini_api_key, ai_context_mode)
         
         if st.sidebar.button("♻️ Сбросить базу данных"):
             st.session_state.main_df = pd.DataFrame()
+            st.session_state.raw_file_frames = {}
             st.session_state.chat_history = []
+            st.session_state.category_mapping_dict = {}
             st.rerun()
             
-        # ПАНЕЛЬ РУЧНОГО МАППИНГА ДАННЫХ
         st.sidebar.markdown("### 🎛️ Ручной маппинг аналитических шкал")
         raw_headers = list(main_df.columns)
         
-        st.session_state.map_target = st.sidebar.selectbox("🔑 КЛЮЧ АНАЛИЗА (ОЗМ/Товар/Страна):", ["-- Выберите --"] + raw_headers, index=raw_headers.index(st.session_state.map_target) + 1 if st.session_state.map_target in raw_headers else 0)
-        st.session_state.map_value = st.sidebar.selectbox("💰 КРИТЕРИЙ ОБЪЕМА (Сумма/Sales/Profit):", ["-- Выберите --"] + raw_headers, index=raw_headers.index(st.session_state.map_value) + 1 if st.session_state.map_value in raw_headers else 0)
-        st.session_state.map_time = st.sidebar.selectbox("📅 ШКАЛА ВРЕМЕНИ (Год/Месяц/Дата):", ["-- Выберите --"] + raw_headers, index=raw_headers.index(st.session_state.map_time) + 1 if st.session_state.map_time in raw_headers else 0)
+        st.session_state.map_target = st.sidebar.selectbox("🔑 КЛЮЧ АНАЛИЗА:", ["-- Выберите --"] + raw_headers, index=raw_headers.index(st.session_state.map_target) + 1 if st.session_state.map_target in raw_headers else (raw_headers.index('Унифицированная_Категория') + 1 if 'Унифицированная_Категория' in raw_headers else 0))
+        st.session_state.map_value = st.sidebar.selectbox("💰 КРИТЕРИЙ ОБЪЕМА:", ["-- Выберите --"] + raw_headers, index=raw_headers.index(st.session_state.map_value) + 1 if st.session_state.map_value in raw_headers else 0)
+        st.session_state.map_time = st.sidebar.selectbox("📅 ШКАЛА ВРЕМЕНИ:", ["-- Выберите --"] + raw_headers, index=raw_headers.index(st.session_state.map_time) + 1 if st.session_state.map_time in raw_headers else 0)
         
         if st.session_state.map_value != "-- Выберите --":
             main_df[st.session_state.map_value] = pd.to_numeric(main_df[st.session_state.map_value].astype(str).str.replace(r'\s+', '', regex=True).str.replace(',', '.'), errors='coerce').fillna(0.0)
@@ -417,8 +475,8 @@ if uploaded_files:
         
         if page == "🗂️ 1. Загрузка и очистка данных":
             st.success(f"📊 База сформирована! Загружено строк: {len(main_df):,}")
-            if st.session_state.map_target == "-- Выберите --" or st.session_state.map_value == "-- Выберите --":
-                st.info("💡 Укажите колонки в блоке 'Ручной маппинг' слева, чтобы запустить расчеты на вкладках 3 и 4.")
+            if "Сравнительный" in ai_context_mode:
+                render_cross_file_mapping_ui(st.session_state.raw_file_frames)
             cp = st.number_input(f"Страница (из {(len(main_df) // 50) + 1}):", min_value=1, value=1, step=1)
             st.dataframe(main_df.iloc[(cp - 1) * 50: cp * 50], height=350, use_container_width=True)
             
@@ -487,4 +545,5 @@ if uploaded_files:
         elif page == "👥 4. RFM-сегментация":
             internal_show_rfm_page(main_df, gemini_api_key, ai_context_mode)
 else:
+    st.sidebar.info("📊 Ожидание загрузки файлов для кросс-анализа...")
     st.info("📊 BI-платформа ожидает загрузки любых файлов Excel/CSV...")
