@@ -288,21 +288,6 @@ def power_query_clean_engine(uploaded_files_list):
     return file_registry
 # 💬 ЭКСПЕРТНЫЙ ИИ ЧАТ-АССИСТЕНТ (АВТОНОМНЫЙ CODE INTERPRETER — ИГНОРИРУЕТ ПУСТЫЕ СРЕЗЫ СЕССИИ)
 def render_ai_sidebar_chat(current_dataframe, api_key, context_mode_text):
-    st.markdown(
-        """
-        <style>
-        [data-testid="stSidebar"] [data-testid="stChatMessage"] {
-            padding: 8px !important;
-            margin-bottom: 4px !important;
-        }
-        [data-testid="stSidebar"] [data-testid="stChatMessage"] p {
-            font-size: 13px !important;
-            line-height: 1.3 !important;
-        }
-        </style>
-        """,
-        unsafe_allow_html=True
-    )
     st.sidebar.markdown("---")
     st.sidebar.markdown("### 💬 Чат-ассистент к данным")
     
@@ -477,16 +462,11 @@ ai_context_mode = st.sidebar.selectbox("Контекст для AI:", [
 uploaded_files = st.file_uploader("Загрузите файлы Excel/CSV:", type=["csv", "xlsx"], accept_multiple_files=True)
 
 if uploaded_files:
-    if st.session_state.raw_file_frames:
-        # ЗАЩИТА: Если состав файлов изменился в uploader - сбрасываем кэш
-        if len(uploaded_files) != len(st.session_state.raw_file_frames):
-            st.session_state.raw_file_frames = {}
-            st.session_state.main_df = pd.DataFrame()
-            
     if not st.session_state.raw_file_frames:
         with st.spinner("⏳ Чтение структуры файлов..."):
             st.session_state.raw_file_frames = power_query_clean_engine(uploaded_files)
             
+    # ИСПРАВЛЕНО: Для обычных режимов собираем файлы последовательно в одну таблицу БЕЗ перезатирания оперативной памяти
     if "Сравнительный" in ai_context_mode:
         if st.session_state.main_df.empty:
             render_cross_file_mapping_ui(st.session_state.raw_file_frames)
@@ -590,3 +570,6 @@ if uploaded_files:
             internal_show_abc_xyz_page(main_df, gemini_api_key, ai_context_mode)
         elif page == "👥 4. RFM-сегментация":
             internal_show_rfm_page(main_df, gemini_api_key, ai_context_mode)
+else:
+    st.sidebar.info("📊 Ожидание загрузки файлов для кросс-анализа...")
+    st.info("📊 BI-платформа ожидает загрузки любых файлов Excel/CSV...")
