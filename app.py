@@ -17,7 +17,7 @@ if "manual_cards" not in st.session_state: st.session_state.manual_cards = 1
 if "main_df" not in st.session_state: st.session_state.main_df = pd.DataFrame()
 if "chat_history" not in st.session_state: st.session_state.chat_history = []
 
-# Переменные ручного маппинга осей данных
+# Переменные ручного ноу-код маппинга осей данных
 if "map_target" not in st.session_state: st.session_state.map_target = ""
 if "map_value" not in st.session_state: st.session_state.map_value = ""
 if "map_time" not in st.session_state: st.session_state.map_time = ""
@@ -28,7 +28,7 @@ def remove_chart_cb():
 def add_card_cb(): st.session_state.manual_cards += 1
 def remove_card_cb(): 
     if st.session_state.manual_cards > 1: st.session_state.manual_cards -= 1
-# 🧠 МОДУЛЬ ИИ-АНАЛИЗАТОРА МАТРИЦ ABC/XYZ И RFM
+# 🧠 МОДУЛЬ ИИ-АНАЛИЗАТОРA МАТРИЦ ABC/XYZ И RFM
 def ai_generate_text_report(pivot_matrix_df, report_type="ABC/XYZ", data_context="Расход", api_key=None):
     if not api_key: 
         return st.warning("⚠️ Введите API Key Gemini в сайдбаре для активации ИИ.")
@@ -57,7 +57,7 @@ def ai_generate_text_report(pivot_matrix_df, report_type="ABC/XYZ", data_context
             st.info(report_text)
             
             st.download_button(
-                label="🗑️ Скачать заключение ИИ (.txt)",
+                label="📥 Скачать заключение ИИ (.txt)",
                 data=report_text,
                 file_name=f"ai_report_{report_type.lower().replace('/', '_')}.txt",
                 mime="text/plain"
@@ -68,19 +68,18 @@ def ai_generate_text_report(pivot_matrix_df, report_type="ABC/XYZ", data_context
 def internal_show_abc_xyz_page(filtered_df, api_key, data_context):
     st.title("🧮 Конструктор матриц ABC/XYZ")
     
-    # Защита от отсутствия выбора шкал
     t_col = st.session_state.map_target
     v_col = st.session_state.map_value
     p_col = st.session_state.map_time
     
-    if not t_col or not v_col or not p_col:
+    if not t_col or not v_col or not p_col or t_col == "-- Выберите --" or v_col == "-- Выберите --":
         return st.warning("⚠️ Сначала настройте ручной маппинг колонок во вкладке '1. Загрузка и очистка данных'!")
         
     df = filtered_df.copy()
     st.markdown(f"### 🎯 Анализ по выбранным шкалам: Объект **{t_col}** | Критерий **{v_col}** | Период **{p_col}**")
     
     a_lim = st.slider("Доля класса А (%):", 50, 90, 80, key="abc_s_slider")
-    x_lim = st.slider("Стабильность класса X (KV ≤ %):", 5, 50, 10, key="xyz_s_slider")
+    x_lim = st.slider("Граница класса X (KV ≤ %):", 5, 50, 10, key="xyz_s_slider")
     
     try:
         df[v_col] = pd.to_numeric(df[v_col], errors='coerce').fillna(0.0)
@@ -128,7 +127,7 @@ def internal_show_rfm_page(filtered_df, api_key, data_context):
     t_col = st.session_state.map_target
     v_col = st.session_state.map_value
     
-    if not t_col or not v_col:
+    if not t_col or not v_col or t_col == "-- Выберите --" or v_col == "-- Выберите --":
         return st.warning("⚠️ Сначала настройте ручной маппинг колонок во вкладке '1. Загрузка и очистка данных'!")
         
     st.markdown(f"### 🎯 Сегментация по шкалам: Объект **{t_col}** | Стоимость/Ценность **{v_col}**")
@@ -157,7 +156,7 @@ def internal_show_rfm_page(filtered_df, api_key, data_context):
         st.dataframe(rfm.sort_values(by='M', ascending=False), use_container_width=True)
     except Exception as rfe:
         st.error(f"Ошибка вычисления RFM: {rfe}")
-# 📊 ФУНКЦИЯ 5: ГРАФИЧЕСКИЙ ДВИЖОК С АВТОПРОГНОЗОМ ДЛЯ ДАТ И СОРТИРОВАННЫХ ТЕКСТОВЫХ ЧИСЕЛ
+# 📊 ФУНКЦИЯ 5: МОДЕРНИЗИРОВАННЫЙ ГРАФИЧЕСКИЙ ДВИЖОК С СУПЕР-СТАБИЛЬНЫМ ПРОГНОЗОМ НА ЛИНЕЙНОЙ РЕГРЕССИИ (МНК)
 def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_round, f_size, f_color, f_pos, horiz, rot, top_limit, i, date_format_type="Исходный", custom_currency="", forecast_periods=0):
     try:
         df_c = active_df.copy()
@@ -198,22 +197,26 @@ def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_ro
             legend_names = ["Факт"] * len(final_y)
             idx_split = len(df_fact) - 1
             
+            # УСТОЙЧИВЫЙ АПГРЕЙД: Замена pct_change на Линейную регрессию методом наименьших квадратов
             if forecast_periods > 0 and len(df_fact) > 1:
-                last_value = df_fact[y_ax].iloc[-1]
-                pct_changes = df_fact[y_ax].pct_change().fillna(0.0)
-                avg_drop = pct_changes.tail(3).mean() if len(pct_changes) >= 3 else pct_changes.mean()
-                if avg_drop < -0.15: avg_drop = -0.15
+                y_arr = df_fact[y_ax].values
+                x_arr = np.arange(len(y_arr))
+                
+                # Математический расчет глобального тренда
+                slope, intercept = np.polyfit(x_arr, y_arr, 1)
                 
                 date_diffs = df_fact['_month_period_'].diff().dropna()
                 is_yearly_data = date_diffs.dt.days.mean() > 300
-                current_val = last_value
                 last_date = df_fact['_month_period_'].max()
                 
                 for m in range(1, forecast_periods + 1):
                     next_date = last_date + pd.DateOffset(years=m) if is_yearly_data else last_date + pd.DateOffset(months=m)
-                    current_val = current_val * (1 + avg_drop)
+                    f_index = len(y_arr) - 1 + m
+                    pred_val = slope * f_index + intercept
+                    if pred_val < 0: pred_val = 0.0 # Защита от отрицательных продаж
+                    
                     final_x.append(next_date.strftime(chosen_pattern))
-                    final_y.append(current_val)
+                    final_y.append(pred_val)
                     legend_names.append("Прогноз ИИ")
             df_g = pd.DataFrame({x_ax: final_x, y_ax: final_y, "Тип данных": legend_names})
         else:
@@ -225,19 +228,21 @@ def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_ro
             if forecast_periods > 0 and (is_year_col or pd.api.types.is_numeric_dtype(df_c[x_ax])) and len(df_g) > 1:
                 try:
                     last_year_numeric = int(float(df_g[x_ax].iloc[-1]))
-                    last_val = df_g[y_ax].iloc[-1]
-                    pct_changes = df_g[y_ax].pct_change().fillna(0.0)
-                    avg_growth = pct_changes.tail(2).mean() if len(pct_changes) >= 2 else pct_changes.mean()
-                    if avg_growth < -0.20: avg_growth = -0.20
+                    y_arr = df_g[y_ax].values
+                    x_arr = np.arange(len(y_arr))
+                    
+                    slope, intercept = np.polyfit(x_arr, y_arr, 1)
                     
                     f_x_list = list(df_g[x_ax].astype(str).values)
                     f_y_list = list(df_g[y_ax].values)
                     f_leg_list = ["Факт"] * len(df_g)
-                    curr_val = last_val
+                    
                     for offset in range(1, forecast_periods + 1):
                         f_x_list.append(str(last_year_numeric + offset))
-                        curr_val = curr_val * (1 + avg_growth)
-                        f_y_list.append(curr_val)
+                        f_index = len(y_arr) - 1 + offset
+                        pred_val = slope * f_index + intercept
+                        if pred_val < 0: pred_val = 0.0
+                        f_y_list.append(pred_val)
                         f_leg_list.append("Прогноз ИИ")
                     df_g = pd.DataFrame({x_ax: f_x_list, y_ax: f_y_list, "Тип данных": f_leg_list})
                 except: pass
@@ -270,14 +275,13 @@ def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_ro
         st.plotly_chart(fig, use_container_width=True, key=f"p_{i}")
     except Exception as chart_err:
         st.error(f"Ошибка графика №{i+1}: {chart_err}")
-# 🛠️ МОДУЛЬ ЧИСТОЙ ЗАГРУЗКИ ФАЙЛОВ С АВТОМАТИЧЕСКИМ ПОДДЕРЖАНИЕМ СТРОК
+# 🛠️ МОДУЛЬ СБОРА ДАННЫХ (БЕЗ СКРЫТЫХ ПЕРЕИМЕНОВАНИЙ КОЛОНОК)
 def power_query_clean_engine(uploaded_files_list):
     frames = []
     for f_item in uploaded_files_list:
         try:
-            # Читаем данные «как есть», сохраняя исходную структуру
+            # Читаем данные «как есть», сохраняя исходную структуру колонок пользователя
             df = pd.read_csv(io.StringIO(f_item.getvalue().decode('utf-8'))) if f_item.name.endswith('.csv') else pd.read_excel(f_item, engine='openpyxl')
-            # Удаляем только полностью пустые строки/колонки
             df = df.loc[:, ~df.columns.str.contains('^Без названия|^Unnamed|^Unnamed:')].loc[:, ~df.columns.duplicated()]
             frames.append(df.dropna(how='all'))
         except Exception as file_err:
@@ -286,10 +290,9 @@ def power_query_clean_engine(uploaded_files_list):
     if not frames: 
         return pd.DataFrame()
         
-    # Если загружено несколько файлов, объединяем их по совпадающим заголовкам
     combined_df = pd.concat(frames, ignore_index=True, join='outer')
     return combined_df.dropna(how='all')
-# 💬 УНИВЕРСАЛЬНЫЙ СУПЕР-УМНЫЙ ЧАТ (ЧИТАЕТ РУЧНУЮ СТРУКТУРУ ТАБЛИЦЫ В РЕЖИМЕ REAL-TIME)
+# 💬 УНИВЕРСАЛЬНЫЙ ИИ ЧАТ-АССИСТЕНТ (ДИHАМИЧЕСКИ ПИШЕТ Pandas-КОД ПОД РУЧНУЮ СТРУКТУРУ КОЛОНОК)
 def render_ai_sidebar_chat(current_dataframe, api_key, context_mode_text):
     st.sidebar.markdown("---")
     st.sidebar.markdown("### 💬 Чат-ассистент к данным")
@@ -323,7 +326,7 @@ def render_ai_sidebar_chat(current_dataframe, api_key, context_mode_text):
             client = genai.Client(api_key=api_key)
             sample_df = current_dataframe.head(3).copy()
             
-            # Защита от Timestamp Error в JSON
+            # Защита от Timestamp Error в JSON сериализации
             for c in sample_df.columns:
                 if not pd.api.types.is_numeric_dtype(sample_df[c]):
                     sample_df[c] = sample_df[c].astype(str)
@@ -406,7 +409,6 @@ if uploaded_files:
         st.session_state.map_value = st.sidebar.selectbox("💰 КРИТЕРИЙ ОБЪЕМА (Сумма/Sales/Profit):", ["-- Выберите --"] + raw_headers, index=raw_headers.index(st.session_state.map_value) + 1 if st.session_state.map_value in raw_headers else 0)
         st.session_state.map_time = st.sidebar.selectbox("📅 ШКАЛА ВРЕМЕНИ (Год/Месяц/Дата):", ["-- Выберите --"] + raw_headers, index=raw_headers.index(st.session_state.map_time) + 1 if st.session_state.map_time in raw_headers else 0)
         
-        # Ручное приведение шкал к числам на основе выбора пользователя
         if st.session_state.map_value != "-- Выберите --":
             main_df[st.session_state.map_value] = pd.to_numeric(main_df[st.session_state.map_value].astype(str).str.replace(r'\s+', '', regex=True).str.replace(',', '.'), errors='coerce').fillna(0.0)
 
