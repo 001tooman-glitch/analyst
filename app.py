@@ -22,7 +22,7 @@ if "map_target" not in st.session_state: st.session_state.map_target = ""
 if "map_value" not in st.session_state: st.session_state.map_value = ""
 if "map_time" not in st.session_state: st.session_state.map_time = ""
 
-# ПАМЯТЬ ДЛЯ КРОСС-СТРУКТУРНОГО МЭППИНГА КАТЕГОРИЙ И ЭЛЕМЕНТОВ
+# Память для кросс-структурного мэтчинга категорий и элементов
 if "category_mapping_dict" not in st.session_state: st.session_state.category_mapping_dict = {}
 if "raw_file_frames" not in st.session_state: st.session_state.raw_file_frames = {}
 
@@ -32,13 +32,13 @@ def remove_chart_cb():
 def add_card_cb(): st.session_state.manual_cards += 1
 def remove_card_cb(): 
     if st.session_state.manual_cards > 1: st.session_state.manual_cards -= 1
-# 🧠 МОДУЛЬ ИИ-АНАЛИЗАТОРA МАТРИЦ
+# 🧠 МОДУЛЬ ИИ-АНАЛИЗАТОРA МАТРИЦ ABC/XYZ И RFM
 def ai_generate_text_report(pivot_matrix_df, report_type="ABC/XYZ", data_context="Расход", api_key=None):
     if not api_key: 
         return st.warning("⚠️ Введите API Key Gemini в сайдбаре для активации ИИ.")
     try:
         client = genai.Client(api_key=api_key)
-        context_rules = f"Отчет строится в рамках контекста: {data_context}."
+        context_rules = f"Отчет строится в рамках аналитического контекста: {data_context}."
         
         system_instruction = f"""
         Ты — ведущий бизнес-аналитик международной компании. Напиши краткий аналитический отчет по матрице {report_type}.
@@ -134,7 +134,7 @@ def internal_show_rfm_page(filtered_df, api_key, data_context):
     if not t_col or not v_col or t_col == "-- Выберите --" or v_col == "-- Выберите --":
         return st.warning("⚠️ Сначала настройте ручной маппинг колонок во вкладке '1. Загрузка и очистка данных'!")
         
-    st.markdown(f"### 🎯 Segments по шкалам: Объект **{t_col}** | Стоимость/Ценность **{v_col}**")
+    st.markdown(f"### 🎯 Сегментация по шкалам: Объект **{t_col}** | Стоимость/Ценность **{v_col}**")
     try:
         df = filtered_df.copy()
         df[v_col] = pd.to_numeric(df[v_col], errors='coerce').fillna(0.0)
@@ -286,7 +286,7 @@ def power_query_clean_engine(uploaded_files_list):
         except Exception as file_err:
             st.sidebar.error(f"Ошибка обработки файла {f_item.name}: {file_err}")
     return file_registry
-# 💬 УНИВЕРСАЛЬНЫЙ СУПЕР-УМНЫЙ ЧАТ С ПОДДЕРЖКОЙ СРАВНИТЕЛЬНОГО КРОСС-АНАЛИЗА СТРУКТУР
+# 💬 УНИВЕРСАЛЬНЫЙ СУПЕР-УМНЫЙ ЧАТ С ПОДДЕРЖКОЙ СРАВНИТЕЛЬНОГО КРОСС-АНАЛИЗА СТРУКТУР И СЛОЕВ
 def render_ai_sidebar_chat(current_dataframe, api_key, context_mode_text):
     st.sidebar.markdown("---")
     st.sidebar.markdown("### 💬 Чат-ассистент к данным")
@@ -369,35 +369,58 @@ def render_ai_sidebar_chat(current_dataframe, api_key, context_mode_text):
             st.session_state.chat_history.append({"role": "assistant", "content": assistant_response})
         except Exception as chat_err:
             st.sidebar.error(f"Ошибка чата: {chat_err}")
-# 🛠️ ФУНКЦИЯ ПОСТРОЕНИЯ ИНТЕРФЕЙСА РУЧНОГО СОПОСТАВЛЕНИЯ РАЗНОРОДНЫХ СТРУКТУР И КАТЕГОРИЙ
+# 🛠️ УНИВЕРСАЛЬНАЯ ПАНЕЛЬ РУЧНОГО КРОСС-АНАЛИТИЧЕСКОГО МЭППИНГА ДЛЯ ЛЮБОГО КОЛИЧЕСТВА ФАЙЛОВ
 def render_cross_file_mapping_ui(file_registry):
     st.markdown("---")
-    st.markdown("### 🔀 Панель ручного сопоставления разнородных структур данных")
+    st.markdown("### 🔀 Панель ручного сопоставления разнородных структур и категорий")
     
     file_names = list(file_registry.keys())
-    if len(file_names) < 2:
-        st.info("ℹ️ Для настройки кросс-анализа загрузите 2 файла с различающейся номенклатурой / справочниками.")
+    if not file_names:
+        st.info("ℹ️ Для настройки кросс-анализа загрузите файлы в форму выше.")
         return pd.DataFrame()
         
-    f1_name, f2_name = file_names, file_names
-    df1, df2 = file_registry[f1_name], file_registry[f2_name]
-    
-    c1, c2 = st.columns(2)
-    with c1: f1_col = st.selectbox(f"Базовый столбец в слое 1 ({f1_name}):", ["-- Выберите --"] + list(df1.columns), key="cf_ui_1")
-    with c2: f2_col = st.selectbox(f"Сравниваемый столбец в слое 2 ({f2_name}):", ["-- Выберите --"] + list(df2.columns), key="cf_ui_2")
-    
-    if f1_col == "-- Выберите --" or f2_col == "-- Выберите --":
-        st.warning("⚠️ Укажите связующие столбцы в обоих слоях данных.")
-        return pd.DataFrame()
+    # ЕСЛИ ФАЙЛ ОДИН: Разрешаем мапить две разные колонки в рамках одного документа
+    if len(file_names) == 1:
+        single_name = file_names[0]
+        base_df = file_registry[single_name]
         
-    unique_f1_vals = list(df1[f1_col].dropna().astype(str).unique())
-    unique_f2_vals = ["-- Не сопоставлено / Игнорировать --"] + list(df2[f2_col].dropna().astype(str).unique())
-    
+        st.info(f"💡 Загружен 1 файл: `{single_name}`. Вы можете сопоставить две разные категориальные колонки внутри этой таблицы.")
+        c1, c2 = st.columns(2)
+        with c1: f1_col = st.selectbox("Базовый столбец (Слой 1):", ["-- Выберите --"] + list(base_df.columns), key="cf_ui_1")
+        with c2: f2_col = st.selectbox("Сравниваемый столбец (Слой 2):", ["-- Выберите --"] + list(base_df.columns), key="cf_ui_2")
+        
+        if f1_col == "-- Выберите --" or f2_col == "-- Выберите --":
+            st.warning("⚠️ Укажите оба столбца для сопоставления внутри файла.")
+            return pd.DataFrame()
+            
+        unique_f1_vals = list(base_df[f1_col].dropna().astype(str).unique())
+        unique_f2_vals = ["-- Не сопоставлено / Игнорировать --"] + list(base_df[f2_col].dropna().astype(str).unique())
+        df1 = base_df.copy()
+        df2 = base_df.copy()
+        
+    # ЕСЛИ ФАЙЛОВ МНОГО: Сопоставляем категории между файлами
+    else:
+        st.info(f"💡 Загружено несколько файлов ({len(file_names)} шт.). Настройте кросс-связи между их структурами.")
+        f1_name = file_names[0]
+        f2_name = file_names[1]
+        df1, df2 = file_registry[f1_name], file_registry[f2_name]
+        
+        c1, c2 = st.columns(2)
+        with c1: f1_col = st.selectbox(f"Категория в Базовом слое ({f1_name}):", ["-- Выберите --"] + list(df1.columns), key="cf_ui_1")
+        with c2: f2_col = st.selectbox(f"Категория в Сравниваемом слое ({f2_name}):", ["-- Выберите --"] + list(df2.columns), key="cf_ui_2")
+        
+        if f1_col == "-- Выберите --" or f2_col == "-- Выберите --":
+            st.warning("⚠️ Укажите связующие столбцы в обоих слоях данных.")
+            return pd.DataFrame()
+            
+        unique_f1_vals = list(df1[f1_col].dropna().astype(str).unique())
+        unique_f2_vals = ["-- Не сопоставлено / Игнорировать --"] + list(df2[f2_col].dropna().astype(str).unique())
+
     st.markdown("#### 🔗 Установите логические соответствия между элементами вручную:")
     grid_cols = st.columns(2)
     
     temp_mapping = {}
-    for idx, val_f1 in enumerate(unique_f1_vals):
+    for idx, val_f1 in enumerate(unique_f1_vals[:40]): # Ограничение топ-40 для стабильности рендеринга страницы
         col_side = grid_cols[idx % 2]
         with col_side:
             prev_sel = st.session_state.category_mapping_dict.get(val_f1, "-- Не сопоставлено / Игнорировать --")
@@ -414,16 +437,16 @@ def render_cross_file_mapping_ui(file_registry):
         clean_df2 = df2.copy()
         
         clean_df1['Унифицированная_Категория'] = clean_df1[f1_col].astype(str)
-        clean_df1['Тип_Слоя'] = f"Слой_1 ({f1_name})"
+        clean_df1['Тип_Слоя'] = "Слой_1 (Базовый)"
         
         inv_map = {v: k for k, v in temp_mapping.items()}
         clean_df2['Унифицированная_Категория'] = clean_df2[f2_col].astype(str).map(inv_map)
-        clean_df2['Тип_Слоя'] = f"Слой_2 ({f2_name})"
+        clean_df2['Тип_Слоя'] = "Слой_2 (Сравниваемый)"
         
         clean_df2 = clean_df2.dropna(subset=['Унифицированная_Категория'])
         united_bi_warehouse = pd.concat([clean_df1, clean_df2], ignore_index=True, join='outer')
         st.session_state.main_df = united_bi_warehouse
-        st.success("✅ Универсальная витрина кросс-анализа успешно сформирована! Поле связи: 'Унифицированная_Категория'.")
+        st.success("✅ Универсальная витрина кросс-анализа успешно сформирована! Создано поле связи: 'Унифицированная_Категория'.")
         st.rerun()
 st.sidebar.markdown("### 🤖 Настройки ИИ-Слой")
 gemini_api_key = st.sidebar.text_input("Введите Gemini API Key:", type="password")
