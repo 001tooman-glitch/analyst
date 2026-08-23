@@ -32,6 +32,7 @@ def remove_chart_cb():
 def add_card_cb(): st.session_state.manual_cards += 1
 def remove_card_cb(): 
     if st.session_state.manual_cards > 1: st.session_state.manual_cards -= 1
+
 # 🧠 МОДУЛЬ ИИ-АНАЛИЗАТОРA МАТРИЦ ABC/XYZ И RFM
 def ai_generate_text_report(pivot_matrix_df, report_type="ABC/XYZ", data_context="Расход", api_key=None):
     if not api_key: 
@@ -68,99 +69,113 @@ def ai_generate_text_report(pivot_matrix_df, report_type="ABC/XYZ", data_context
             )
     except Exception as report_err: 
         st.error(f"❌ Ошибка ИИ при генерации отчета: {report_err}")
-# 🧮 МОДУЛЬ 3: ДИНАМИЧЕСКИЙ СБОР ABC/XYZ НА ОСНОВЕ РУЧНОГО МАППИНГА
+# Оптимизированные вычисления с кэшированием Streamlit для высокой скорости интерфейса
+@st.cache_data
+def calculate_abc_xyz(df, t_col, v_col, p_col, a_lim, x_lim):
+    df_clean = df.copy()
+    df_clean[v_col] = pd.to_numeric(df_clean[v_col], errors='coerce').fillna(0.0)
+    df_clean = df_clean[(df_clean[t_col].astype(str).str.strip() != "") & (df_clean[p_col].astype(str).str.strip() != "")]
+    
+    df_abc = df_clean.groupby(t_col, as_index=False)[v_col].sum().sort_values(by=v_col, ascending=False).reset_index(drop=True)
+    total_sum = df_abc[v_col].sum()
+    if total_sum == 0:
+        return None, None, "Сумма значений по выбранному критерию равна нулю."
+        
+    df_abc['Cum'] = (df_abc[v_col] / total_sum).cumsum() * 100
+    df_abc['Class_ABC'] = df_abc['Cum'].map(lambda x: 'A' if x <= a_lim else ('B' if x <= a_lim + 15 else 'C'))
+    
+    p_matrix = df_clean.groupby([t_col, p_col])[v_col].sum().unstack(fill_value=0.0)
+    xyz_res = []
+    for name, rows in p_matrix.iterrows():
+        m = rows.mean()
+        s = rows.std(ddof=1) if len(rows) > 1 else 0.0
+        # Оценка стабильности: если среднее около нуля при наличии продаж — высокий коэффициент вариации
+        kv = (s / m) * 100 if m > 0 and np.count_nonzero(rows) > 1 else (0.0 if m > 0 and s == 0 else 999.0)
+        xyz_res.append({t_col: name, 'KV': kv, 'Класс XYZ': 'X' if kv <= x_lim else ('Y' if kv <= x_lim + 15 else 'Z')})
+        
+    df_m = pd.merge(df_abc[[t_col, v_col, 'Class_ABC']], pd.DataFrame(xyz_res), on=t_col)
+    raw_pivot = df_m.pivot_table(index='Class_ABC', columns='Класс XYZ', values=t_col, aggfunc='count', fill_value=0)
+    
+    pivot_m = pd.DataFrame(0, index=['A', 'B', 'C'], columns=['X', 'Y', 'Z'])
+    for idx in pivot_m.index:
+        for col in pivot_m.columns:
+            if idx in raw_pivot.index and col in raw_pivot.columns:
+                pivot_m.loc[idx, col] = raw_pivot.loc[idx, col]
+    return df_m, pivot_m, None
+
 def internal_show_abc_xyz_page(filtered_df, api_key, data_context):
     st.title("🧮 Конструктор матриц ABC/XYZ")
-    
     t_col = st.session_state.map_target
     v_col = st.session_state.map_value
     p_col = st.session_state.map_time
     
-    if not t_col or not v_col or not p_col or t_col == "-- Выберите --" or v_col == "-- Выберите --":
-        return st.warning("⚠️ Сначала настройте ручной маппинг колонок во вкладке '1. Загрузка и очистка данных'!")
+    if not t_col or not v_col or not p_col or t_col == "-- Выберите --" or v_col == "-- Выберите --" or p_col == "-- Выберите --":
+        return st.warning("⚠️ Сначала настройте ручной маппинг колонок в сайдбаре!")
         
-    df = filtered_df.copy()
-    st.markdown(f"### 🎯 Анализ по выбранным шкалам: Объект **{t_col}** | Критерий **{v_col}** | Период **{p_col}**")
-    
+    st.markdown(f"### 🎯 Анализ: Объект **{t_col}** | Критерий **{v_col}** | Период **{p_col}**")
     a_lim = st.slider("Доля класса А (%):", 50, 90, 80, key="abc_s_slider")
     x_lim = st.slider("Граница класса X (KV ≤ %):", 5, 50, 10, key="xyz_s_slider")
     
-    try:
-        df[v_col] = pd.to_numeric(df[v_col], errors='coerce').fillna(0.0)
-        df = df[(df[t_col].astype(str).str.strip() != "") & (df[p_col].astype(str).str.strip() != "")]
+    df_m, pivot_m, err = calculate_abc_xyz(filtered_df, t_col, v_col, p_col, a_lim, x_lim)
+    if err:
+        return st.warning(err)
         
-        df_abc = df.groupby(t_col, as_index=False)[v_col].sum().sort_values(by=v_col, ascending=False).reset_index(drop=True)
-        total_sum = df_abc[v_col].sum()
-        if total_sum == 0: 
-            return st.warning("Сумма значений по выбранному критерию равна нулю.")
-            
-        df_abc['Cum'] = (df_abc[v_col] / total_sum).cumsum() * 100
-        df_abc['Class_ABC'] = df_abc['Cum'].map(lambda x: 'A' if x <= a_lim else ('B' if x <= a_lim + 15 else 'C'))
+    c_m1, c_m2 = st.columns(2)
+    with c_m1: st.dataframe(pivot_m, use_container_width=True)
+    with c_m2: st.plotly_chart(px.imshow(pivot_m, text_auto=True, color_continuous_scale="Blues"), use_container_width=True)
+    
+    if st.button("🔮 Сгенерировать ИИ-отчет по результатам", key="ai_report_abc_btn"):
+        ai_generate_text_report(pivot_m, report_type="ABC/XYZ", data_context=data_context, api_key=api_key)
+    st.dataframe(df_m.sort_values(by=v_col, ascending=False), use_container_width=True)
+
+@st.cache_data
+def calculate_rfm(df, t_col, v_col, p_col):
+    df_clean = df.copy()
+    df_clean[v_col] = pd.to_numeric(df_clean[v_col], errors='coerce').fillna(0.0)
+    df_clean[p_col] = pd.to_datetime(df_clean[p_col], errors='coerce')
+    
+    # Использование базовой опорной даты, если в данных содержатся некорректные временные метки
+    max_date = df_clean[p_col].max() if df_clean[p_col].notna().any() else pd.Timestamp.now()
+    
+    rfm = df_clean.groupby(str(t_col)).agg(
+        R_days=(p_col, lambda x: (max_date - x.max()).days if x.notna().any() else 999),
+        F=(v_col, 'count'),
+        M=(v_col, 'sum')
+    ).reset_index()
+    rfm.columns = ['Объект Анализа', 'R', 'F', 'M']
+    
+    if len(rfm) < 3:
+        return None, None, "Недостаточно уникальных элементов для перцентильного деления."
         
-        p_matrix = df.groupby([t_col, p_col])[v_col].sum().unstack(fill_value=0.0)
-        xyz_res = []
-        for name, rows in p_matrix.iterrows():
-            m = rows.mean()
-            s = rows.std(ddof=1) if len(rows) > 1 else 0.0
-            kv = (s / m) * 100 if m > 0 and np.count_nonzero(rows) > 1 else 999.0
-            xyz_res.append({t_col: name, 'KV': kv, 'Класс XYZ': 'X' if kv <= x_lim else ('Y' if kv <= x_lim + 15 else 'Z')})
-            
-        df_m = pd.merge(df_abc[[t_col, v_col, 'Class_ABC']], pd.DataFrame(xyz_res), on=t_col)
-        raw_pivot = df_m.pivot_table(index='Class_ABC', columns='Класс XYZ', values=t_col, aggfunc='count', fill_value=0)
-        
-        pivot_m = pd.DataFrame(0, index=['A', 'B', 'C'], columns=['X', 'Y', 'Z'])
-        for idx in pivot_m.index:
-            for col in pivot_m.columns:
-                if idx in raw_pivot.index and col in raw_pivot.columns:
-                    pivot_m.loc[idx, col] = raw_pivot.loc[idx, col]
-                    
-        c_m1, c_m2 = st.columns(2)
-        with c_m1: st.dataframe(pivot_m, use_container_width=True)
-        with c_m2: st.plotly_chart(px.imshow(pivot_m, text_auto=True, color_continuous_scale="Blues"), use_container_width=True)
-        
-        if st.button("🔮 Сгенерировать ИИ-отчет по результатам", key="ai_report_abc_btn"):
-            ai_generate_text_report(pivot_m, report_type="ABC/XYZ", data_context=data_context, api_key=api_key)
-            
-        st.dataframe(df_m.sort_values(by=v_col, ascending=False), use_container_width=True)
-    except Exception as e:
-        st.error(f"Ошибка вычисления ABC/XYZ: {e}")
-# 👥 МОДУЛЬ 4: УНИВЕРСАЛЬНЫЙ RFM НА ОСНОВЕ РУЧНОГО ВЫБОРА КОЛОНОК
+    # Полноценная логика трехмерной сегментации по перцентилям (1 — лучший класс, 3 — худший)
+    rfm['R_Score'] = pd.qcut(rfm['R'].rank(method='first'), 3, labels=['1', '2', '3']).astype(str)
+    rfm['F_Score'] = pd.qcut(rfm['F'].rank(method='first'), 3, labels=['3', '2', '1']).astype(str)
+    rfm['M_Score'] = pd.qcut(rfm['M'].rank(method='first'), 3, labels=['3', '2', '1']).astype(str)
+    rfm['RFM'] = rfm['R_Score'] + rfm['F_Score'] + rfm['M_Score']
+    
+    seg_counts = rfm.groupby('RFM').size().reset_index(name='Количество элементов')
+    return rfm, seg_counts, None
+
 def internal_show_rfm_page(filtered_df, api_key, data_context):
     st.title("👥 Модуль многомерной RFM-сегментации")
-    
     t_col = st.session_state.map_target
     v_col = st.session_state.map_value
+    p_col = st.session_state.map_time
     
-    if not t_col or not v_col or t_col == "-- Выберите --" or v_col == "-- Выберите --":
-        return st.warning("⚠️ Сначала настройте ручной маппинг колонок во вкладке '1. Загрузка и очистка данных'!")
+    if not t_col or not v_col or not p_col or t_col == "-- Выберите --" or v_col == "-- Выберите --" or p_col == "-- Выберите --":
+        return st.warning("⚠️ Настройте маппинг колонок (включая Шкалу Времени для расчета Давности/Recency)!")
         
-    st.markdown(f"### 🎯 Сегментация по шкалам: Объект **{t_col}** | Стоимость/Ценность **{v_col}**")
-    try:
-        df = filtered_df.copy()
-        df[v_col] = pd.to_numeric(df[v_col], errors='coerce').fillna(0.0)
+    st.markdown(f"### 🎯 Сегментация: Объект **{t_col}** | Ценность **{v_col}** | Время **{p_col}**")
+    rfm, seg_counts, err = calculate_rfm(filtered_df, t_col, v_col, p_col)
+    if err:
+        st.warning(err)
+        if rfm is not None: st.dataframe(rfm, use_container_width=True)
+        return
         
-        rfm = df.groupby(str(t_col)).agg(F=(v_col, 'count'), M=(v_col, 'sum')).reset_index()
-        rfm.columns = ['Объект Анализа', 'F', 'M']
-        
-        if len(rfm) < 3:
-            st.warning("Недостаточно уникальных элементов для деления на перцентильные группы.")
-            st.dataframe(rfm, use_container_width=True)
-            return
-            
-        rfm['F_Score'] = pd.qcut(rfm['F'].rank(method='first'), 3, labels=['3', '2', '1']).astype(str)
-        rfm['M_Score'] = pd.qcut(rfm['M'].rank(method='first'), 3, labels=['3', '2', '1']).astype(str)
-        rfm['RFM'] = rfm['F_Score'] + rfm['M_Score']
-        seg_counts = rfm.groupby('RFM').size().reset_index(name='Количество элементов')
-        
-        st.plotly_chart(px.bar(seg_counts, x='RFM', y='Количество элементов', text_auto=True, color='RFM', color_continuous_scale="Purples"), use_container_width=True)
-        
-        if st.button("👥 Сгенерировать ИИ-отчет по сегментам", key="ai_report_rfm_btn"):
-            ai_generate_text_report(seg_counts, report_type=f"RFM ({t_col})", data_context=data_context, api_key=api_key)
-            
-        st.dataframe(rfm.sort_values(by='M', ascending=False), use_container_width=True)
-    except Exception as rfe:
-        st.error(f"Ошибка вычисления RFM: {rfe}")
-# 📊 ФУНКЦИЯ 5: МОДЕРНИЗИРОВАННЫЙ ГРАФИЧЕСКИЙ ДВИЖОК С СУПЕР-СТАБИЛЬНЫМ ПРОГНОЗОМ НА ЛИНЕЙНОЙ РЕГРЕССИИ (МНК)
+    st.plotly_chart(px.bar(seg_counts, x='RFM', y='Количество элементов', text_auto=True, color='RFM', color_continuous_scale="Purples"), use_container_width=True)
+    if st.button("👥 Сгенерировать ИИ-отчет по сегментам", key="ai_report_rfm_btn"):
+        ai_generate_text_report(seg_counts, report_type=f"RFM ({t_col})", data_context=data_context, api_key=api_key)
+    st.dataframe(rfm.sort_values(by='M', ascending=False), use_container_width=True)
 def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_round, f_size, f_color, f_pos, horiz, rot, top_limit, i, date_format_type="Исходный", custom_currency="", forecast_periods=0):
     try:
         df_c = active_df.copy()
@@ -248,6 +263,9 @@ def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_ro
                 except: pass
 
         fig = go.Figure()
+        # Стабильное определение типов осей координат во избежание наложений графиков друг на друга
+        ax_type = 'date' if is_date_axis else ('linear' if pd.api.types.is_numeric_dtype(df_g[x_ax]) else 'category')
+        
         if "Линейный" in style or (is_date_axis and "Столбчатая" not in style and "Кольцевая" not in style and "Водопад" not in style):
             if forecast_periods > 0 and idx_split > 0 and len(df_g) > idx_split + 1:
                 txt_full = get_formatted_text(df_g[y_ax].values)
@@ -269,13 +287,14 @@ def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_ro
             total_sum_val = df_g[y_ax].sum()
             fig.add_trace(go.Waterfall(x=list(df_g[x_ax].astype(str)) + ["ИТОГО"], y=list(df_g[y_ax]) + [total_sum_val], text=get_formatted_text(list(df_g[y_ax]) + [total_sum_val]) if lbl else None, textposition="auto", measure=["relative"] * len(df_g[y_ax]) + ["total"], increasing={"marker": {"color": color}}, textfont=dict(size=f_size, color=f_color)))
 
-        if horiz and "Столбчатая" in style: fig.update_layout(yaxis=dict(type='category'), xaxis=dict(showgrid=True))
-        else: fig.update_layout(xaxis=dict(type='category', tickangle=45), yaxis=dict(showgrid=True))
+        if horiz and "Столбчатая" in style: 
+            fig.update_layout(yaxis=dict(type='category'), xaxis=dict(showgrid=True))
+        else: 
+            fig.update_layout(xaxis=dict(type=ax_type, tickangle=45), yaxis=dict(showgrid=True))
         fig.update_layout(showlegend=True, margin=dict(l=40, r=40, t=40, b=40))
         st.plotly_chart(fig, use_container_width=True, key=f"p_{i}")
     except Exception as chart_err:
         st.error(f"Ошибка графика №{i+1}: {chart_err}")
-# 🛠️ МОДУЛЬ СБОРА ДАННЫХ С ИЗОЛИРОВАННЫМ ХРАНЕНИЕМ ИСХОДНЫХ ТАБЛИЦ
 def power_query_clean_engine(uploaded_files_list):
     file_registry = {}
     for f_item in uploaded_files_list:
@@ -286,7 +305,8 @@ def power_query_clean_engine(uploaded_files_list):
         except Exception as file_err:
             st.sidebar.error(f"Ошибка обработки файла {f_item.name}: {file_err}")
     return file_registry
-# 💬 ЭКСПЕРТНЫЙ ИИ ЧАТ-АССИСТЕНТ (АВТОНОМНЫЙ CODE INTERPRETER — ИГНОРИРУЕТ ПУСТЫЕ СРЕЗЫ СЕССИИ)
+
+# Защищенный интерактивный чат-ассистент с валидацией сгенерированного кода
 def render_ai_sidebar_chat(current_dataframe, api_key, context_mode_text):
     st.sidebar.markdown("---")
     st.sidebar.markdown("### 💬 Чат-ассистент к данным")
@@ -330,19 +350,16 @@ def render_ai_sidebar_chat(current_dataframe, api_key, context_mode_text):
             Ты — эксперт по анализу данных на Python и Pandas. Напиши ОДНУ строчку кода на Python, которая ответит на вопрос пользователя.
             Исходный датафрейм называется 'current_dataframe'.
             
-            ТЕКУЩАЯ СТРУКТУРА ТАБЛИЦЫ (Имена колонок и типы):
+            ТЕКУЩАЯ СТРУКТУРА ТАБЛИЦЫ:
             {json.dumps(columns_schema, ensure_ascii=False)}
             
-            ПРИМЕР РЕАЛЬНЫХ СТРОК ИЗ ЗАГРУЖЕННОГО ФАЙЛА:
+            ПРИМЕРЫ СТРОК:
             {json.dumps(sample_json, ensure_ascii=False)}
             
             СТРОГИЕ ПРАВИЛА:
-            1. Твой ответ должен содержать ИСКЛЮЧИТЕЛЬНО чистый код на Python. Никакого текста, никаких пояснений, никаких знаков ```python. Только одна рабочая строка кода.
-            2. Результат вычисления ОБЯЗАТЕЛЬНО присваивай переменной 'result_output'.
-            3. Обязательно очищай имена колонок от пробелов в коде. Например, если в структуре написано " Sales", пиши current_dataframe[" Sales"].
-            4. Примеры эталонного кода:
-               - result_output = current_dataframe.groupby('Product')['Profit'].sum().idxmax()
-               - result_output = current_dataframe.groupby('Product')['Sales'].sum().sort_values(ascending=False).head(5)
+            1. Только одна рабочая строка кода без оберток вроде ```python.
+            2. Результат обязательно присваивай переменной 'result_output'.
+            3. КАТЕГОРИЧЕСКИ ЗАПРЕЩЕН импорт библиотек os, sys, subprocess, shutil. Любые попытки деструктивных действий будут заблокированы.
             """
             
             with chat_container:
@@ -354,8 +371,15 @@ def render_ai_sidebar_chat(current_dataframe, api_key, context_mode_text):
                             config=types.GenerateContentConfig(system_instruction=sys_prompt, temperature=0.1)
                         )
                         raw_code = response.text.strip().replace("```python", "").replace("```", "")
+                        
+                        # Песочница безопасности: блокировка несанкционированных системных вызовов
+                        forbidden_keywords = ['import ', 'os.', 'sys.', 'eval', 'open', 'subprocess', 'shutil', 'write']
+                        if any(kw in raw_code for kw in forbidden_keywords):
+                            st.error("🔒 Запрос отклонен: обнаружен небезопасный код.")
+                            return
+                            
                         local_vars = {"current_dataframe": current_dataframe, "result_output": None}
-                        exec(raw_code, {}, local_vars)
+                        exec(raw_code, {"__builtins__": {}}, local_vars)
                         execution_result = local_vars.get("result_output")
                         
                         formatting_prompt = f"""
@@ -374,7 +398,8 @@ def render_ai_sidebar_chat(current_dataframe, api_key, context_mode_text):
             st.session_state.chat_history.append({"role": "assistant", "content": assistant_response})
         except Exception as chat_err:
             st.sidebar.error(f"Ошибка чата: {chat_err}")
-# 🛠️ УНИВЕРСАЛЬНАЯ ПАНЕЛЬ РУЧНОГО КРОСС-АНАЛИТИЧЕСКОГО МЭППИНГА ДЛЯ ЛЮБОГО КОЛИЧЕСТВА ФАЙЛОВ
+
+# ИСПРАВЛЕНО: Устранено падение из-за извлечения list вместо str при определении имен таблиц
 def render_cross_file_mapping_ui(file_registry):
     st.markdown("---")
     st.markdown("### 🔀 Панель ручного сопоставления разнородных структур и категорий")
@@ -385,16 +410,16 @@ def render_cross_file_mapping_ui(file_registry):
         return pd.DataFrame()
         
     if len(file_names) == 1:
-        single_name = file_names
+        single_name = file_names[0]
         base_df = file_registry[single_name]
         
-        st.info(f"💡 Загружен 1 файл: `{single_name}`. Вы можете сопоставить две разные категориальные колонки внутри этой таблицы.")
+        st.info(f"💡 Загружен 1 файл: `{single_name}`. Сопоставьте две категориальные колонки внутри этой таблицы.")
         c1, c2 = st.columns(2)
         with c1: f1_col = st.selectbox("Базовый столбец (Слой 1):", ["-- Выберите --"] + list(base_df.columns), key="cf_ui_1")
         with c2: f2_col = st.selectbox("Сравниваемый столбец (Слой 2):", ["-- Выберите --"] + list(base_df.columns), key="cf_ui_2")
         
         if f1_col == "-- Выберите --" or f2_col == "-- Выберите --":
-            st.warning("⚠️ Укажите оба столбца для сопоставления внутри файла.")
+            st.warning("⚠️ Укажите оба столбца для сопоставления.")
             return pd.DataFrame()
             
         unique_f1_vals = list(base_df[f1_col].dropna().astype(str).unique())
@@ -402,9 +427,9 @@ def render_cross_file_mapping_ui(file_registry):
         df1 = base_df.copy()
         df2 = base_df.copy()
     else:
-        st.info(f"💡 Загружено несколько файлов ({len(file_names)} шт.). Настройте кросс-связи между их структурами.")
-        f1_name = file_names
-        f2_name = file_names
+        st.info(f"💡 Загружено несколько файлов ({len(file_names)} шт.). Настройте кросс-связи.")
+        f1_name = file_names[0]
+        f2_name = file_names[1]
         df1, df2 = file_registry[f1_name], file_registry[f2_name]
         
         c1, c2 = st.columns(2)
@@ -448,7 +473,7 @@ def render_cross_file_mapping_ui(file_registry):
         clean_df2 = clean_df2.dropna(subset=['Унифицированная_Категория'])
         united_bi_warehouse = pd.concat([clean_df1, clean_df2], ignore_index=True, join='outer')
         st.session_state.main_df = united_bi_warehouse
-        st.success("✅ Универсальная витрина кросс-анализа успешно сформирована! Создано поле связи: 'Унифицированная_Категория'.")
+        st.success("✅ Сформировано поле связи: 'Унифицированная_Категория'.")
         st.rerun()
 st.sidebar.markdown("### 🤖 Настройки ИИ-Слой")
 gemini_api_key = st.sidebar.text_input("Введите Gemini API Key:", type="password")
@@ -466,7 +491,6 @@ if uploaded_files:
         with st.spinner("⏳ Чтение структуры файлов..."):
             st.session_state.raw_file_frames = power_query_clean_engine(uploaded_files)
             
-    # ИСПРАВЛЕНО: Для обычных режимов собираем файлы последовательно в одну таблицу БЕЗ перезатирания оперативной памяти
     if "Сравнительный" in ai_context_mode:
         if st.session_state.main_df.empty:
             render_cross_file_mapping_ui(st.session_state.raw_file_frames)
