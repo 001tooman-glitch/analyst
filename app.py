@@ -33,7 +33,6 @@ def add_card_cb(): st.session_state.manual_cards += 1
 def remove_card_cb(): 
     if st.session_state.manual_cards > 1: st.session_state.manual_cards -= 1
 def inject_custom_css():
-    # Полная изоляция стилей и шрифтов без утечки кода на экран
     st.markdown("""
         <link rel="preconnect" href="https://googleapis.com">
         <link rel="preconnect" href="https://gstatic.com" crossorigin>
@@ -175,7 +174,6 @@ def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_ro
         def get_formatted_text(value_array):
             labels = []
             for v in value_array:
-                # Фикс округления: Строгая конвертация через f-строку принудительно сохраняет заданные нули
                 if f_format == "Финансовый": 
                     labels.append(f"{v:,.{f_round}f}".replace(",", " ") + curr_suffix)
                 elif f_format == "Сжатый (млн/млрд)":
@@ -418,7 +416,7 @@ if st.session_state.files_processed and not main_df.empty:
                         cv = df_card[t_col_metric].sum() if "Сумма" in c_mode else df_card[t_col_metric].mean()
                         suffix = f" {str(c_curr_text).strip()}" if str(c_curr_text).strip() else ""
                         
-                        # Фикс округления: Форматирование через f-строку принудительно сохраняет нули
+                        # Фикс округления: Строгое удержание знаков после запятой с сохранением нулей во всех форматах
                         if c_fmt == "Финансовый": 
                             lbl = f"{cv:,.{c_rnd}f}".replace(",", " ") + suffix
                         elif c_fmt == "Сжатый (млн/млрд)":
@@ -457,7 +455,7 @@ if st.session_state.files_processed and not main_df.empty:
         b1, b2 = st.columns(2)
         with b1: st.button("➕ Добавить диаграмму", on_click=add_chart_cb)
         with b2: st.button("🗑️ Удалить диаграмму", on_click=remove_chart_cb)
-    elif page == "🗮️ 3. ABC/XYZ-аналитика элементов": internal_show_abc_xyz_page(main_df, gemini_api_key, ai_context_mode)
+    elif page == "🗮️ 3. ABC/XYZ-аналитика элементов": internal_show_abc_xyz_page(main_df, gemini_api_key, api_key_mode if 'api_key_mode' in locals() else ai_context_mode)
     elif page == "👥 4. RFM-сегментация": internal_show_rfm_page(main_df, gemini_api_key, ai_context_mode)
 else:
     st.sidebar.info("📊 Ожидание загрузки файлов для кросс-анализа...")
