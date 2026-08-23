@@ -50,7 +50,6 @@ def add_card_cb(): st.session_state.manual_cards += 1
 def remove_card_cb(): 
     if st.session_state.manual_cards > 1: st.session_state.manual_cards -= 1
 def inject_custom_css():
-    # Передача стилей через shadow-iframe родительского окна исключает появление сырого текста на экране
     components.html("""
         <script>
         const style = window.parent.document.createElement('style');
@@ -189,9 +188,6 @@ def render_custom_chart(active_df, x_ax, y_ax_list, style, base_color, lbl, f_fo
             df_c[y_col] = pd.to_numeric(df_c[y_col], errors='coerce').fillna(0)
             
         curr_suffix = f" {str(custom_currency).strip()}" if str(custom_currency).strip() else ""
-        scatter_pos = f_pos if f_pos in ["top center", "inside", "outside"] else "top center"
-        if scatter_pos == "inside": scatter_pos = "middle center"
-        elif scatter_pos == "outside": scatter_pos = "top center"
 
         def get_formatted_text(value_array):
             labels = []
@@ -217,32 +213,38 @@ def render_custom_chart(active_df, x_ax, y_ax_list, style, base_color, lbl, f_fo
             df_g[x_ax] = df_g['_month_period_'].dt.strftime(chosen_pattern).astype(str)
         else:
             sort_asc = is_year_col or pd.api.types.is_numeric_dtype(df_c[x_ax])
-            df_g = df_c.groupby(x_ax, as_index=False)[y_ax_list].sum().sort_values(by=x_ax if sort_asc else y_ax_list[0], ascending=sort_asc).head(top_limit).reset_index(drop=True)
+            df_g = df_c.groupby(x_ax, as_index=False)[y_ax_list].sum().sort_values(by=x_ax if sort_asc else y_ax_list, ascending=sort_asc).head(top_limit).reset_index(drop=True)
 
         fig = go.Figure()
         palette = [base_color, "#4f46e5", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6"]
 
         if "Линейный" in style or (is_date_axis and "Столбчатая" not in style and "Кольцевая" not in style and "Водопад" not in style):
             for idx, y_col in enumerate(y_ax_list):
-                fig.add_trace(go.Scatter(x=df_g[x_ax].astype(str), y=df_g[y_col], mode="lines+markers+text" if lbl else "lines+markers", name=y_col, line=dict(color=palette[idx % len(palette)], width=4), text=get_formatted_text(df_g[y_col].values) if lbl else None, textposition=scatter_pos, textfont=dict(size=f_size, color=f_color)))
+                # ИСПРАВЛЕНО: Автоматический разнос подписей по разным сторонам (верх/низ), чтобы они не сливались
+                current_pos = "top center" if (f_pos == "auto" and idx % 2 == 0) else ("bottom center" if f_pos == "auto" else f_pos)
+                fig.add_trace(go.Scatter(x=df_g[x_ax].astype(str), y=df_g[y_col], mode="lines+markers+text" if lbl else "lines+markers", name=y_col, line=dict(color=palette[idx % len(palette)], width=4), text=get_formatted_text(df_g[y_col].values) if lbl else None, textposition=current_pos, textfont=dict(size=f_size, color=f_color)))
             fig.update_layout(xaxis=dict(type='category', tickangle=45), yaxis=dict(showgrid=True))
         elif "Столбчатая" in style:
             sp = f_pos if f_pos in ["inside", "outside", "auto"] else "auto"
             for idx, y_col in enumerate(y_ax_list):
                 if horiz: fig.add_trace(go.Bar(y=df_g[x_ax].astype(str), x=df_g[y_col], text=get_formatted_text(df_g[y_col].values) if lbl else None, textposition=sp, orientation="h", name=y_col, marker_color=palette[idx % len(palette)], textfont=dict(size=f_size, color=f_color)))
                 else: fig.add_trace(go.Bar(x=df_g[x_ax].astype(str), y=df_g[y_col], text=get_formatted_text(df_g[y_col].values) if lbl else None, textposition=sp, orientation="v", name=y_col, marker_color=palette[idx % len(palette)], textfont=dict(size=f_size, color=f_color)))
-            # ИСПРАВЛЕНО: Параметр заменен на валидный barmode="group"
             if horiz: fig.update_layout(yaxis=dict(type='category'), xaxis=dict(showgrid=True), barmode="group")
             else: fig.update_layout(xaxis=dict(type='category', tickangle=45), yaxis=dict(showgrid=True), barmode="group")
         elif "Кольцевая" in style:
-            fig.add_trace(go.Pie(labels=df_g[x_ax], values=df_g[y_ax_list[0]], hole=0.4, rotation=rot, text=get_formatted_text(df_g[y_ax_list[0]].values), textinfo="text+percent" if lbl else "none", texttemplate="%{label}: %{text} (%{percent})" if lbl else "none", textposition="auto", textfont=dict(size=f_size, color=f_color)))
+            # Для кольцевых диаграмм берем первую доступную метрику из списка
+            target_y = y_ax_list[0] if y_ax_list else None
+            if target_y:
+                fig.add_trace(go.Pie(labels=df_g[x_ax], values=df_g[target_y], hole=0.4, rotation=rot, text=get_formatted_text(df_g[target_y].values), textinfo="text+percent" if lbl else "none", texttemplate="%{label}: %{text} (%{percent})" if lbl else "none", textposition="auto", textfont=dict(size=f_size, color=f_color)))
             fig.update_layout(xaxis=dict(type='category', tickangle=45), yaxis=dict(showgrid=True))
         elif "Водопад" in style:
-            ts = df_g[y_ax_list[0]].sum()
-            fig.add_trace(go.Waterfall(x=list(df_g[x_ax].astype(str)) + ["ИТОГО"], y=list(df_g[y_ax_list[0]]) + [ts], text=get_formatted_text(list(df_g[y_ax_list[0]]) + [ts]) if lbl else None, textposition="auto", measure=["relative"] * len(df_g[y_ax_list[0]]) + ["total"], increasing={"marker": {"color": base_color}}, textfont=dict(size=f_size, color=f_color)))
+            target_y = y_ax_list[0] if y_ax_list else None
+            if target_y:
+                ts = df_g[target_y].sum()
+                fig.add_trace(go.Waterfall(x=list(df_g[x_ax].astype(str)) + ["ИТОГО"], y=list(df_g[target_y]) + [ts], text=get_formatted_text(list(df_g[target_y]) + [ts]) if lbl else None, textposition="auto", measure=["relative"] * len(df_g[target_y]) + ["total"], increasing={"marker": {"color": base_color}}, textfont=dict(size=f_size, color=f_color)))
             fig.update_layout(xaxis=dict(type='category', tickangle=45), yaxis=dict(showgrid=True))
 
-        fig.update_layout(template="plotly_white", paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font=dict(family="Inter, sans-serif", size=12, color="#334155"), showlegend=True, margin=dict(l=40, r=40, t=40, b=40))
+        fig.update_layout(template="plotly_white", paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font=dict(family="Inter, sans-serif", size=12, color="#334155"), showlegend=True, margin=dict(l=40, r=40, t=50, b=50))
         st.plotly_chart(fig, use_container_width=True, key=f"p_fixed_{i}")
     except Exception as chart_err: st.error(f"Ошибка графического движка №{i+1}: {chart_err}")
 def power_query_clean_engine(uploaded_files_list):
@@ -285,7 +287,7 @@ def render_ai_sidebar_chat(current_dataframe, api_key, context_mode_text):
                 local_vars = {"current_dataframe": current_dataframe, "result_output": None}
                 exec(raw_code, {"__builtins__": {}}, local_vars)
                 res = local_vars.get("result_output")
-                fmt_prompt = f"Ты — BI-аналитик. Переведи результат {str(res)} на понятный язык. Context: {context_mode_text}. Вопрос: '{user_prompt}'"
+                fmt_prompt = f"Ты — BI-аналитик. Переведи результат {str(res)} на понятный язык. Контекст: {context_mode_text}. Вопрос: '{user_prompt}'"
                 final_res = client.models.generate_content(model='gemini-3.5-flash', contents=f"Результат:\n{str(res)}", config=types.GenerateContentConfig(system_instruction=fmt_prompt, temperature=0.2))
                 assistant_response = final_res.text
                 st.write(assistant_response)
@@ -297,7 +299,7 @@ def render_cross_file_mapping_ui(file_registry):
     file_names = list(file_registry.keys())
     if not file_names: return st.info("ℹ️ Для настройки кросс-анализа загрузите файлы.")
     if len(file_names) == 1:
-        single_name = file_names[0]
+        single_name = file_names
         base_df = file_registry[single_name]
         st.info(f"💡 Загружен 1 файл: `{single_name}`. Сопоставьте два столбца категорий.")
         c1, c2 = st.columns(2)
@@ -309,7 +311,7 @@ def render_cross_file_mapping_ui(file_registry):
         df1, df2 = base_df.copy(), base_df.copy()
     else:
         st.info(f"💡 Загружено несколько файлов ({len(file_names)} шт.). Настройте кросс-связи.")
-        f1_name, f2_name = file_names[0], file_names[1]
+        f1_name, f2_name = file_names, file_names
         df1, df2 = file_registry[f1_name], file_registry[f2_name]
         c1, c2 = st.columns(2)
         with c1: f1_col = st.selectbox(f"Категория в Слое 1 ({f1_name}):", ["-- Выберите --"] + list(df1.columns), key="cf_ui_1")
@@ -386,19 +388,54 @@ if st.session_state.files_processed and not main_df.empty:
     elif 'page' in locals() and page == "📊 2. Executive Диаграммы":
         st.title("📊 Интерактивная BI-Панель Показателей")
         
-        st.markdown("### 📅 Глобальный фильтр временных срезов")
-        time_col_exists = st.session_state.mapped_time_col in main_df.columns
-        if time_col_exists:
-            unique_periods = ["⏳ Все периоды (Суммарно)"] + list(main_df[st.session_state.mapped_time_col].dropna().astype(str).unique())
-            chosen_period = st.selectbox("Выберите интересующий год/месяц/период:", unique_periods, key="global_bi_time_filter_select")
-            if chosen_period != "⏳ Все периоды (Суммарно)":
-                active_filtered_df = main_df[main_df[st.session_state.mapped_time_col].astype(str) == str(chosen_period)]
+        # Создаем две колонки для размещения временного и позиционного фильтров в один ряд
+        filter_c1, filter_c2 = st.columns(2)
+        active_filtered_df = main_df.copy()
+        
+        with filter_c1:
+            st.markdown("##### 📅 Временной диапазон (ОТ и ДО)")
+            time_col_exists = st.session_state.mapped_time_col in main_df.columns
+            if time_col_exists:
+                main_df['_datetime_filter_internal_'] = pd.to_datetime(main_df[st.session_state.mapped_time_col], errors='coerce')
+                min_date = main_df['_datetime_filter_internal_'].min()
+                max_date = main_df['_datetime_filter_internal_'].max()
+                
+                if not pd.isna(min_date) and not pd.isna(max_date):
+                    chosen_dates = st.date_input(
+                        "Интервал для Кольцевой диаграммы и Водопада:",
+                        value=(min_date.date(), max_date.date()),
+                        min_value=min_date.date(),
+                        max_value=max_date.date(),
+                        key="global_bi_date_range_picker"
+                    )
+                    if isinstance(chosen_dates, tuple) and len(chosen_dates) == 2:
+                        start_date, end_date = chosen_dates
+                        active_filtered_df = active_filtered_df[
+                            (active_filtered_df['_datetime_filter_internal_'].dt.date >= start_date) & 
+                            (active_filtered_df['_datetime_filter_internal_'].dt.date <= end_date)
+                        ]
             else:
-                active_filtered_df = main_df.copy()
-        else:
-            st.info("ℹ destruction Шкала времени не настроена в сайдбаре. Графики рассчитывают суммарные значения за всё время.")
-            active_filtered_df = main_df.copy()
+                st.info("ℹ️ Шкала времени не настроена.")
 
+        with filter_c2:
+            st.markdown("##### 🔍 Фильтр по аналитическим позициям")
+            text_columns = [col for col in main_df.columns if not pd.api.types.is_numeric_dtype(main_df[col]) and not col.startswith('_')]
+            
+            if text_columns:
+                chosen_filter_col = st.selectbox("1. Выберите разрез (Продукт, Сегмент, Страна...):", ["-- Без фильтра позиций --"] + text_columns, key="global_position_filter_col_select")
+                
+                if chosen_filter_col != "-- Без фильтра позиций --":
+                    unique_positions = sorted(list(main_df[chosen_filter_col].dropna().astype(str).unique()))
+                    chosen_position_val = st.selectbox(f"2. Выберите конкретный элемент из '{chosen_filter_col}':", unique_positions, key="global_position_filter_val_select")
+                    active_filtered_df = active_filtered_df[active_filtered_df[chosen_filter_col].astype(str) == str(chosen_position_val)]
+            else:
+                st.info("ℹ️ В файле не найдены текстовые колонки для фильтрации.")
+
+        # ДОБАВЛЕНО: Интуитивная кнопка быстрого сброса всех наложенных фильтров
+        if st.button("🧹 Сбросить все глобальные фильтры (Показать исходные данные)"):
+            st.rerun()
+
+        st.markdown("---")
         card_cols = st.columns(st.session_state.manual_cards)
         for j in range(st.session_state.manual_cards):
             with card_cols[j % len(card_cols)]:
@@ -456,7 +493,7 @@ if st.session_state.files_processed and not main_df.empty:
                 if "Bar" in preset["style"] or "Line" in preset["style"]:
                     preset["y_ax_list"] = st.multiselect(f"Оси Y (Метрики сравнения) №{i+1}:", [c for c in raw_headers if c != preset["x_ax"]], default=[val for val in preset["y_ax_list"] if val in raw_headers], key=f"y_ax_p_{i}")
                 else:
-                    single_y = st.selectbox(f"Ось Y (Объем) №{i+1}:", all_cols_list, index=all_cols_list.index(preset["y_ax_list"][0]) if preset["y_ax_list"] and preset["y_ax_list"][0] in all_cols_list else 0, key=f"y_ax_single_{i}")
+                    single_y = st.selectbox(f"Ось Y (Объем) №{i+1}:", all_cols_list, index=all_cols_list.index(preset["y_ax_list"]) if preset["y_ax_list"] and preset["y_ax_list"] in all_cols_list else 0, key=f"y_ax_single_{i}")
                     preset["y_ax_list"] = [single_y] if single_y != "-- Выберите заголовок --" else []
             with c4: preset["color"] = st.color_picker(f"Базовый цвет №{i+1}:", preset["color"], key=f"color_p_{i}")
             
