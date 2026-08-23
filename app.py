@@ -24,7 +24,6 @@ if "mapped_time_col" not in st.session_state: st.session_state.mapped_time_col =
 
 if "category_mapping_dict" not in st.session_state: st.session_state.category_mapping_dict = {}
 if "raw_file_frames" not in st.session_state: st.session_state.raw_file_frames = {}
-if "dark_mode" not in st.session_state: st.session_state.dark_mode = False
 if "files_processed" not in st.session_state: st.session_state.files_processed = False
 
 def add_chart_cb(): st.session_state.manual_charts += 1
@@ -39,11 +38,16 @@ def inject_custom_css():
         <link rel="preconnect" href="https://gstatic.com" crossorigin>
         <link href="https://googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
         <style>
+        /* Глобальный светлый стиль для всей платформы */
         html, body, [data-testid="stAppViewContainer"], .stMarkdown, p, label {
             font-family: 'Inter', sans-serif !important;
             -webkit-font-smoothing: antialiased;
         }
-        /* 1. ФИКСАЦИЯ ЛЕВОЙ ЧАСТИ (САЙДБАРА) В СВЕТЛОЙ ПАЛИТРЕ ПОД ЛЮБОЙ ТЕМЕ */
+        [data-testid="stMainSpaceBlockContainer"] { background-color: #f8fafc !important; }
+        .stApp { background-color: #f8fafc !important; color: #0f172a !important; }
+        h1, h2, h3, h4, h5, h6, [data-testid="stMainSpaceBlockContainer"] p, [data-testid="stMainSpaceBlockContainer"] label, [data-testid="stMainSpaceBlockContainer"] .stMarkdown { color: #0f172a !important; }
+        
+        /* Оригинальный светлый сайдбар */
         [data-testid="stSidebar"] { 
             background-color: #ffffff !important; 
             border-right: 1px solid #e2e8f0 !important; 
@@ -56,47 +60,20 @@ def inject_custom_css():
             border: 1px solid #cbd5e1 !important;
             color: #0f172a !important;
         }
+        
+        /* Анимированные кнопки */
+        .stButton>button {
+            background: linear-gradient(135deg, #4f46e5 0%, #4338ca 100%) !important; color: #ffffff !important;
+            border-radius: 10px !important; border: none !important; padding: 10px 20px !important;
+            font-weight: 500 !important; transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+            box-shadow: 0 4px 12px rgba(79, 70, 229, 0.12) !important;
+        }
+        .stButton>button:hover { transform: translateY(-2px) !important; box-shadow: 0 8px 24px rgba(79, 70, 229, 0.25) !important; }
+        [data-testid="stMainSpaceBlockContainer"] div[data-baseweb="select"], [data-testid="stMainSpaceBlockContainer"] div[data-baseweb="input"] { border-radius: 10px !important; background-color: #ffffff !important; border: 1px solid #cbd5e1 !important; }
+        .streamlit-expanderHeader { background-color: #ffffff !important; border: 1px solid #e2e8f0 !important; border-radius: 10px !important; color: #0f172a !important; }
+        div[data-testid="stExpander"] { background-color: #ffffff !important; border-radius: 10px !important; }
         </style>
     """, unsafe_allow_html=True)
-
-    if st.session_state.dark_mode:
-        # ТЕМНАЯ ТЕМА (Только для центральной рабочей области приложения)
-        st.markdown("""
-            <style>
-            [data-testid="stMainSpaceBlockContainer"] { background-color: #0b0f19 !important; }
-            .stApp { background-color: #0b0f19 !important; color: #f1f5f9 !important; }
-            h1, h2, h3, h4, h5, h6, [data-testid="stMainSpaceBlockContainer"] p, [data-testid="stMainSpaceBlockContainer"] label, [data-testid="stMainSpaceBlockContainer"] .stMarkdown { color: #f1f5f9 !important; }
-            .stButton>button {
-                background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%) !important; color: #ffffff !important;
-                border-radius: 10px !important; border: 1px solid rgba(255,255,255,0.1) !important; padding: 10px 20px !important;
-                font-weight: 500 !important; transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
-                box-shadow: 0 4px 12px rgba(99, 102, 241, 0.15) !important;
-            }
-            .stButton>button:hover { transform: translateY(-2px) !important; box-shadow: 0 6px 20px rgba(99, 102, 241, 0.35) !important; }
-            [data-testid="stMainSpaceBlockContainer"] div[data-baseweb="select"], [data-testid="stMainSpaceBlockContainer"] div[data-baseweb="input"], [data-testid="stMainSpaceBlockContainer"] .stSlider { border-radius: 10px !important; background-color: #1f2937 !important; border: 1px solid #374151 !important; color: #f1f5f9 !important; }
-            .streamlit-expanderHeader { background-color: #111827 !important; border: 1px solid #1f2937 !important; border-radius: 10px !important; color: #f1f5f9 !important; }
-            div[data-testid="stExpander"] { background-color: #111827 !important; border-radius: 10px !important; }
-            </style>
-        """, unsafe_allow_html=True)
-    else:
-        # СВЕТЛАЯ ПРЕМИУМ ТЕМА (Для центральной рабочей области)
-        st.markdown("""
-            <style>
-            [data-testid="stMainSpaceBlockContainer"] { background-color: #f8fafc !important; }
-            .stApp { background-color: #f8fafc !important; color: #0f172a !important; }
-            h1, h2, h3, h4, h5, h6, [data-testid="stMainSpaceBlockContainer"] p, [data-testid="stMainSpaceBlockContainer"] label, [data-testid="stMainSpaceBlockContainer"] .stMarkdown { color: #0f172a !important; }
-            .stButton>button {
-                background: linear-gradient(135deg, #4f46e5 0%, #4338ca 100%) !important; color: #ffffff !important;
-                border-radius: 10px !important; border: none !important; padding: 10px 20px !important;
-                font-weight: 500 !important; transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
-                box-shadow: 0 4px 12px rgba(79, 70, 229, 0.12) !important;
-            }
-            .stButton>button:hover { transform: translateY(-2px) !important; box-shadow: 0 8px 24px rgba(79, 70, 229, 0.25) !important; }
-            [data-testid="stMainSpaceBlockContainer"] div[data-baseweb="select"], [data-testid="stMainSpaceBlockContainer"] div[data-baseweb="input"] { border-radius: 10px !important; background-color: #ffffff !important; border: 1px solid #cbd5e1 !important; }
-            .streamlit-expanderHeader { background-color: #ffffff !important; border: 1px solid #e2e8f0 !important; border-radius: 10px !important; color: #0f172a !important; }
-            div[data-testid="stExpander"] { background-color: #ffffff !important; border-radius: 10px !important; }
-            </style>
-        """, unsafe_allow_html=True)
 
 inject_custom_css()
 def ai_generate_text_report(pivot_matrix_df, report_type="ABC/XYZ", data_context="Расход", api_key=None):
@@ -200,11 +177,16 @@ def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_ro
         def get_formatted_text(value_array):
             labels = []
             for v in value_array:
-                if f_format == "Финансовый": labels.append(f"{round(v, f_round):,}".replace(",", " ") + curr_suffix)
+                # ИСПРАВЛЕНО: Теперь параметр f_round динамически управляет выводом во всех блоках условий
+                if f_format == "Финансовый": 
+                    labels.append(f"{round(v, f_round):,}".replace(",", " ") + curr_suffix)
                 elif f_format == "Сжатый (млн/млрд)":
-                    if abs(v) >= 1_000_000_000: labels.append(f"{v / 1_000_000_000:,.2f} млрд{custom_currency}")
-                    else: labels.append(f"{v / 1_000_000:,.2f} млн{custom_currency}")
-                else: labels.append(f"{round(v, f_round):,}".replace(",", " "))
+                    if abs(v) >= 1_000_000_000: 
+                        labels.append(f"{round(v / 1_000_000_000, f_round):,}".replace(",", " ") + f" млрд{custom_currency}")
+                    else: 
+                        labels.append(f"{round(v / 1_000_000, f_round):,}".replace(",", " ") + f" млн{custom_currency}")
+                else: 
+                    labels.append(f"{round(v, f_round):,}".replace(",", " "))
             return labels
 
         is_year_col = "год" in str(x_ax).lower() or "year" in str(x_ax).lower()
@@ -268,9 +250,7 @@ def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_ro
             if horiz: fig.add_trace(go.Bar(y=df_g[x_ax].astype(str), x=df_g[y_ax].values, text=get_formatted_text(df_g[y_ax].values) if lbl else None, textposition=sp, orientation="h", marker_color=color, textfont=dict(size=f_size, color=f_color)))
             else: fig.add_trace(go.Bar(x=df_g[x_ax].astype(str), y=df_g[y_ax].values, text=get_formatted_text(df_g[y_ax].values) if lbl else None, textposition=sp, orientation="v", marker_color=color, textfont=dict(size=f_size, color=f_color)))
         elif "Кольцевая" in style:
-            # ИСПРАВЛЕНО: Добавлено принудительное вынесение подписей наружу ("outside") если текст сливается с долями в темной теме
-            ins_or_out = "outside" if st.session_state.dark_mode else "auto"
-            fig.add_trace(go.Pie(labels=df_g[x_ax], values=df_g[y_ax], hole=0.4, rotation=rot, text=get_formatted_text(df_g[y_ax].values), textinfo="text+percent" if lbl else "none", texttemplate="%{label}: %{text} (%{percent})" if lbl else "none", textposition=ins_or_out, textfont=dict(size=f_size, color=f_color)))
+            fig.add_trace(go.Pie(labels=df_g[x_ax], values=df_g[y_ax], hole=0.4, rotation=rot, text=get_formatted_text(df_g[y_ax].values), textinfo="text+percent" if lbl else "none", texttemplate="%{label}: %{text} (%{percent})" if lbl else "none", textposition="auto", textfont=dict(size=f_size, color=f_color)))
         elif "Водопад" in style:
             ts = df_g[y_ax].sum()
             fig.add_trace(go.Waterfall(x=list(df_g[x_ax].astype(str)) + ["ИТОГО"], y=list(df_g[y_ax]) + [ts], text=get_formatted_text(list(df_g[y_ax]) + [ts]) if lbl else None, textposition="auto", measure=["relative"] * len(df_g[y_ax]) + ["total"], increasing={"marker": {"color": color}}, textfont=dict(size=f_size, color=f_color)))
@@ -278,14 +258,10 @@ def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_ro
         if horiz and "Столбчатая" in style: fig.update_layout(yaxis=dict(type='category'), xaxis=dict(showgrid=True))
         else: fig.update_layout(xaxis=dict(type='category', tickangle=45), yaxis=dict(showgrid=True))
         
-        plotly_tmpl = "plotly_dark" if st.session_state.dark_mode else "plotly_white"
-        lbl_clr = "#f8fafc" if st.session_state.dark_mode else "#334155"
-        
-        # ИСПРАВЛЕНО: Явно задан цвет текста легенды legend(font=...) во избежание невидимых букв на темном фоне
+        # Фиксация оригинальной светлой палитры холста
         fig.update_layout(
-            template=plotly_tmpl, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", 
-            font=dict(family="Inter, sans-serif", size=12, color=lbl_clr),
-            legend=dict(font=dict(color=lbl_clr)),
+            template="plotly_white", paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", 
+            font=dict(family="Inter, sans-serif", size=12, color="#334155"),
             showlegend=True, margin=dict(l=40, r=40, t=40, b=40)
         )
         st.plotly_chart(fig, use_container_width=True, key=f"p_{i}")
@@ -382,15 +358,9 @@ def render_cross_file_mapping_ui(file_registry):
         st.session_state.files_processed = True
         st.success("✅ Сформировано поле связи: 'Унифицированная_Категория'.")
         st.rerun()
-st.sidebar.markdown("### 🎨 Оформление интерфейса")
-dark_toggle = st.sidebar.toggle("Включить Темную Тему", value=st.session_state.dark_mode, key="dark_mode_toggle_switch")
-if dark_toggle != st.session_state.dark_mode:
-    st.session_state.dark_mode = dark_toggle
-    st.rerun()
-
 st.sidebar.markdown("### 🤖 Настройки ИИ-Слой")
 gemini_api_key = st.sidebar.text_input("Введите Gemini API Key:", type="password")
-ai_context_mode = st.sidebar.selectbox("Контекст для AI:", ["📊 Сравнительный кросс-анализ структур и категорий", "📊 Продажи / Сбыт / Ритейл", "📅 Закупки / Материальное обеспечение", "📦 Запасы / Складские остатки"])
+ai_context_mode = st.sidebar.selectbox("Контекст для AI:", ["📊 Продажи / Сбыт / Ритейл", "📊 Сравнительный кросс-анализ структур и категорий", "📅 Закупки / Материальное обеспечение", "📦 Запасы / Складские остатки"])
 
 if not st.session_state.files_processed:
     uploaded_files = st.file_uploader("Загрузите файлы Excel/CSV:", type=["csv", "xlsx"], accept_multiple_files=True)
@@ -416,7 +386,6 @@ if st.session_state.files_processed and not main_df.empty:
     st.sidebar.markdown("### 🎛️ Ручной маппинг аналитических шкал")
     raw_headers = list(main_df.columns)
     
-    # ИСПРАВЛЕНО: Селекторы теперь жестко завязаны на ключи `key`, что полностью блокирует сброс при st.rerun()
     st.session_state.mapped_target_col = st.sidebar.selectbox("🔑 КЛЮЧ АНАЛИЗА:", ["-- Выберите --"] + raw_headers, key="persistent_target_select_widget")
     st.session_state.mapped_value_col = st.sidebar.selectbox("💰 КРИТЕРИЙ ОБЪЕМА:", ["-- Выберите --"] + raw_headers, key="persistent_value_select_widget")
     st.session_state.mapped_time_col = st.sidebar.selectbox("📅 ШКАЛА ВРЕМЕНИ:", ["-- Выберите --"] + raw_headers, key="persistent_time_select_widget")
@@ -449,17 +418,21 @@ if st.session_state.files_processed and not main_df.empty:
                         df_card = main_df.copy()
                         if group_col != "-- Без фильтра --" and filter_value is not None: df_card = df_card[df_card[group_col].astype(str) == str(filter_value)]
                         df_card[t_col_metric] = pd.to_numeric(df_card[t_col_metric], errors='coerce').fillna(0)
-                        cv = df_card[t_col_metric].sum() if "Сумма" in c_mode else df_card[t_col_metric].mean()
+                        cv = df_card[t_col_metric].sum() if "Сумma" in c_mode or "Сумма" in c_mode else df_card[t_col_metric].mean()
                         suffix = f" {str(c_curr_text).strip()}" if str(c_curr_text).strip() else ""
-                        if c_fmt == "Финансовый": lbl = f"{round(cv, c_rnd):,}".replace(",", " ") + suffix
+                        
+                        # ИСПРАВЛЕНО: Теперь c_rnd жестко управляет округлением и в режиме "Сжатый"
+                        if c_fmt == "Финансовый": 
+                            lbl = f"{round(cv, c_rnd):,}".replace(",", " ") + suffix
                         elif c_fmt == "Сжатый (млн/млрд)":
-                            if abs(cv) >= 1_000_000_000: lbl = f"{cv / 1_000_000_000:,.2f} млрд{suffix}"
-                            else: lbl = f"{cv / 1_000_000:,.2f} млн{suffix}"
-                        else: lbl = f"{round(cv, c_rnd):,}".replace(",", " ")
-                        card_bg = "#1e293b" if st.session_state.dark_mode else "#ffffff"
-                        text_main = "#f8fafc" if st.session_state.dark_mode else "#0f172a"
-                        text_sub = "#94a3b8" if st.session_state.dark_mode else "#64748b"
-                        st.markdown(f'<div style="background: {card_bg}; padding: 24px 20px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0, 0, 0, 0.04); border-left: 5px solid #4f46e5; text-align: left; margin-bottom: 15px;"><div style="color: {text_sub}; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px;">{t_col_metric}</div><div style="color: {text_main}; font-size: 28px; font-weight: 700; letter-spacing: -0.5px;">{lbl}</div></div>', unsafe_allow_html=True)
+                            if abs(cv) >= 1_000_000_000: 
+                                lbl = f"{round(cv / 1_000_000_000, c_rnd):,}".replace(",", " ") + f" млрд{suffix}"
+                            else: 
+                                lbl = f"{round(cv / 1_000_000, c_rnd):,}".replace(",", " ") + f" млн{suffix}"
+                        else: 
+                            lbl = f"{round(cv, c_rnd):,}".replace(",", " ")
+                            
+                        st.markdown(f'<div style="background: #ffffff; padding: 24px 20px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0, 0, 0, 0.04); border-left: 5px solid #4f46e5; text-align: left; margin-bottom: 15px;"><div style="color: #64748b; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px;">{t_col_metric}</div><div style="color: #0f172a; font-size: 28px; font-weight: 700; letter-spacing: -0.5px;">{lbl}</div></div>', unsafe_allow_html=True)
                     except: pass
         bc1, bc2 = st.columns(2)
         with bc1: st.button("➕ Добавить карточку", on_click=add_card_cb)
