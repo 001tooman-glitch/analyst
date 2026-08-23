@@ -242,11 +242,11 @@ def render_custom_chart(active_df, x_ax, y_ax_list, style, base_color, lbl, f_fo
             if horiz: fig.update_layout(yaxis=dict(type='category'), xaxis=dict(showgrid=True), barmode="group")
             else: fig.update_layout(xaxis=dict(type='category', tickangle=45), yaxis=dict(showgrid=True), barmode="group")
         elif "Кольцевая" in style:
-            target_y = y_ax_list[0] if y_ax_list else None
+            target_y = y_ax_list if y_ax_list else None
             if target_y: fig.add_trace(go.Pie(labels=df_g[x_ax], values=df_g[target_y], hole=0.4, rotation=rot, text=get_formatted_text(df_g[target_y].values), textinfo="text+percent" if lbl else "none", texttemplate="%{label}: %{text} (%{percent})" if lbl else "none", textposition="auto", textfont=dict(size=f_size, color=f_color)))
             fig.update_layout(xaxis=dict(type='category', tickangle=45), yaxis=dict(showgrid=True))
         elif "Водопад" in style:
-            target_y = y_ax_list[0] if y_ax_list else None
+            target_y = y_ax_list if y_ax_list else None
             if target_y:
                 ts = df_g[target_y].sum()
                 fig.add_trace(go.Waterfall(x=list(df_g[x_ax].astype(str)) + ["ИТОГО"], y=list(df_g[target_y]) + [ts], text=get_formatted_text(list(df_g[target_y]) + [ts]) if lbl else None, textposition="auto", measure=["relative"] * len(df_g[target_y]) + ["total"], increasing={"marker": {"color": base_color}}, textfont=dict(size=f_size, color=f_color)))
@@ -314,10 +314,10 @@ def render_cross_file_mapping_ui(file_registry):
         df1, df2 = base_df.copy(), base_df.copy()
     else:
         st.info(f"💡 Загружено несколько файлов ({len(file_names)} шт.). Настройте кросс-связи.")
-        df1, df2 = file_registry[file_names[0]], file_registry[file_names[1]]
+        df1, df2 = file_registry[file_names], file_registry[file_names]
         c1, c2 = st.columns(2)
-        with c1: f1_col = st.selectbox(f"Категория в Слое 1 ({file_names[0]}):", ["-- Выберите --"] + list(df1.columns), key="cf_ui_1")
-        with c2: f2_col = st.selectbox(f"Категория в Слое 2 ({file_names[1]}):", ["-- Выберите --"] + list(df2.columns), key="cf_ui_2")
+        with c1: f1_col = st.selectbox(f"Категория в Слое 1 ({file_names}):", ["-- Выберите --"] + list(df1.columns), key="cf_ui_1")
+        with c2: f2_col = st.selectbox(f"Категория в Слое 2 ({file_names}):", ["-- Выберите --"] + list(df2.columns), key="cf_ui_2")
         if f1_col == "-- Выберите --" or f2_col == "-- Выберите --": return st.warning("⚠️ Укажите столбцы связи.")
         unique_f1_vals = list(df1[f1_col].dropna().astype(str).unique())
         unique_f2_vals = ["-- Не сопоставлено / Игнорировать --"] + list(df2[f2_col].dropna().astype(str).unique())
@@ -373,9 +373,11 @@ if st.session_state.files_processed and not main_df.empty:
         
     st.sidebar.markdown("### 🎛️ Ручной маппинг аналитических шкал")
     raw_headers = list(main_df.columns)
-    st.session_state.mapped_target_col = st.sidebar.selectbox("🔑 КЛЮЧ АНАЛИЗА:", ["-- Выберите --"] + raw_headers, key="persistent_target_select_widget")
-    st.sidebar.selectbox("💰 КРИТЕРИЙ ОБЪЕМА:", ["-- Выберите --"] + raw_headers, key="persistent_value_select_widget")
-    st.session_state.mapped_time_col = st.sidebar.selectbox("📅 ШКАЛА ВРЕМЕНИ:", ["-- Выберите --"] + raw_headers, key="persistent_time_select_widget")
+    
+    # ИСПРАВЛЕНО: Все три виджета привязаны к сессии, предотвращая сброс в ABC и RFM
+    st.session_state.mapped_target_col = st.sidebar.selectbox("🔑 КЛЮЧ АНАЛИЗА:", ["-- Выберите --"] + raw_headers, index=(["-- Выберите --"] + raw_headers).index(st.session_state.mapped_target_col) if st.session_state.mapped_target_col in (["-- Выберите --"] + raw_headers) else 0, key="persistent_target_select_widget")
+    st.session_state.mapped_value_col = st.sidebar.selectbox("💰 КРИТЕРИЙ ОБЪЕМА:", ["-- Выберите --"] + raw_headers, index=(["-- Выберите --"] + raw_headers).index(st.session_state.mapped_value_col) if st.session_state.mapped_value_col in (["-- Выберите --"] + raw_headers) else 0, key="persistent_value_select_widget")
+    st.session_state.mapped_time_col = st.sidebar.selectbox("📅 ШКАЛА ВРЕМЕНИ:", ["-- Выберите --"] + raw_headers, index=(["-- Выберите --"] + raw_headers).index(st.session_state.mapped_time_col) if st.session_state.mapped_time_col in (["-- Выберите --"] + raw_headers) else 0, key="persistent_time_select_widget")
     
     if st.session_state.mapped_value_col != "-- Выберите --":
         main_df[st.session_state.mapped_value_col] = pd.to_numeric(main_df[st.session_state.mapped_value_col].astype(str).str.replace(r'\s+', '', regex=True).str.replace(',', '.'), errors='coerce').fillna(0.0)
@@ -387,7 +389,6 @@ if st.session_state.files_processed and not main_df.empty:
         cp = st.number_input(f"Страница:", min_value=1, value=1, step=1)
         st.dataframe(main_df.iloc[(cp - 1) * 50: cp * 50], height=350, use_container_width=True)
     elif 'page' in locals() and page == "📊 2. Executive Диаграммы":
-        # ИСПРАВЛЕНО: Разбиение холста на Левый холст (Данные, 70%) и Новый Правый блок (Конструктор, 30%)
         canvas_col, control_col = st.columns([0.7, 0.3])
         active_filtered_df = main_df.copy()
         
@@ -419,7 +420,6 @@ if st.session_state.files_processed and not main_df.empty:
             if st.button("🧹 Сбросить фильтры"): st.rerun()
             st.markdown("---")
             
-            # ИСПРАВЛЕНО: Правый конструктор карточек показателей через выпадающий список
             st.subheader("📌 Настройка BI-Карточек")
             cc_add, cc_rem = st.columns(2)
             with cc_add: st.button("➕ Добавить", on_click=add_card_preset_cb, key="add_card_btn_right")
@@ -461,7 +461,7 @@ if st.session_state.files_processed and not main_df.empty:
             if "Bar" in preset["style"] or "Line" in preset["style"]:
                 preset["y_ax_list"] = st.multiselect("Оси Y (Метрики сравнения):", [c for c in raw_headers if c != preset["x_ax"]], default=[val for val in preset["y_ax_list"] if val in raw_headers], key=f"y_r_{selected_chart_idx}")
             else:
-                single_y = st.selectbox("Ось Y (Объем):", all_cols_list, index=all_cols_list.index(preset["y_ax_list"][0]) if preset["y_ax_list"] and preset["y_ax_list"][0] in all_cols_list else 0, key=f"y_single_r_{selected_chart_idx}")
+                single_y = st.selectbox("Ось Y (Объем):", all_cols_list, index=all_cols_list.index(preset["y_ax_list"]) if preset["y_ax_list"] and preset["y_ax_list"] in all_cols_list else 0, key=f"y_single_r_{selected_chart_idx}")
                 preset["y_ax_list"] = [single_y] if single_y != "-- Выберите заголовок --" else []
             preset["color"] = st.color_picker("Базовый цвет:", preset["color"], key=f"col_r_{selected_chart_idx}")
             
@@ -478,13 +478,11 @@ if st.session_state.files_processed and not main_df.empty:
                 preset["top_limit"] = st.slider("ТОП элементов:", 5, 200, preset["top_limit"], key=f"top_r_{selected_chart_idx}")
                 preset["d_fmt"] = st.selectbox("Шаблон даты:", ["Исходный", "ММ.ГГГГ (01.2014)", "Месяц ГГГГ (Янв 2014)", "ДД.ММ.ГГГГ (15.01.2014)", "ГГГГ (2014)"], index=["Исходный", "ММ.ГГГГ (01.2014)", "Месяц ГГГГ (Янв 2014)", "ДД.ММ.ГГГГ (15.01.2014)", "ГГГГ (2014)"].index(preset["d_fmt"]), key=f"dfmt_r_{selected_chart_idx}")
                 preset["f_cast"] = st.slider("Прогноз периодов:", 0, 5, preset["f_cast"], key=f"f_cst_r_{selected_chart_idx}")
-            st.markdown('</div>', unsafe_allow_html=True)
+            st.sidebar.markdown('</div>', unsafe_allow_html=True)
 
         # ------------------ ЦЕНТРАЛЬНЫЙ БЛОК ОТОБРАЖЕНИЯ (ЧИСТЫЙ ХОЛСТ) ------------------
         with canvas_col:
             st.title("📊 Сводный BI-Дашборд")
-            
-            # Рендеринг карточек показателей по заданной сетке
             card_grid = st.columns(len(st.session_state.cards_presets))
             for idx, cp in enumerate(st.session_state.cards_presets):
                 if cp["t_col_metric"] != "-- Выберите заголовок --":
@@ -512,7 +510,6 @@ if st.session_state.files_processed and not main_df.empty:
                         except: pass
             st.markdown("---")
             
-            # Рендеринг No-Code диаграмм
             for i, preset in enumerate(st.session_state.charts_presets):
                 if preset["x_ax"] != "-- Выберите заголовок --" and preset["y_ax_list"]:
                     st.markdown(f"##### 📉 {preset['style']} ({', '.join(preset['y_ax_list'])})")
