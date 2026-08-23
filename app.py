@@ -8,23 +8,18 @@ import plotly.express as px
 from google import genai
 from google.genai import types
 
-# Инициализация интерфейса на самом старте
 st.set_page_config(layout="wide", page_title="BI Custom Platform")
 
-# Инициализация переменных памяти Streamlit
 if "manual_charts" not in st.session_state: st.session_state.manual_charts = 1
 if "manual_cards" not in st.session_state: st.session_state.manual_cards = 1
 if "main_df" not in st.session_state: st.session_state.main_df = pd.DataFrame()
 if "chat_history" not in st.session_state: st.session_state.chat_history = []
-
-# Переменные ручного ноу-код маппинга осей данных
 if "map_target" not in st.session_state: st.session_state.map_target = ""
 if "map_value" not in st.session_state: st.session_state.map_value = ""
 if "map_time" not in st.session_state: st.session_state.map_time = ""
-
-# Память для кросс-структурного мэтчинга категорий и элементов
 if "category_mapping_dict" not in st.session_state: st.session_state.category_mapping_dict = {}
 if "raw_file_frames" not in st.session_state: st.session_state.raw_file_frames = {}
+if "dark_mode" not in st.session_state: st.session_state.dark_mode = False
 
 def add_chart_cb(): st.session_state.manual_charts += 1
 def remove_chart_cb(): 
@@ -32,42 +27,55 @@ def remove_chart_cb():
 def add_card_cb(): st.session_state.manual_cards += 1
 def remove_card_cb(): 
     if st.session_state.manual_cards > 1: st.session_state.manual_cards -= 1
-# 🧠 МОДУЛЬ ИИ-АНАЛИЗАТОРA МАТРИЦ ABC/XYZ И RFM
+def inject_custom_css():
+    if st.session_state.dark_mode:
+        st.markdown("""
+            <style>
+            .stApp { background-color: #0f172a !important; color: #f8fafc !important; }
+            [data-testid="stSidebar"] { background-color: #020617 !important; border-right: 1px solid #1e293b; }
+            [data-testid="stSidebar"] .stMarkdown, [data-testid="stSidebar"] p, [data-testid="stSidebar"] label { color: #f1f5f9 !important; }
+            h1, h2, h3, h4, h5, h6, p, label, .stMarkdown { color: #f8fafc !important; }
+            .stButton>button { background-color: #6366f1 !important; color: white !important; border-radius: 8px !important; border: none !important; transition: all 0.2s ease; }
+            .stButton>button:hover { background-color: #4f46e5 !important; transform: translateY(-1px); }
+            .streamlit-expanderHeader { background-color: #1e293b !important; border: 1px solid #334155 !important; border-radius: 8px !important; color: #f8fafc !important; }
+            div[data-testid="stExpander"] { background-color: #1e293b !important; border-radius: 8px !important; }
+            </style>
+        """, unsafe_allow_html=True)
+    else:
+        st.markdown("""
+            <style>
+            .stApp { background-color: #f8fafc !important; color: #0f172a !important; }
+            [data-testid="stSidebar"] { background-color: #1e293b !important; border-right: 1px solid #cbd5e1; }
+            [data-testid="stSidebar"] .stMarkdown, [data-testid="stSidebar"] p, [data-testid="stSidebar"] label { color: #f1f5f9 !important; }
+            h1, h2, h3, h4, h5, h6, p, label, .stMarkdown { color: #0f172a !important; }
+            .stButton>button { background-color: #4f46e5 !important; color: white !important; border-radius: 8px !important; border: none !important; transition: all 0.2s ease; }
+            .stButton>button:hover { background-color: #4338ca !important; transform: translateY(-1px); }
+            .streamlit-expanderHeader { background-color: #ffffff !important; border: 1px solid #e2e8f0 !important; border-radius: 8px !important; color: #0f172a !important; }
+            div[data-testid="stExpander"] { background-color: #ffffff !important; border-radius: 8px !important; }
+            </style>
+        """, unsafe_allow_html=True)
+
+inject_custom_css()
 def ai_generate_text_report(pivot_matrix_df, report_type="ABC/XYZ", data_context="Расход", api_key=None):
-    if not api_key: 
-        return st.warning("⚠️ Введите API Key Gemini в сайдбаре для активации ИИ.")
+    if not api_key: return st.warning("⚠️ Введите API Key Gemini в сайдбаре для активации ИИ.")
     try:
         client = genai.Client(api_key=api_key)
         context_rules = f"Отчет строится в рамках аналитического контекста: {data_context}."
-        
         system_instruction = f"""
         Ты — ведущий бизнес-аналитик международной компании. Напиши краткий аналитический отчет по матрице {report_type}.
         БИЗНЕС-КОНТЕКСТ ДАННЫХ: {context_rules}
-        
-        СТРОГИЕ ПРАВИЛА ОФОРМЛЕНИЯ:
-        - Использовать исключительно нейтральные термины: 'предприятие', 'компания', 'структура активов', 'номенклатурные группы'.
-        - НАЧИНАЙ ОТЧЕТ СРАЗУ с содержательного анализа (Раздел "1. Анализ распределения ресурсов").
-        - КАТЕГОРИЧЕСКИ ЗАПРЕЩЕНО писать приветствия, вводные слова, метаданные или подписи автора.
+        СТРОГИЕ ПРАВИЛА: Использовать нейтральные термины: 'предприятие', 'компания', 'структура активов'. Начинай сразу с анализа.
         """
-        with st.spinner(f"🔮 ИИ интерпретирует матричные слои..."):
+        with st.spinner("🔮 ИИ интерпретирует матричные слои..."):
             response = client.models.generate_content(
-                model='gemini-3.5-flash', 
-                contents=f"Данные сводной матрицы:\n{pivot_matrix_df.to_string()}", 
+                model='gemini-3.5-flash', contents=f"Данные сводной матрицы:\n{pivot_matrix_df.to_string()}", 
                 config=types.GenerateContentConfig(system_instruction=system_instruction, temperature=0.2)
             )
-            report_text = response.text
             st.markdown("---")
             st.markdown(f"### 📝 Аналитический ИИ-Отчет ({report_type})")
-            st.info(report_text)
-            
-            st.download_button(
-                label="📥 Скачать заключение ИИ (.txt)",
-                data=report_text,
-                file_name=f"ai_report_{report_type.lower().replace('/', '_')}.txt",
-                mime="text/plain"
-            )
-    except Exception as report_err: 
-        st.error(f"❌ Ошибка ИИ при генерации отчета: {report_err}")
+            st.info(response.text)
+            st.download_button(label="📥 Скачать заключение ИИ (.txt)", data=response.text, file_name=f"ai_report.txt", mime="text/plain")
+    except Exception as report_err: st.error(f"❌ Ошибка ИИ при генерации отчета: {report_err}")
 @st.cache_data
 def calculate_abc_xyz(df, t_col, v_col, p_col, a_lim, x_lim):
     df_clean = df.copy()
@@ -107,7 +115,6 @@ def internal_show_abc_xyz_page(filtered_df, api_key, data_context):
     if st.button("🔮 Сгенерировать ИИ-отчет по результатам", key="ai_report_abc_btn"):
         ai_generate_text_report(pivot_m, report_type="ABC/XYZ", data_context=data_context, api_key=api_key)
     st.dataframe(df_m.sort_values(by=v_col, ascending=False), use_container_width=True)
-
 @st.cache_data
 def calculate_rfm(df, t_col, v_col, p_col):
     df_clean = df.copy()
@@ -152,8 +159,8 @@ def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_ro
             for v in value_array:
                 if f_format == "Финансовый": labels.append(f"{round(v, f_round):,}".replace(",", " ") + curr_suffix)
                 elif f_format == "Сжатый (млн/млрд)":
-                    if abs(v) >= 1_000_000_000: labels.append(f"{v / 1_000_000_000:,.2f} млрд{curr_suffix}")
-                    else: labels.append(f"{v / 1_000_000:,.2f} млн{curr_suffix}")
+                    if abs(v) >= 1_000_000_000: labels.append(f"{v / 1_000_000_000:,.2f} млрд{custom_currency}")
+                    else: labels.append(f"{v / 1_000_000:,.2f} млн{custom_currency}")
                 else: labels.append(f"{round(v, f_round):,}".replace(",", " "))
             return labels
 
@@ -218,7 +225,6 @@ def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_ro
             if horiz: fig.add_trace(go.Bar(y=df_g[x_ax].astype(str), x=df_g[y_ax].values, text=get_formatted_text(df_g[y_ax].values) if lbl else None, textposition=sp, orientation="h", marker_color=color, textfont=dict(size=f_size, color=f_color)))
             else: fig.add_trace(go.Bar(x=df_g[x_ax].astype(str), y=df_g[y_ax].values, text=get_formatted_text(df_g[y_ax].values) if lbl else None, textposition=sp, orientation="v", marker_color=color, textfont=dict(size=f_size, color=f_color)))
         elif "Кольцевая" in style:
-            # СИНХРОНИЗИРОВАНО: Применяется texttemplate для точного отображения финансовых и сжатых форматов в долях
             fig.add_trace(go.Pie(labels=df_g[x_ax], values=df_g[y_ax], hole=0.4, rotation=rot, text=get_formatted_text(df_g[y_ax].values), textinfo="text+percent" if lbl else "none", texttemplate="%{label}: %{text} (%{percent})" if lbl else "none", textposition="auto", textfont=dict(size=f_size, color=f_color)))
         elif "Водопад" in style:
             ts = df_g[y_ax].sum()
@@ -226,7 +232,10 @@ def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_ro
 
         if horiz and "Столбчатая" in style: fig.update_layout(yaxis=dict(type='category'), xaxis=dict(showgrid=True))
         else: fig.update_layout(xaxis=dict(type='category', tickangle=45), yaxis=dict(showgrid=True))
-        fig.update_layout(showlegend=True, margin=dict(l=40, r=40, t=40, b=40))
+        
+        plotly_tmpl = "plotly_dark" if st.session_state.dark_mode else "plotly_white"
+        lbl_clr = "#f8fafc" if st.session_state.dark_mode else "#334155"
+        fig.update_layout(template=plotly_tmpl, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font=dict(family="Inter, sans-serif", size=12, color=lbl_clr), showlegend=True, margin=dict(l=40, r=40, t=40, b=40))
         st.plotly_chart(fig, use_container_width=True, key=f"p_{i}")
     except Exception as chart_err: st.error(f"Ошибка графика №{i+1}: {chart_err}")
 def power_query_clean_engine(uploaded_files_list):
@@ -251,34 +260,26 @@ def render_ai_sidebar_chat(current_dataframe, api_key, context_mode_text):
     with chat_container:
         for message in st.session_state.chat_history:
             with st.chat_message(message["role"]): st.write(message["content"])
-    if user_prompt := st.sidebar.chat_input("Спросить ИИ о таблице...", key="chat_input_text"):
+    if user_prompt := st.sidebar.chat_input("Спросить ИИ...", key="chat_input_text"):
         st.session_state.chat_history.append({"role": "user", "content": user_prompt})
-        with chat_container:
-            with st.chat_message("user"): st.write(user_prompt)
-        if not api_key: return st.sidebar.error("Ошибка: Введите API Key.")
+        with chat_container, st.chat_message("user"): st.write(user_prompt)
+        if not api_key: return st.sidebar.error("Укажите API Key.")
         try:
             client = genai.Client(api_key=api_key)
             sample_df = current_dataframe.head(3).copy()
             for c in sample_df.columns:
                 if not pd.api.types.is_numeric_dtype(sample_df[c]): sample_df[c] = sample_df[c].astype(str)
             columns_schema = {str(col): str(current_dataframe[col].dtype) for col in current_dataframe.columns}
-            sys_prompt = f"""
-            Ты — эксперт по Pandas. Напиши ОДНУ строчку кода на Python. Исходный датафрейм называется 'current_dataframe'.
-            СТРУКТУРА: {json.dumps(columns_schema, ensure_ascii=False)}
-            ПРИМЕР: {json.dumps(sample_df.to_dict(orient='records'), ensure_ascii=False)}
-            ПРАВИЛА: Одна строка кода без ```, результат присваивай переменной 'result_output'. Без системных вызовов os, sys, eval.
-            """
+            sys_prompt = f"Ты — эксперт по Pandas. Напиши одну строку кода без ```. Исходный df — 'current_dataframe'. Присвой результат переменной 'result_output'. Без системных вызовов os, sys, eval. Структура: {json.dumps(columns_schema, ensure_ascii=False)}"
             with chat_container, st.chat_message("assistant"), st.spinner("🤖 Вычисляю..."):
                 response = client.models.generate_content(model='gemini-3.5-flash', contents=f"Вопрос: {user_prompt}", config=types.GenerateContentConfig(system_instruction=sys_prompt, temperature=0.1))
                 raw_code = response.text.strip().replace("```python", "").replace("```", "")
-                if any(kw in raw_code for kw in ['import ', 'os.', 'sys.', 'open', 'subprocess', 'eval']):
-                    st.error("🔒 Блокировка: обнаружен небезопасный код.")
-                    return
+                if any(kw in raw_code for kw in ['import ', 'os.', 'sys.', 'open', 'subprocess', 'eval']): return st.error("🔒 Блокировка: небезопасный код.")
                 local_vars = {"current_dataframe": current_dataframe, "result_output": None}
                 exec(raw_code, {"__builtins__": {}}, local_vars)
                 res = local_vars.get("result_output")
                 fmt_prompt = f"Ты — BI-аналитик. Переведи результат {str(res)} на понятный язык. Контекст: {context_mode_text}. Вопрос: '{user_prompt}'"
-                final_res = client.models.generate_content(model='gemini-3.5-flash', contents=f"Результат Pandas:\n{str(res)}", config=types.GenerateContentConfig(system_instruction=fmt_prompt, temperature=0.2))
+                final_res = client.models.generate_content(model='gemini-3.5-flash', contents=f"Результат:\n{str(res)}", config=types.GenerateContentConfig(system_instruction=fmt_prompt, temperature=0.2))
                 assistant_response = final_res.text
                 st.write(assistant_response)
             st.session_state.chat_history.append({"role": "assistant", "content": assistant_response})
@@ -289,7 +290,7 @@ def render_cross_file_mapping_ui(file_registry):
     file_names = list(file_registry.keys())
     if not file_names: return st.info("ℹ️ Для настройки кросс-анализа загрузите файлы.")
     if len(file_names) == 1:
-        single_name = file_names[0]
+        single_name = file_names
         base_df = file_registry[single_name]
         st.info(f"💡 Загружен 1 файл: `{single_name}`. Сопоставьте два столбца категорий.")
         c1, c2 = st.columns(2)
@@ -301,7 +302,7 @@ def render_cross_file_mapping_ui(file_registry):
         df1, df2 = base_df.copy(), base_df.copy()
     else:
         st.info(f"💡 Загружено несколько файлов ({len(file_names)} шт.). Настройте кросс-связи.")
-        f1_name, f2_name = file_names[0], file_names[1]
+        f1_name, f2_name = file_names, file_names
         df1, df2 = file_registry[f1_name], file_registry[f2_name]
         c1, c2 = st.columns(2)
         with c1: f1_col = st.selectbox(f"Категория в Слое 1 ({f1_name}):", ["-- Выберите --"] + list(df1.columns), key="cf_ui_1")
@@ -328,6 +329,12 @@ def render_cross_file_mapping_ui(file_registry):
         st.session_state.main_df = pd.concat([clean_df1, clean_df2.dropna(subset=['Унифицированная_Категория'])], ignore_index=True, join='outer')
         st.success("✅ Сформировано поле связи: 'Унифицированная_Категория'.")
         st.rerun()
+st.sidebar.markdown("### 🎨 Оформление интерфейса")
+dark_toggle = st.sidebar.toggle("Включить Темную Тему", value=st.session_state.dark_mode, key="dark_mode_toggle_switch")
+if dark_toggle != st.session_state.dark_mode:
+    st.session_state.dark_mode = dark_toggle
+    st.rerun()
+
 st.sidebar.markdown("### 🤖 Настройки ИИ-Слой")
 gemini_api_key = st.sidebar.text_input("Введите Gemini API Key:", type="password")
 ai_context_mode = st.sidebar.selectbox("Контекст для AI:", ["📊 Сравнительный кросс-анализ структур и категорий", "📊 Продажи / Сбыт / Ритейл", "📅 Закупки / Материальное обеспечение", "📦 Запасы / Складские остатки"])
@@ -335,7 +342,7 @@ uploaded_files = st.file_uploader("Загрузите файлы Excel/CSV:", ty
 
 if uploaded_files:
     if not st.session_state.raw_file_frames:
-        with st.spinner("⏳ Чтение структуры файлов..."): st.session_state.raw_file_frames = power_query_clean_engine(uploaded_files)
+        with st.spinner("⏳ Чтение..."): st.session_state.raw_file_frames = power_query_clean_engine(uploaded_files)
     if "Сравнительный" in ai_context_mode and st.session_state.main_df.empty: render_cross_file_mapping_ui(st.session_state.raw_file_frames)
     elif st.session_state.main_df.empty:
         frames_list = list(st.session_state.raw_file_frames.values())
@@ -361,7 +368,7 @@ if uploaded_files:
         if page == "🗂️ 1. Загрузка и очистка данных":
             st.success(f"📊 База сформирована! Строк: {len(main_df):,}")
             if "Сравнительный" in ai_context_mode: render_cross_file_mapping_ui(st.session_state.raw_file_frames)
-            cp = st.number_input(f"Страница (из {(len(main_df) // 50) + 1}):", min_value=1, value=1, step=1)
+            cp = st.number_input(f"Страница:", min_value=1, value=1, step=1)
             st.dataframe(main_df.iloc[(cp - 1) * 50: cp * 50], height=350, use_container_width=True)
         elif page == "📊 2. Executive Диаграммы":
             st.title("📊 Интерактивная BI-Панель Показателей")
@@ -388,7 +395,10 @@ if uploaded_files:
                                 if abs(cv) >= 1_000_000_000: lbl = f"{cv / 1_000_000_000:,.2f} млрд{suffix}"
                                 else: lbl = f"{cv / 1_000_000:,.2f} млн{suffix}"
                             else: lbl = f"{round(cv, c_rnd):,}".replace(",", " ")
-                            st.markdown(f'<div style="background-color:#f8f9fa; border:1px solid #dee2e6; border-radius:10px; padding:20px; text-align:center;"><div style="color:#6c757d; font-size:13px; font-weight:bold;">{t_col_metric}</div><div style="color:#1f77b4; font-size:26px; font-weight:bold;">{lbl}</div></div>', unsafe_allow_html=True)
+                            card_bg = "#1e293b" if st.session_state.dark_mode else "#ffffff"
+                            text_main = "#f8fafc" if st.session_state.dark_mode else "#0f172a"
+                            text_sub = "#94a3b8" if st.session_state.dark_mode else "#64748b"
+                            st.markdown(f'<div style="background: {card_bg}; padding: 24px 20px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0, 0, 0, 0.04); border-left: 5px solid #4f46e5; text-align: left; margin-bottom: 15px;"><div style="color: {text_sub}; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px;">{t_col_metric} ({c_mode})</div><div style="color: {text_main}; font-size: 28px; font-weight: 700; letter-spacing: -0.5px;">{lbl}</div></div>', unsafe_allow_html=True)
                         except: pass
             bc1, bc2 = st.columns(2)
             with bc1: st.button("➕ Добавить карточку", on_click=add_card_cb)
