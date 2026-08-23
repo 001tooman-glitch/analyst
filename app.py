@@ -242,12 +242,15 @@ def render_custom_chart(active_df, x_ax, y_ax_list, style, base_color, lbl, f_fo
             if horiz: fig.update_layout(yaxis=dict(type='category'), xaxis=dict(showgrid=True), barmode="group")
             else: fig.update_layout(xaxis=dict(type='category', tickangle=45), yaxis=dict(showgrid=True), barmode="group")
         elif "Кольцевая" in style:
-            target_y = y_ax_list if y_ax_list else None
-            if target_y: fig.add_trace(go.Pie(labels=df_g[x_ax], values=df_g[target_y], hole=0.4, rotation=rot, text=get_formatted_text(df_g[target_y].values), textinfo="text+percent" if lbl else "none", texttemplate="%{label}: %{text} (%{percent})" if lbl else "none", textposition="auto", textfont=dict(size=f_size, color=f_color)))
+            # ИСПРАВЛЕНО: Безопасное извлечение строго первой метрики из списка
+            target_y = y_ax_list[0] if isinstance(y_ax_list, list) and len(y_ax_list) > 0 else y_ax_list
+            if target_y and target_y != "-- Выберите заголовок --": 
+                fig.add_trace(go.Pie(labels=df_g[x_ax], values=df_g[target_y], hole=0.4, rotation=rot, text=get_formatted_text(df_g[target_y].values), textinfo="text+percent" if lbl else "none", texttemplate="%{label}: %{text} (%{percent})" if lbl else "none", textposition="auto", textfont=dict(size=f_size, color=f_color)))
             fig.update_layout(xaxis=dict(type='category', tickangle=45), yaxis=dict(showgrid=True))
         elif "Водопад" in style:
-            target_y = y_ax_list if y_ax_list else None
-            if target_y:
+            # ИСПРАВЛЕНО: Безопасное извлечение строго первой метрики из списка
+            target_y = y_ax_list[0] if isinstance(y_ax_list, list) and len(y_ax_list) > 0 else y_ax_list
+            if target_y and target_y != "-- Выберите заголовок --":
                 ts = df_g[target_y].sum()
                 fig.add_trace(go.Waterfall(x=list(df_g[x_ax].astype(str)) + ["ИТОГО"], y=list(df_g[target_y]) + [ts], text=get_formatted_text(list(df_g[target_y]) + [ts]) if lbl else None, textposition="auto", measure=["relative"] * len(df_g[target_y]) + ["total"], increasing={"marker": {"color": base_color}}, textfont=dict(size=f_size, color=f_color)))
             fig.update_layout(xaxis=dict(type='category', tickangle=45), yaxis=dict(showgrid=True))
@@ -343,7 +346,7 @@ st.sidebar.markdown("### 🤖 Настройки ИИ-Слой")
 gemini_api_key = st.sidebar.text_input("Введите Gemini API Key:", type="password")
 ai_context_mode = st.sidebar.selectbox("Контекст для AI:", ["📊 Продажи / Сбыт / Ритейл", "📊 Сравнительный кросс-анализ структур и категорий", "📅 Закупки / Материальное обеспечение", "📦 Запасы / Складские остатки"])
 
-# БЕССМЕННЫЙ ЗАГРУЗЧИК: Всегда доступен в глобальной зоне сайдбара
+# БЕССМЕННЫЙ ЗАГРУЗЧИК: Всегда доступен в сайдбаре
 uploaded_files = st.sidebar.file_uploader("Загрузите файлы Excel/CSV:", type=["csv", "xlsx"], accept_multiple_files=True)
 
 if uploaded_files:
@@ -374,7 +377,7 @@ if st.session_state.files_processed and not main_df.empty:
     st.sidebar.markdown("### 🎛️ Ручной маппинг аналитических шкал")
     raw_headers = list(main_df.columns)
     
-    # ИСПРАВЛЕНО: Все три виджета привязаны к сессии, предотвращая сброс в ABC и RFM
+    # ФИКС: Все три селектора сайдбара накрепко привязаны к session_state через index
     st.session_state.mapped_target_col = st.sidebar.selectbox("🔑 КЛЮЧ АНАЛИЗА:", ["-- Выберите --"] + raw_headers, index=(["-- Выберите --"] + raw_headers).index(st.session_state.mapped_target_col) if st.session_state.mapped_target_col in (["-- Выберите --"] + raw_headers) else 0, key="persistent_target_select_widget")
     st.session_state.mapped_value_col = st.sidebar.selectbox("💰 КРИТЕРИЙ ОБЪЕМА:", ["-- Выберите --"] + raw_headers, index=(["-- Выберите --"] + raw_headers).index(st.session_state.mapped_value_col) if st.session_state.mapped_value_col in (["-- Выберите --"] + raw_headers) else 0, key="persistent_value_select_widget")
     st.session_state.mapped_time_col = st.sidebar.selectbox("📅 ШКАЛА ВРЕМЕНИ:", ["-- Выберите --"] + raw_headers, index=(["-- Выберите --"] + raw_headers).index(st.session_state.mapped_time_col) if st.session_state.mapped_time_col in (["-- Выберите --"] + raw_headers) else 0, key="persistent_time_select_widget")
@@ -389,6 +392,7 @@ if st.session_state.files_processed and not main_df.empty:
         cp = st.number_input(f"Страница:", min_value=1, value=1, step=1)
         st.dataframe(main_df.iloc[(cp - 1) * 50: cp * 50], height=350, use_container_width=True)
     elif 'page' in locals() and page == "📊 2. Executive Диаграммы":
+        # Холст поделен на Центральную (Отображение, 70%) и Правую (Конструктор, 30%) зоны
         canvas_col, control_col = st.columns([0.7, 0.3])
         active_filtered_df = main_df.copy()
         
@@ -452,7 +456,7 @@ if st.session_state.files_processed and not main_df.empty:
             with ch_rem: st.button("🗑️ Удалить", on_click=remove_chart_preset_cb, key="rem_chart_btn_right")
             
             chart_options = [f"Диаграмма №{idx+1}" for idx in range(len(st.session_state.charts_presets))]
-            selected_chart_idx = st.selectbox("Выберите диаграмму для редактирования:", range(len(chart_options)), format_func=lambda x: chart_options[x], key=f"chart_selector_dropdown")
+            selected_chart_idx = st.selectbox("Выберите диаграмму для редактирования:", range(len(chart_options)), format_func=lambda x: chart_options[x], key=f"chart_selector_dropdown_fixed")
             
             preset = st.session_state.charts_presets[selected_chart_idx]
             preset["style"] = st.selectbox("Тип графика:", ["Столбчатая диаграмма (Bar)", "Линейный тренд (Line)", "Кольцевая долей (Donut)", "Диаграмма Водопад (Waterfall)"], index=["Столбчатая диаграмма (Bar)", "Линейный тренд (Line)", "Кольцевая долей (Donut)", "Диаграмма Водопад (Waterfall)"].index(preset["style"]), key=f"st_r_{selected_chart_idx}")
@@ -461,7 +465,9 @@ if st.session_state.files_processed and not main_df.empty:
             if "Bar" in preset["style"] or "Line" in preset["style"]:
                 preset["y_ax_list"] = st.multiselect("Оси Y (Метрики сравнения):", [c for c in raw_headers if c != preset["x_ax"]], default=[val for val in preset["y_ax_list"] if val in raw_headers], key=f"y_r_{selected_chart_idx}")
             else:
-                single_y = st.selectbox("Ось Y (Объем):", all_cols_list, index=all_cols_list.index(preset["y_ax_list"]) if preset["y_ax_list"] and preset["y_ax_list"] in all_cols_list else 0, key=f"y_single_r_{selected_chart_idx}")
+                # ФИКС: Для Pie и Waterfall принудительно переключаем на selectbox, беря только первую сохраненную строку
+                def_val = preset["y_ax_list"][0] if isinstance(preset["y_ax_list"], list) and len(preset["y_ax_list"]) > 0 else preset["y_ax_list"]
+                single_y = st.selectbox("Ось Y (Объем):", all_cols_list, index=all_cols_list.index(def_val) if def_val in all_cols_list else 0, key=f"y_single_r_{selected_chart_idx}")
                 preset["y_ax_list"] = [single_y] if single_y != "-- Выберите заголовок --" else []
             preset["color"] = st.color_picker("Базовый цвет:", preset["color"], key=f"col_r_{selected_chart_idx}")
             
@@ -478,7 +484,7 @@ if st.session_state.files_processed and not main_df.empty:
                 preset["top_limit"] = st.slider("ТОП элементов:", 5, 200, preset["top_limit"], key=f"top_r_{selected_chart_idx}")
                 preset["d_fmt"] = st.selectbox("Шаблон даты:", ["Исходный", "ММ.ГГГГ (01.2014)", "Месяц ГГГГ (Янв 2014)", "ДД.ММ.ГГГГ (15.01.2014)", "ГГГГ (2014)"], index=["Исходный", "ММ.ГГГГ (01.2014)", "Месяц ГГГГ (Янв 2014)", "ДД.ММ.ГГГГ (15.01.2014)", "ГГГГ (2014)"].index(preset["d_fmt"]), key=f"dfmt_r_{selected_chart_idx}")
                 preset["f_cast"] = st.slider("Прогноз периодов:", 0, 5, preset["f_cast"], key=f"f_cst_r_{selected_chart_idx}")
-            st.sidebar.markdown('</div>', unsafe_allow_html=True)
+            st.markdown('</div>', unsafe_allow_html=True)
 
         # ------------------ ЦЕНТРАЛЬНЫЙ БЛОК ОТОБРАЖЕНИЯ (ЧИСТЫЙ ХОЛСТ) ------------------
         with canvas_col:
