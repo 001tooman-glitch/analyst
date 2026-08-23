@@ -16,14 +16,15 @@ if "manual_charts" not in st.session_state: st.session_state.manual_charts = 1
 if "manual_cards" not in st.session_state: st.session_state.manual_cards = 1
 if "main_df" not in st.session_state: st.session_state.main_df = pd.DataFrame()
 if "chat_history" not in st.session_state: st.session_state.chat_history = []
-if "map_target" not in st.session_state: st.session_state.map_target = ""
-if "map_value" not in st.session_state: st.session_state.map_value = ""
-if "map_time" not in st.session_state: st.session_state.map_time = ""
+
+# Фиксированные ключи для сохранения выбранных шкал маппинга колонок
+if "mapped_target_col" not in st.session_state: st.session_state.mapped_target_col = "-- Выберите --"
+if "mapped_value_col" not in st.session_state: st.session_state.mapped_value_col = "-- Выберите --"
+if "mapped_time_col" not in st.session_state: st.session_state.mapped_time_col = "-- Выберите --"
+
 if "category_mapping_dict" not in st.session_state: st.session_state.category_mapping_dict = {}
 if "raw_file_frames" not in st.session_state: st.session_state.raw_file_frames = {}
 if "dark_mode" not in st.session_state: st.session_state.dark_mode = False
-
-# Флаг, удерживающий состояние загрузки, чтобы избежать повторного запроса файлов
 if "files_processed" not in st.session_state: st.session_state.files_processed = False
 
 def add_chart_cb(): st.session_state.manual_charts += 1
@@ -42,16 +43,29 @@ def inject_custom_css():
             font-family: 'Inter', sans-serif !important;
             -webkit-font-smoothing: antialiased;
         }
+        /* 1. ФИКСАЦИЯ ЛЕВОЙ ЧАСТИ (САЙДБАРА) В СВЕТЛОЙ ПАЛИТРЕ ПОД ЛЮБОЙ ТЕМЕ */
+        [data-testid="stSidebar"] { 
+            background-color: #ffffff !important; 
+            border-right: 1px solid #e2e8f0 !important; 
+        }
+        [data-testid="stSidebar"] .stMarkdown, [data-testid="stSidebar"] p, [data-testid="stSidebar"] label, [data-testid="stSidebar"] h1, [data-testid="stSidebar"] h2, [data-testid="stSidebar"] h3 { 
+            color: #0f172a !important; 
+        }
+        [data-testid="stSidebar"] div[data-baseweb="select"] {
+            background-color: #ffffff !important;
+            border: 1px solid #cbd5e1 !important;
+            color: #0f172a !important;
+        }
         </style>
     """, unsafe_allow_html=True)
 
     if st.session_state.dark_mode:
+        # ТЕМНАЯ ТЕМА (Только для центральной рабочей области приложения)
         st.markdown("""
             <style>
+            [data-testid="stMainSpaceBlockContainer"] { background-color: #0b0f19 !important; }
             .stApp { background-color: #0b0f19 !important; color: #f1f5f9 !important; }
-            [data-testid="stSidebar"] { background-color: #030712 !important; border-right: 1px solid #1f2937 !important; }
-            [data-testid="stSidebar"] .stMarkdown, [data-testid="stSidebar"] p, [data-testid="stSidebar"] label { color: #f1f5f9 !important; }
-            h1, h2, h3, h4, h5, h6, p, label, .stMarkdown { color: #f1f5f9 !important; }
+            h1, h2, h3, h4, h5, h6, [data-testid="stMainSpaceBlockContainer"] p, [data-testid="stMainSpaceBlockContainer"] label, [data-testid="stMainSpaceBlockContainer"] .stMarkdown { color: #f1f5f9 !important; }
             .stButton>button {
                 background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%) !important; color: #ffffff !important;
                 border-radius: 10px !important; border: 1px solid rgba(255,255,255,0.1) !important; padding: 10px 20px !important;
@@ -59,18 +73,18 @@ def inject_custom_css():
                 box-shadow: 0 4px 12px rgba(99, 102, 241, 0.15) !important;
             }
             .stButton>button:hover { transform: translateY(-2px) !important; box-shadow: 0 6px 20px rgba(99, 102, 241, 0.35) !important; }
-            div[data-baseweb="select"], div[data-baseweb="input"], .stSlider { border-radius: 10px !important; background-color: #1f2937 !important; border: 1px solid #374151 !important; color: #f1f5f9 !important; }
+            [data-testid="stMainSpaceBlockContainer"] div[data-baseweb="select"], [data-testid="stMainSpaceBlockContainer"] div[data-baseweb="input"], [data-testid="stMainSpaceBlockContainer"] .stSlider { border-radius: 10px !important; background-color: #1f2937 !important; border: 1px solid #374151 !important; color: #f1f5f9 !important; }
             .streamlit-expanderHeader { background-color: #111827 !important; border: 1px solid #1f2937 !important; border-radius: 10px !important; color: #f1f5f9 !important; }
             div[data-testid="stExpander"] { background-color: #111827 !important; border-radius: 10px !important; }
             </style>
         """, unsafe_allow_html=True)
     else:
+        # СВЕТЛАЯ ПРЕМИУМ ТЕМА (Для центральной рабочей области)
         st.markdown("""
             <style>
+            [data-testid="stMainSpaceBlockContainer"] { background-color: #f8fafc !important; }
             .stApp { background-color: #f8fafc !important; color: #0f172a !important; }
-            [data-testid="stSidebar"] { background-color: #0f172a !important; border-right: 1px solid #e2e8f0 !important; }
-            [data-testid="stSidebar"] .stMarkdown, [data-testid="stSidebar"] p, [data-testid="stSidebar"] label { color: #f1f5f9 !important; }
-            h1, h2, h3, h4, h5, h6, p, label, .stMarkdown { color: #0f172a !important; }
+            h1, h2, h3, h4, h5, h6, [data-testid="stMainSpaceBlockContainer"] p, [data-testid="stMainSpaceBlockContainer"] label, [data-testid="stMainSpaceBlockContainer"] .stMarkdown { color: #0f172a !important; }
             .stButton>button {
                 background: linear-gradient(135deg, #4f46e5 0%, #4338ca 100%) !important; color: #ffffff !important;
                 border-radius: 10px !important; border: none !important; padding: 10px 20px !important;
@@ -78,7 +92,7 @@ def inject_custom_css():
                 box-shadow: 0 4px 12px rgba(79, 70, 229, 0.12) !important;
             }
             .stButton>button:hover { transform: translateY(-2px) !important; box-shadow: 0 8px 24px rgba(79, 70, 229, 0.25) !important; }
-            div[data-baseweb="select"], div[data-baseweb="input"] { border-radius: 10px !important; background-color: #ffffff !important; border: 1px solid #cbd5e1 !important; }
+            [data-testid="stMainSpaceBlockContainer"] div[data-baseweb="select"], [data-testid="stMainSpaceBlockContainer"] div[data-baseweb="input"] { border-radius: 10px !important; background-color: #ffffff !important; border: 1px solid #cbd5e1 !important; }
             .streamlit-expanderHeader { background-color: #ffffff !important; border: 1px solid #e2e8f0 !important; border-radius: 10px !important; color: #0f172a !important; }
             div[data-testid="stExpander"] { background-color: #ffffff !important; border-radius: 10px !important; }
             </style>
@@ -131,8 +145,8 @@ def calculate_abc_xyz(df, t_col, v_col, p_col, a_lim, x_lim):
 
 def internal_show_abc_xyz_page(filtered_df, api_key, data_context):
     st.title("🧮 Конструктор матриц ABC/XYZ")
-    t_col, v_col, p_col = st.session_state.map_target, st.session_state.map_value, st.session_state.map_time
-    if not t_col or not v_col or not p_col or t_col == "-- Выберите --" or v_col == "-- Выберите --" or p_col == "-- Выберите --":
+    t_col, v_col, p_col = st.session_state.mapped_target_col, st.session_state.mapped_value_col, st.session_state.mapped_time_col
+    if t_col == "-- Выберите --" or v_col == "-- Выберите --" or p_col == "-- Выберите --":
         return st.warning("⚠️ Сначала настройте ручной маппинг колонок в сайдбаре!")
     a_lim = st.slider("Доля класса А (%):", 50, 90, 80, key="abc_s_slider")
     x_lim = st.slider("Граница класса X (KV ≤ %):", 5, 50, 10, key="xyz_s_slider")
@@ -162,8 +176,8 @@ def calculate_rfm(df, t_col, v_col, p_col):
 
 def internal_show_rfm_page(filtered_df, api_key, data_context):
     st.title("👥 Модуль многомерной RFM-сегментации")
-    t_col, v_col, p_col = st.session_state.map_target, st.session_state.map_value, st.session_state.map_time
-    if not t_col or not v_col or not p_col or t_col == "-- Выберите --" or v_col == "-- Выберите --" or p_col == "-- Выберите --":
+    t_col, v_col, p_col = st.session_state.mapped_target_col, st.session_state.mapped_value_col, st.session_state.mapped_time_col
+    if t_col == "-- Выберите --" or v_col == "-- Выберите --" or p_col == "-- Выберите --":
         return st.warning("⚠️ Настройте маппинг колонок (включая Шкалу Времени)!")
     rfm, seg_counts, err = calculate_rfm(filtered_df, t_col, v_col, p_col)
     if err:
@@ -254,7 +268,9 @@ def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_ro
             if horiz: fig.add_trace(go.Bar(y=df_g[x_ax].astype(str), x=df_g[y_ax].values, text=get_formatted_text(df_g[y_ax].values) if lbl else None, textposition=sp, orientation="h", marker_color=color, textfont=dict(size=f_size, color=f_color)))
             else: fig.add_trace(go.Bar(x=df_g[x_ax].astype(str), y=df_g[y_ax].values, text=get_formatted_text(df_g[y_ax].values) if lbl else None, textposition=sp, orientation="v", marker_color=color, textfont=dict(size=f_size, color=f_color)))
         elif "Кольцевая" in style:
-            fig.add_trace(go.Pie(labels=df_g[x_ax], values=df_g[y_ax], hole=0.4, rotation=rot, text=get_formatted_text(df_g[y_ax].values), textinfo="text+percent" if lbl else "none", texttemplate="%{label}: %{text} (%{percent})" if lbl else "none", textposition="auto", textfont=dict(size=f_size, color=f_color)))
+            # ИСПРАВЛЕНО: Добавлено принудительное вынесение подписей наружу ("outside") если текст сливается с долями в темной теме
+            ins_or_out = "outside" if st.session_state.dark_mode else "auto"
+            fig.add_trace(go.Pie(labels=df_g[x_ax], values=df_g[y_ax], hole=0.4, rotation=rot, text=get_formatted_text(df_g[y_ax].values), textinfo="text+percent" if lbl else "none", texttemplate="%{label}: %{text} (%{percent})" if lbl else "none", textposition=ins_or_out, textfont=dict(size=f_size, color=f_color)))
         elif "Водопад" in style:
             ts = df_g[y_ax].sum()
             fig.add_trace(go.Waterfall(x=list(df_g[x_ax].astype(str)) + ["ИТОГО"], y=list(df_g[y_ax]) + [ts], text=get_formatted_text(list(df_g[y_ax]) + [ts]) if lbl else None, textposition="auto", measure=["relative"] * len(df_g[y_ax]) + ["total"], increasing={"marker": {"color": color}}, textfont=dict(size=f_size, color=f_color)))
@@ -264,7 +280,14 @@ def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_ro
         
         plotly_tmpl = "plotly_dark" if st.session_state.dark_mode else "plotly_white"
         lbl_clr = "#f8fafc" if st.session_state.dark_mode else "#334155"
-        fig.update_layout(template=plotly_tmpl, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font=dict(family="Inter, sans-serif", size=12, color=lbl_clr), showlegend=True, margin=dict(l=40, r=40, t=40, b=40))
+        
+        # ИСПРАВЛЕНО: Явно задан цвет текста легенды legend(font=...) во избежание невидимых букв на темном фоне
+        fig.update_layout(
+            template=plotly_tmpl, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", 
+            font=dict(family="Inter, sans-serif", size=12, color=lbl_clr),
+            legend=dict(font=dict(color=lbl_clr)),
+            showlegend=True, margin=dict(l=40, r=40, t=40, b=40)
+        )
         st.plotly_chart(fig, use_container_width=True, key=f"p_{i}")
     except Exception as chart_err: st.error(f"Ошибка графика №{i+1}: {chart_err}")
 def power_query_clean_engine(uploaded_files_list):
@@ -369,14 +392,11 @@ st.sidebar.markdown("### 🤖 Настройки ИИ-Слой")
 gemini_api_key = st.sidebar.text_input("Введите Gemini API Key:", type="password")
 ai_context_mode = st.sidebar.selectbox("Контекст для AI:", ["📊 Сравнительный кросс-анализ структур и категорий", "📊 Продажи / Сбыт / Ритейл", "📅 Закупки / Материальное обеспечение", "📦 Запасы / Складские остатки"])
 
-# Отображаем файловый загрузчик только если данные еще не зафиксированы в session_state
 if not st.session_state.files_processed:
     uploaded_files = st.file_uploader("Загрузите файлы Excel/CSV:", type=["csv", "xlsx"], accept_multiple_files=True)
     if uploaded_files:
-        with st.spinner("⏳ Чтение..."): 
-            st.session_state.raw_file_frames = power_query_clean_engine(uploaded_files)
-        if "Сравнительный" in ai_context_mode:
-            render_cross_file_mapping_ui(st.session_state.raw_file_frames)
+        with st.spinner("⏳ Чтение..."): st.session_state.raw_file_frames = power_query_clean_engine(uploaded_files)
+        if "Сравнительный" in ai_context_mode: render_cross_file_mapping_ui(st.session_state.raw_file_frames)
         else:
             frames_list = list(st.session_state.raw_file_frames.values())
             if frames_list: 
@@ -389,16 +409,20 @@ if st.session_state.files_processed and not main_df.empty:
     render_ai_sidebar_chat(main_df, gemini_api_key, ai_context_mode)
     if st.sidebar.button("♻️ Сбросить базу данных"):
         st.session_state.main_df, st.session_state.raw_file_frames, st.session_state.chat_history, st.session_state.category_mapping_dict = pd.DataFrame(), {}, [], {}
+        st.session_state.mapped_target_col, st.session_state.mapped_value_col, st.session_state.mapped_time_col = "-- Выберите --", "-- Выберите --", "-- Выберите --"
         st.session_state.files_processed = False
         st.rerun()
         
     st.sidebar.markdown("### 🎛️ Ручной маппинг аналитических шкал")
     raw_headers = list(main_df.columns)
-    st.session_state.map_target = st.sidebar.selectbox("🔑 КЛЮЧ АНАЛИЗА:", ["-- Выберите --"] + raw_headers, index=raw_headers.index(st.session_state.map_target) + 1 if st.session_state.map_target in raw_headers else (raw_headers.index('Унифицированная_Категория') + 1 if 'Унифицированная_Категория' in raw_headers else 0))
-    st.session_state.map_value = st.sidebar.selectbox("💰 КРИТЕРИЙ ОБЪЕМА:", ["-- Выберите --"] + raw_headers, index=raw_headers.index(st.session_state.map_value) + 1 if st.session_state.map_value in raw_headers else 0)
-    st.session_state.map_time = st.sidebar.selectbox("📅 ШКАЛА ВРЕМЕНИ:", ["-- Выберите --"] + raw_headers, index=raw_headers.index(st.session_state.map_time) + 1 if st.session_state.map_time in raw_headers else 0)
-    if st.session_state.map_value != "-- Выберите --":
-        main_df[st.session_state.map_value] = pd.to_numeric(main_df[st.session_state.map_value].astype(str).str.replace(r'\s+', '', regex=True).str.replace(',', '.'), errors='coerce').fillna(0.0)
+    
+    # ИСПРАВЛЕНО: Селекторы теперь жестко завязаны на ключи `key`, что полностью блокирует сброс при st.rerun()
+    st.session_state.mapped_target_col = st.sidebar.selectbox("🔑 КЛЮЧ АНАЛИЗА:", ["-- Выберите --"] + raw_headers, key="persistent_target_select_widget")
+    st.session_state.mapped_value_col = st.sidebar.selectbox("💰 КРИТЕРИЙ ОБЪЕМА:", ["-- Выберите --"] + raw_headers, key="persistent_value_select_widget")
+    st.session_state.mapped_time_col = st.sidebar.selectbox("📅 ШКАЛА ВРЕМЕНИ:", ["-- Выберите --"] + raw_headers, key="persistent_time_select_widget")
+    
+    if st.session_state.mapped_value_col != "-- Выберите --":
+        main_df[st.session_state.mapped_value_col] = pd.to_numeric(main_df[st.session_state.mapped_value_col].astype(str).str.replace(r'\s+', '', regex=True).str.replace(',', '.'), errors='coerce').fillna(0.0)
 
     all_cols_list = ["-- Выберите заголовок --"] + raw_headers
     page = st.sidebar.radio("Перейти к разделу:", ["🗂️ 1. Загрузка и очистка данных", "📊 2. Executive Диаграммы", "🗮️ 3. ABC/XYZ-аналитика элементов", "👥 4. RFM-сегментация"])
