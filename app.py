@@ -33,12 +33,12 @@ def add_card_cb(): st.session_state.manual_cards += 1
 def remove_card_cb(): 
     if st.session_state.manual_cards > 1: st.session_state.manual_cards -= 1
 def inject_custom_css():
+    # ИСПРАВЛЕНО: Теги style полностью изолированы, код больше не вылезает наверх экрана
     st.markdown("""
         <link rel="preconnect" href="https://googleapis.com">
         <link rel="preconnect" href="https://gstatic.com" crossorigin>
         <link href="https://googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
         <style>
-        /* Глобальный светлый стиль для всей платформы */
         html, body, [data-testid="stAppViewContainer"], .stMarkdown, p, label {
             font-family: 'Inter', sans-serif !important;
             -webkit-font-smoothing: antialiased;
@@ -47,7 +47,6 @@ def inject_custom_css():
         .stApp { background-color: #f8fafc !important; color: #0f172a !important; }
         h1, h2, h3, h4, h5, h6, [data-testid="stMainSpaceBlockContainer"] p, [data-testid="stMainSpaceBlockContainer"] label, [data-testid="stMainSpaceBlockContainer"] .stMarkdown { color: #0f172a !important; }
         
-        /* Оригинальный светлый сайдбар */
         [data-testid="stSidebar"] { 
             background-color: #ffffff !important; 
             border-right: 1px solid #e2e8f0 !important; 
@@ -61,7 +60,6 @@ def inject_custom_css():
             color: #0f172a !important;
         }
         
-        /* Анимированные кнопки */
         .stButton>button {
             background: linear-gradient(135deg, #4f46e5 0%, #4338ca 100%) !important; color: #ffffff !important;
             border-radius: 10px !important; border: none !important; padding: 10px 20px !important;
@@ -177,16 +175,16 @@ def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_ro
         def get_formatted_text(value_array):
             labels = []
             for v in value_array:
-                # ИСПРАВЛЕНО: Теперь параметр f_round динамически управляет выводом во всех блоках условий
+                # ИСПРАВЛЕНО: Конвертация через f-строку форматирования (например, :.1f) принудительно сохраняет нули
                 if f_format == "Финансовый": 
-                    labels.append(f"{round(v, f_round):,}".replace(",", " ") + curr_suffix)
+                    labels.append(f"{v:,.{f_round}f}".replace(",", " ") + curr_suffix)
                 elif f_format == "Сжатый (млн/млрд)":
                     if abs(v) >= 1_000_000_000: 
-                        labels.append(f"{round(v / 1_000_000_000, f_round):,}".replace(",", " ") + f" млрд{custom_currency}")
+                        labels.append(f"{v / 1_000_000_000:,.{f_round}f}".replace(",", " ") + f" млрд{custom_currency}")
                     else: 
-                        labels.append(f"{round(v / 1_000_000, f_round):,}".replace(",", " ") + f" млн{custom_currency}")
+                        labels.append(f"{v / 1_000_000:,.{f_round}f}".replace(",", " ") + f" млн{custom_currency}")
                 else: 
-                    labels.append(f"{round(v, f_round):,}".replace(",", " "))
+                    labels.append(f"{v:,.{f_round}f}".replace(",", " "))
             return labels
 
         is_year_col = "год" in str(x_ax).lower() or "year" in str(x_ax).lower()
@@ -258,7 +256,6 @@ def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_ro
         if horiz and "Столбчатая" in style: fig.update_layout(yaxis=dict(type='category'), xaxis=dict(showgrid=True))
         else: fig.update_layout(xaxis=dict(type='category', tickangle=45), yaxis=dict(showgrid=True))
         
-        # Фиксация оригинальной светлой палитры холста
         fig.update_layout(
             template="plotly_white", paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", 
             font=dict(family="Inter, sans-serif", size=12, color="#334155"),
@@ -418,19 +415,19 @@ if st.session_state.files_processed and not main_df.empty:
                         df_card = main_df.copy()
                         if group_col != "-- Без фильтра --" and filter_value is not None: df_card = df_card[df_card[group_col].astype(str) == str(filter_value)]
                         df_card[t_col_metric] = pd.to_numeric(df_card[t_col_metric], errors='coerce').fillna(0)
-                        cv = df_card[t_col_metric].sum() if "Сумma" in c_mode or "Сумма" in c_mode else df_card[t_col_metric].mean()
+                        cv = df_card[t_col_metric].sum() if "Сумма" in c_mode else df_card[t_col_metric].mean()
                         suffix = f" {str(c_curr_text).strip()}" if str(c_curr_text).strip() else ""
                         
-                        # ИСПРАВЛЕНО: Теперь c_rnd жестко управляет округлением и в режиме "Сжатый"
+                        # ИСПРАВЛЕНО: Строгое удержание знаков после запятой с сохранением нулей во всех форматах
                         if c_fmt == "Финансовый": 
-                            lbl = f"{round(cv, c_rnd):,}".replace(",", " ") + suffix
+                            lbl = f"{cv:,.{c_rnd}f}".replace(",", " ") + suffix
                         elif c_fmt == "Сжатый (млн/млрд)":
                             if abs(cv) >= 1_000_000_000: 
-                                lbl = f"{round(cv / 1_000_000_000, c_rnd):,}".replace(",", " ") + f" млрд{suffix}"
+                                lbl = f"{cv / 1_000_000_000:,.{c_rnd}f}".replace(",", " ") + f" млрд{suffix}"
                             else: 
-                                lbl = f"{round(cv / 1_000_000, c_rnd):,}".replace(",", " ") + f" млн{suffix}"
+                                lbl = f"{cv / 1_000_000:,.{c_rnd}f}".replace(",", " ") + f" млн{suffix}"
                         else: 
-                            lbl = f"{round(cv, c_rnd):,}".replace(",", " ")
+                            lbl = f"{cv:,.{c_rnd}f}".replace(",", " ")
                             
                         st.markdown(f'<div style="background: #ffffff; padding: 24px 20px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0, 0, 0, 0.04); border-left: 5px solid #4f46e5; text-align: left; margin-bottom: 15px;"><div style="color: #64748b; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px;">{t_col_metric}</div><div style="color: #0f172a; font-size: 28px; font-weight: 700; letter-spacing: -0.5px;">{lbl}</div></div>', unsafe_allow_html=True)
                     except: pass
@@ -448,7 +445,7 @@ if st.session_state.files_processed and not main_df.empty:
             with st.expander("🎨 Настройки проводника"):
                 cu1, cu2 = st.columns(2)
                 with cu1:
-                    lbl_g, f_format = st.checkbox("Показывать значения", value=True, key=f"lbl_{i}"), st.selectbox("Формат:", ["Числовой", "Финансовый", "Сжатый (млн/млрд)"], key=f"fmt_{i}")
+                    lbl_g, f_format = st.checkbox("Показывать значения", value=True, key=f"lbl_{i}"), st.selectbox("Форрат:", ["Числовой", "Финансовый", "Сжатый (млн/млрд)"], key=f"fmt_{i}")
                     f_round, f_curr_text = st.slider("Округление:", 0, 4, 0, key=f"rnd_{i}"), st.text_input("Валюта графика:", value="$", key=f"fcur_tx_{i}")
                 with cu2:
                     f_size, f_color, f_pos = st.slider("Шрифт:", 8, 24, 14, key=f"sz_{i}"), st.color_picker("Цвет шрифта:", "#000000", key=f"fcol_{i}"), st.selectbox("Положение:", ["auto", "inside", "outside"], key=f"pos_{i}")
