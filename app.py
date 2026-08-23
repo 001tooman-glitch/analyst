@@ -33,12 +33,23 @@ def add_card_cb(): st.session_state.manual_cards += 1
 def remove_card_cb(): 
     if st.session_state.manual_cards > 1: st.session_state.manual_cards -= 1
 def inject_custom_css():
-    # Полная изоляция стилей и шрифтов без утечки кода на экран
+    # Полная изоляция стилей и шрифтов с жестким скрытием любых текстовых артефактов на холсте
     st.markdown("""
         <link rel="preconnect" href="https://googleapis.com">
         <link rel="preconnect" href="https://gstatic.com" crossorigin>
         <link href="https://googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
         <style>
+        /* ИСПРАВЛЕНО: Этот селектор находит и полностью уничтожает любой сырой текст, вылезший поверх приложения */
+        [data-testid="stAppViewContainer"] > div:first-child, 
+        .stApp > #root > div:first-child,
+        [data-testid="stMainSpaceBlockContainer"] > div:first-child {
+            display: none !important;
+            opacity: 0 !important;
+            visibility: hidden !important;
+            height: 0 !important;
+            overflow: hidden !important;
+        }
+        
         html, body, [data-testid="stAppViewContainer"], .stMarkdown, p, label {
             font-family: 'Inter', sans-serif !important;
             -webkit-font-smoothing: antialiased;
@@ -393,7 +404,6 @@ if st.session_state.files_processed and not main_df.empty:
     page = st.sidebar.radio("Перейти к разделу:", ["🗂️ 1. Загрузка и очистка данных", "📊 2. Executive Диаграммы", "🗮️ 3. ABC/XYZ-аналитика элементов", "👥 4. RFM-сегментация"])
     
     if page == "🗂️ 1. Загрузка и очистка данных":
-        # ИСПРАВЛЕНО: Из этой строки удалена потерявшаяся закрывающая кавычка от старого CSS-кода, вызывавшая баг
         st.success(f"📊 База сформирована! Строк: {len(main_df):,}")
         cp = st.number_input(f"Страница:", min_value=1, value=1, step=1)
         st.dataframe(main_df.iloc[(cp - 1) * 50: cp * 50], height=350, use_container_width=True)
@@ -417,11 +427,14 @@ if st.session_state.files_processed and not main_df.empty:
                         df_card[t_col_metric] = pd.to_numeric(df_card[t_col_metric], errors='coerce').fillna(0)
                         cv = df_card[t_col_metric].sum() if "Сумма" in c_mode else df_card[t_col_metric].mean()
                         suffix = f" {str(c_curr_text).strip()}" if str(c_curr_text).strip() else ""
+                        
                         if c_fmt == "Финансовый": 
                             lbl = f"{cv:,.{c_rnd}f}".replace(",", " ") + suffix
                         elif c_fmt == "Сжатый (млн/млрд)":
-                            if abs(cv) >= 1_000_000_000: lbl = f"{cv / 1_000_000_000:,.{c_rnd}f}".replace(",", " ") + f" млрд{suffix}"
-                            else: lbl = f"{cv / 1_000_000:,.{c_rnd}f}".replace(",", " ") + f" млн{suffix}"
+                            if abs(cv) >= 1_000_000_000: 
+                                lbl = f"{cv / 1_000_000_000:,.{c_rnd}f}".replace(",", " ") + f" млрд{suffix}"
+                            else: 
+                                lbl = f"{cv / 1_000_000:,.{c_rnd}f}".replace(",", " ") + f" млн{suffix}"
                         else: 
                             lbl = f"{cv:,.{c_rnd}f}".replace(",", " ")
                         
