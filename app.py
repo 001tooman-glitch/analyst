@@ -25,7 +25,7 @@ if "mapped_target_col" not in st.session_state: st.session_state.mapped_target_c
 if "mapped_value_col" not in st.session_state: st.session_state.mapped_value_col = "-- Выберите --"
 if "mapped_time_col" not in st.session_state: st.session_state.mapped_time_col = "-- Выберите --"
 
-# ИСПРАВЛЕНО: Новая архитектура хранения пресетов графиков, защищенная от сброса при переходах
+# Архитектура хранения пресетов графиков, защищенная от сброса при переходах
 if "charts_presets" not in st.session_state:
     st.session_state.charts_presets = [{
         "style": "Столбчатая диаграмма (Bar)", "x_ax": "-- Выберите заголовок --", "y_ax_list": [], 
@@ -50,6 +50,7 @@ def add_card_cb(): st.session_state.manual_cards += 1
 def remove_card_cb(): 
     if st.session_state.manual_cards > 1: st.session_state.manual_cards -= 1
 def inject_custom_css():
+    # Передача стилей через shadow-iframe родительского окна исключает появление сырого текста на экране
     components.html("""
         <script>
         const style = window.parent.document.createElement('style');
@@ -206,7 +207,6 @@ def render_custom_chart(active_df, x_ax, y_ax_list, style, base_color, lbl, f_fo
         converted_dates = pd.to_datetime(df_c[x_ax], errors='coerce')
         is_date_axis = converted_dates.notna().sum() > (0.5 * len(df_c)) and not is_year_col
 
-        # ИСПРАВЛЕНО: Группировка и сборка данных с учетом множественного выбора метрик сравнения
         if is_date_axis:
             df_c['_datetime_clean_'] = converted_dates
             df_c = df_c.dropna(subset=['_datetime_clean_'])
@@ -222,24 +222,26 @@ def render_custom_chart(active_df, x_ax, y_ax_list, style, base_color, lbl, f_fo
         fig = go.Figure()
         palette = [base_color, "#4f46e5", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6"]
 
-        # ИСПРАВЛЕНО: Построение мульти-слоев для сравнения (например, Продажи vs Профит)
         if "Линейный" in style or (is_date_axis and "Столбчатая" not in style and "Кольцевая" not in style and "Водопад" not in style):
             for idx, y_col in enumerate(y_ax_list):
                 fig.add_trace(go.Scatter(x=df_g[x_ax].astype(str), y=df_g[y_col], mode="lines+markers+text" if lbl else "lines+markers", name=y_col, line=dict(color=palette[idx % len(palette)], width=4), text=get_formatted_text(df_g[y_col].values) if lbl else None, textposition=scatter_pos, textfont=dict(size=f_size, color=f_color)))
+            fig.update_layout(xaxis=dict(type='category', tickangle=45), yaxis=dict(showgrid=True))
         elif "Столбчатая" in style:
             sp = f_pos if f_pos in ["inside", "outside", "auto"] else "auto"
             for idx, y_col in enumerate(y_ax_list):
                 if horiz: fig.add_trace(go.Bar(y=df_g[x_ax].astype(str), x=df_g[y_col], text=get_formatted_text(df_g[y_col].values) if lbl else None, textposition=sp, orientation="h", name=y_col, marker_color=palette[idx % len(palette)], textfont=dict(size=f_size, color=f_color)))
                 else: fig.add_trace(go.Bar(x=df_g[x_ax].astype(str), y=df_g[y_col], text=get_formatted_text(df_g[y_col].values) if lbl else None, textposition=sp, orientation="v", name=y_col, marker_color=palette[idx % len(palette)], textfont=dict(size=f_size, color=f_color)))
+            # ИСПРАВЛЕНО: Параметр заменен на валидный barmode="group"
+            if horiz: fig.update_layout(yaxis=dict(type='category'), xaxis=dict(showgrid=True), barmode="group")
+            else: fig.update_layout(xaxis=dict(type='category', tickangle=45), yaxis=dict(showgrid=True), barmode="group")
         elif "Кольцевая" in style:
             fig.add_trace(go.Pie(labels=df_g[x_ax], values=df_g[y_ax_list[0]], hole=0.4, rotation=rot, text=get_formatted_text(df_g[y_ax_list[0]].values), textinfo="text+percent" if lbl else "none", texttemplate="%{label}: %{text} (%{percent})" if lbl else "none", textposition="auto", textfont=dict(size=f_size, color=f_color)))
+            fig.update_layout(xaxis=dict(type='category', tickangle=45), yaxis=dict(showgrid=True))
         elif "Водопад" in style:
             ts = df_g[y_ax_list[0]].sum()
             fig.add_trace(go.Waterfall(x=list(df_g[x_ax].astype(str)) + ["ИТОГО"], y=list(df_g[y_ax_list[0]]) + [ts], text=get_formatted_text(list(df_g[y_ax_list[0]]) + [ts]) if lbl else None, textposition="auto", measure=["relative"] * len(df_g[y_ax_list[0]]) + ["total"], increasing={"marker": {"color": base_color}}, textfont=dict(size=f_size, color=f_color)))
+            fig.update_layout(xaxis=dict(type='category', tickangle=45), yaxis=dict(showgrid=True))
 
-        if horiz and "Столбчатая" in style: fig.update_layout(yaxis=dict(type='category'), xaxis=dict(showgrid=True), bgroupmode="group")
-        else: fig.update_layout(xaxis=dict(type='category', tickangle=45), yaxis=dict(showgrid=True), bgroupmode="group")
-        
         fig.update_layout(template="plotly_white", paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font=dict(family="Inter, sans-serif", size=12, color="#334155"), showlegend=True, margin=dict(l=40, r=40, t=40, b=40))
         st.plotly_chart(fig, use_container_width=True, key=f"p_fixed_{i}")
     except Exception as chart_err: st.error(f"Ошибка графического движка №{i+1}: {chart_err}")
@@ -283,7 +285,7 @@ def render_ai_sidebar_chat(current_dataframe, api_key, context_mode_text):
                 local_vars = {"current_dataframe": current_dataframe, "result_output": None}
                 exec(raw_code, {"__builtins__": {}}, local_vars)
                 res = local_vars.get("result_output")
-                fmt_prompt = f"Ты — BI-аналитик. Переведи результат {str(res)} на понятный язык. Контекст: {context_mode_text}. Вопрос: '{user_prompt}'"
+                fmt_prompt = f"Ты — BI-аналитик. Переведи результат {str(res)} на понятный язык. Context: {context_mode_text}. Вопрос: '{user_prompt}'"
                 final_res = client.models.generate_content(model='gemini-3.5-flash', contents=f"Результат:\n{str(res)}", config=types.GenerateContentConfig(system_instruction=fmt_prompt, temperature=0.2))
                 assistant_response = final_res.text
                 st.write(assistant_response)
@@ -295,7 +297,7 @@ def render_cross_file_mapping_ui(file_registry):
     file_names = list(file_registry.keys())
     if not file_names: return st.info("ℹ️ Для настройки кросс-анализа загрузите файлы.")
     if len(file_names) == 1:
-        single_name = file_names
+        single_name = file_names[0]
         base_df = file_registry[single_name]
         st.info(f"💡 Загружен 1 файл: `{single_name}`. Сопоставьте два столбца категорий.")
         c1, c2 = st.columns(2)
@@ -307,7 +309,7 @@ def render_cross_file_mapping_ui(file_registry):
         df1, df2 = base_df.copy(), base_df.copy()
     else:
         st.info(f"💡 Загружено несколько файлов ({len(file_names)} шт.). Настройте кросс-связи.")
-        f1_name, f2_name = file_names, file_names
+        f1_name, f2_name = file_names[0], file_names[1]
         df1, df2 = file_registry[f1_name], file_registry[f2_name]
         c1, c2 = st.columns(2)
         with c1: f1_col = st.selectbox(f"Категория в Слое 1 ({f1_name}):", ["-- Выберите --"] + list(df1.columns), key="cf_ui_1")
@@ -384,7 +386,6 @@ if st.session_state.files_processed and not main_df.empty:
     elif 'page' in locals() and page == "📊 2. Executive Диаграммы":
         st.title("📊 Интерактивная BI-Панель Показателей")
         
-        # ИСПРАВЛЕНО: Интеграция сквозного временного No-Code фильтра периодов на лету
         st.markdown("### 📅 Глобальный фильтр временных срезов")
         time_col_exists = st.session_state.mapped_time_col in main_df.columns
         if time_col_exists:
@@ -395,7 +396,7 @@ if st.session_state.files_processed and not main_df.empty:
             else:
                 active_filtered_df = main_df.copy()
         else:
-            st.info("ℹ️ Шкала времени не настроена в сайдбаре. Графики рассчитывают суммарные значения за всё время.")
+            st.info("ℹ destruction Шкала времени не настроена в сайдбаре. Графики рассчитывают суммарные значения за всё время.")
             active_filtered_df = main_df.copy()
 
         card_cols = st.columns(st.session_state.manual_cards)
@@ -445,14 +446,12 @@ if st.session_state.files_processed and not main_df.empty:
         st.markdown("---")
         st.subheader("🛠️ No-Code Конструктор Графиков")
         
-        # Цикл рендеринга на основе сохраненных пресетов сессии (Защита от стирания данных)
         for i, preset in enumerate(st.session_state.charts_presets):
             st.markdown(f"#### 📉 Настройка диаграммы №{i+1}")
             c1, c2, c3, c4 = st.columns(4)
             with c1: preset["style"] = st.selectbox(f"Тип №{i+1}:", ["Столбчатая диаграмма (Bar)", "Линейный тренд (Line)", "Кольцевая долей (Donut)", "Диаграмма Водопад (Waterfall)"], index=["Столбчатая диаграмма (Bar)", "Линейный тренд (Line)", "Кольцевая долей (Donut)", "Диаграмма Водопад (Waterfall)"].index(preset["style"]), key=f"style_p_{i}")
             with c2: preset["x_ax"] = st.selectbox(f"Ось X №{i+1} (Позиции / Даты):", all_cols_list, index=all_cols_list.index(preset["x_ax"]) if preset["x_ax"] in all_cols_list else 0, key=f"x_ax_p_{i}")
             
-            # ИСПРАВЛЕНО: Замена selectbox на multiselect для сравнения метрик (Продажи vs Профит) на линейных/бар графиках
             with c3:
                 if "Bar" in preset["style"] or "Line" in preset["style"]:
                     preset["y_ax_list"] = st.multiselect(f"Оси Y (Метрики сравнения) №{i+1}:", [c for c in raw_headers if c != preset["x_ax"]], default=[val for val in preset["y_ax_list"] if val in raw_headers], key=f"y_ax_p_{i}")
@@ -478,7 +477,7 @@ if st.session_state.files_processed and not main_df.empty:
                     preset["d_fmt"] = st.selectbox("Шаблон даты (если X - время):", ["Исходный", "ММ.ГГГГ (01.2014)", "Месяц ГГГГ (Янв 2014)", "ДД.ММ.ГГГГ (15.01.2014)", "ГГГГ (2014)"], index=["Исходный", "ММ.ГГГГ (01.2014)", "Месяц ГГГГ (Янв 2014)", "ДД.ММ.ГГГГ (15.01.2014)", "ГГГГ (2014)"].index(preset["d_fmt"]), key=f"d_fmt_p_{i}")
                     preset["f_cast"] = st.slider("🔮 Прогноз ИИ (периодов):", 0, 5, preset["f_cast"], key=f"f_cast_p_{i}")
             
-            if preset["x_ax"] != "-- Выберите заголовок--" and preset["y_ax_list"]:
+            if preset["x_ax"] != "-- Выберите заголовок --" and preset["y_ax_list"]:
                 render_custom_chart(active_filtered_df, preset["x_ax"], preset["y_ax_list"], preset["style"], preset["color"], preset["lbl_g"], preset["f_format"], preset["f_round"], preset["f_size"], preset["f_color"], preset["f_pos"], preset["horiz"], preset["rot"], preset["top_limit"], i, date_format_type=preset["d_fmt"], custom_currency=preset["f_curr_text"], forecast_periods=preset["f_cast"])
             st.markdown("---")
             
