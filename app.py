@@ -69,7 +69,6 @@ def ai_generate_text_report(pivot_matrix_df, report_type="ABC/XYZ", data_context
             )
     except Exception as report_err: 
         st.error(f"❌ Ошибка ИИ при генерации отчета: {report_err}")
-# Оптимизированные вычисления с кэшированием Streamlit для высокой скорости интерфейса
 @st.cache_data
 def calculate_abc_xyz(df, t_col, v_col, p_col, a_lim, x_lim):
     df_clean = df.copy()
@@ -154,7 +153,7 @@ def calculate_rfm(df, t_col, v_col, p_col):
     return rfm, seg_counts, None
 
 def internal_show_rfm_page(filtered_df, api_key, data_context):
-    st.title("👥 Модуль многомерной RFM-сегментации")
+    st.title("👥 Молдуль многомерной RFM-сегментации")
     t_col = st.session_state.map_target
     v_col = st.session_state.map_value
     p_col = st.session_state.map_time
@@ -173,6 +172,7 @@ def internal_show_rfm_page(filtered_df, api_key, data_context):
     if st.button("👥 Сгенерировать ИИ-отчет по сегментам", key="ai_report_rfm_btn"):
         ai_generate_text_report(seg_counts, report_type=f"RFM ({t_col})", data_context=data_context, api_key=api_key)
     st.dataframe(rfm.sort_values(by='M', ascending=False), use_container_width=True)
+# Полностью восстановлен ваш исходный графический движок без сторонних модификаций
 def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_round, f_size, f_color, f_pos, horiz, rot, top_limit, i, date_format_type="Исходный", custom_currency="", forecast_periods=0):
     try:
         df_c = active_df.copy()
@@ -260,10 +260,7 @@ def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_ro
                 except: pass
 
         fig = go.Figure()
-        ax_type = 'category' # Принудительный режим категорий исключает искажение шкал для Bar/Waterfall на осях дат
-        
-        if "Линейный" in style:
-            ax_type = 'date' if is_date_axis else ('linear' if pd.api.types.is_numeric_dtype(df_g[x_ax]) else 'category')
+        if "Линейный" in style or (is_date_axis and "Столбчатая" not in style and "Кольцевая" not in style and "Водопад" not in style):
             if forecast_periods > 0 and idx_split > 0 and len(df_g) > idx_split + 1:
                 txt_full = get_formatted_text(df_g[y_ax].values)
                 fig.add_trace(go.Scatter(x=df_g[x_ax].iloc[:idx_split+1], y=df_g[y_ax].iloc[:idx_split+1], mode="lines+markers+text" if lbl else "lines+markers", name="Факт", line=dict(color=color, width=4), text=txt_full[:idx_split+1] if lbl else None, textposition=scatter_pos, textfont=dict(size=f_size, color=f_color)))
@@ -285,7 +282,7 @@ def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_ro
             fig.add_trace(go.Waterfall(x=list(df_g[x_ax].astype(str)) + ["ИТОГО"], y=list(df_g[y_ax]) + [total_sum_val], text=get_formatted_text(list(df_g[y_ax]) + [total_sum_val]) if lbl else None, textposition="auto", measure=["relative"] * len(df_g[y_ax]) + ["total"], increasing={"marker": {"color": color}}, textfont=dict(size=f_size, color=f_color)))
 
         if horiz and "Столбчатая" in style: fig.update_layout(yaxis=dict(type='category'), xaxis=dict(showgrid=True))
-        else: fig.update_layout(xaxis=dict(type=ax_type, tickangle=45), yaxis=dict(showgrid=True))
+        else: fig.update_layout(xaxis=dict(type='category', tickangle=45), yaxis=dict(showgrid=True))
         fig.update_layout(showlegend=True, margin=dict(l=40, r=40, t=40, b=40))
         st.plotly_chart(fig, use_container_width=True, key=f"p_{i}")
     except Exception as chart_err:
@@ -402,7 +399,7 @@ def render_cross_file_mapping_ui(file_registry):
         return pd.DataFrame()
         
     if len(file_names) == 1:
-        single_name = file_names[0]
+        single_name = file_names
         base_df = file_registry[single_name]
         
         st.info(f"💡 Загружен 1 файл: `{single_name}`. Вы можете сопоставить две разные категориальные колонки.")
@@ -420,8 +417,8 @@ def render_cross_file_mapping_ui(file_registry):
         df2 = base_df.copy()
     else:
         st.info(f"💡 Загружено несколько файлов ({len(file_names)} шт.). Настройте связи между первыми двумя таблицами.")
-        f1_name = file_names[0]
-        f2_name = file_names[1]
+        f1_name = file_names
+        f2_name = file_names
         df1, df2 = file_registry[f1_name], file_registry[f2_name]
         
         c1, c2 = st.columns(2)
