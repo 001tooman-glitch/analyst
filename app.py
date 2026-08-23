@@ -360,17 +360,26 @@ st.sidebar.markdown("### 🤖 Настройки ИИ-Слой")
 gemini_api_key = st.sidebar.text_input("Введите Gemini API Key:", type="password")
 ai_context_mode = st.sidebar.selectbox("Контекст для AI:", ["📊 Продажи / Сбыт / Ритейл", "📊 Сравнительный кросс-анализ структур и категорий", "📅 Закупки / Материальное обеспечение", "📦 Запасы / Складские остатки"])
 
-if not st.session_state.files_processed:
-    uploaded_files = st.file_uploader("Загрузите файлы Excel/CSV:", type=["csv", "xlsx"], accept_multiple_files=True)
-    if uploaded_files:
-        with st.spinner("⏳ Чтение..."): st.session_state.raw_file_frames = power_query_clean_engine(uploaded_files)
-        if "Сравнительный" in ai_context_mode: render_cross_file_mapping_ui(st.session_state.raw_file_frames)
-        else:
-            frames_list = list(st.session_state.raw_file_frames.values())
-            if frames_list: 
-                st.session_state.main_df = pd.concat(frames_list, ignore_index=True, join='outer')
-                st.session_state.files_processed = True
-                st.rerun()
+# ИСПРАВЛЕНО: Виджет вынесен в глобальную зону. Серая плашка теперь доступна ВСЕГДА
+uploaded_files = st.file_uploader("Загрузите файлы Excel/CSV:", type=["csv", "xlsx"], accept_multiple_files=True)
+
+if uploaded_files:
+    # Динамически отслеживаем изменение состава или количества файлов
+    current_file_names = [f.name for f in uploaded_files]
+    cached_file_names = list(st.session_state.raw_file_frames.keys())
+    
+    if current_file_names != cached_file_names:
+        with st.spinner("⏳ Обновление структуры базы данных..."):
+            st.session_state.raw_file_frames = power_query_clean_engine(uploaded_files)
+            if "Сравнительный" not in ai_context_mode:
+                frames_list = list(st.session_state.raw_file_frames.values())
+                if frames_list:
+                    st.session_state.main_df = pd.concat(frames_list, ignore_index=True, join='outer')
+                    st.session_state.files_processed = True
+                    st.rerun()
+
+if "Сравнительный" in ai_context_mode and st.session_state.raw_file_frames and st.session_state.main_df.empty:
+    render_cross_file_mapping_ui(st.session_state.raw_file_frames)
 
 main_df = st.session_state.main_df
 if st.session_state.files_processed and not main_df.empty:
