@@ -89,7 +89,6 @@ def calculate_abc_xyz(df, t_col, v_col, p_col, a_lim, x_lim):
     for name, rows in p_matrix.iterrows():
         m = rows.mean()
         s = rows.std(ddof=1) if len(rows) > 1 else 0.0
-        # Оценка стабильности: если среднее около нуля при наличии продаж — высокий коэффициент вариации
         kv = (s / m) * 100 if m > 0 and np.count_nonzero(rows) > 1 else (0.0 if m > 0 and s == 0 else 999.0)
         xyz_res.append({t_col: name, 'KV': kv, 'Класс XYZ': 'X' if kv <= x_lim else ('Y' if kv <= x_lim + 15 else 'Z')})
         
@@ -134,7 +133,6 @@ def calculate_rfm(df, t_col, v_col, p_col):
     df_clean[v_col] = pd.to_numeric(df_clean[v_col], errors='coerce').fillna(0.0)
     df_clean[p_col] = pd.to_datetime(df_clean[p_col], errors='coerce')
     
-    # Использование базовой опорной даты, если в данных содержатся некорректные временные метки
     max_date = df_clean[p_col].max() if df_clean[p_col].notna().any() else pd.Timestamp.now()
     
     rfm = df_clean.groupby(str(t_col)).agg(
@@ -147,7 +145,6 @@ def calculate_rfm(df, t_col, v_col, p_col):
     if len(rfm) < 3:
         return None, None, "Недостаточно уникальных элементов для перцентильного деления."
         
-    # Полноценная логика трехмерной сегментации по перцентилям (1 — лучший класс, 3 — худший)
     rfm['R_Score'] = pd.qcut(rfm['R'].rank(method='first'), 3, labels=['1', '2', '3']).astype(str)
     rfm['F_Score'] = pd.qcut(rfm['F'].rank(method='first'), 3, labels=['3', '2', '1']).astype(str)
     rfm['M_Score'] = pd.qcut(rfm['M'].rank(method='first'), 3, labels=['3', '2', '1']).astype(str)
@@ -263,10 +260,10 @@ def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_ro
                 except: pass
 
         fig = go.Figure()
-        # Стабильное определение типов осей координат во избежание наложений графиков друг на друга
-        ax_type = 'date' if is_date_axis else ('linear' if pd.api.types.is_numeric_dtype(df_g[x_ax]) else 'category')
+        ax_type = 'category' # Принудительный режим категорий исключает искажение шкал для Bar/Waterfall на осях дат
         
-        if "Линейный" in style or (is_date_axis and "Столбчатая" not in style and "Кольцевая" not in style and "Водопад" not in style):
+        if "Линейный" in style:
+            ax_type = 'date' if is_date_axis else ('linear' if pd.api.types.is_numeric_dtype(df_g[x_ax]) else 'category')
             if forecast_periods > 0 and idx_split > 0 and len(df_g) > idx_split + 1:
                 txt_full = get_formatted_text(df_g[y_ax].values)
                 fig.add_trace(go.Scatter(x=df_g[x_ax].iloc[:idx_split+1], y=df_g[y_ax].iloc[:idx_split+1], mode="lines+markers+text" if lbl else "lines+markers", name="Факт", line=dict(color=color, width=4), text=txt_full[:idx_split+1] if lbl else None, textposition=scatter_pos, textfont=dict(size=f_size, color=f_color)))
@@ -287,10 +284,8 @@ def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_ro
             total_sum_val = df_g[y_ax].sum()
             fig.add_trace(go.Waterfall(x=list(df_g[x_ax].astype(str)) + ["ИТОГО"], y=list(df_g[y_ax]) + [total_sum_val], text=get_formatted_text(list(df_g[y_ax]) + [total_sum_val]) if lbl else None, textposition="auto", measure=["relative"] * len(df_g[y_ax]) + ["total"], increasing={"marker": {"color": color}}, textfont=dict(size=f_size, color=f_color)))
 
-        if horiz and "Столбчатая" in style: 
-            fig.update_layout(yaxis=dict(type='category'), xaxis=dict(showgrid=True))
-        else: 
-            fig.update_layout(xaxis=dict(type=ax_type, tickangle=45), yaxis=dict(showgrid=True))
+        if horiz and "Столбчатая" in style: fig.update_layout(yaxis=dict(type='category'), xaxis=dict(showgrid=True))
+        else: fig.update_layout(xaxis=dict(type=ax_type, tickangle=45), yaxis=dict(showgrid=True))
         fig.update_layout(showlegend=True, margin=dict(l=40, r=40, t=40, b=40))
         st.plotly_chart(fig, use_container_width=True, key=f"p_{i}")
     except Exception as chart_err:
@@ -306,7 +301,6 @@ def power_query_clean_engine(uploaded_files_list):
             st.sidebar.error(f"Ошибка обработки файла {f_item.name}: {file_err}")
     return file_registry
 
-# Защищенный интерактивный чат-ассистент с валидацией сгенерированного кода
 def render_ai_sidebar_chat(current_dataframe, api_key, context_mode_text):
     st.sidebar.markdown("---")
     st.sidebar.markdown("### 💬 Чат-ассистент к данным")
@@ -357,9 +351,9 @@ def render_ai_sidebar_chat(current_dataframe, api_key, context_mode_text):
             {json.dumps(sample_json, ensure_ascii=False)}
             
             СТРОГИЕ ПРАВИЛА:
-            1. Только одна рабочая строка кода без оберток вроде ```python.
+            1. Твой ответ должен содержать ИСКЛЮЧИТЕЛЬНО одну строку чистого рабочего кода на Python, без знаков ```.
             2. Результат обязательно присваивай переменной 'result_output'.
-            3. КАТЕГОРИЧЕСКИ ЗАПРЕЩЕН импорт библиотек os, sys, subprocess, shutil. Любые попытки деструктивных действий будут заблокированы.
+            3. Запрещено использовать системные вызовы вроде os, sys, eval, open, subprocess во избежание угроз безопасности.
             """
             
             with chat_container:
@@ -372,10 +366,9 @@ def render_ai_sidebar_chat(current_dataframe, api_key, context_mode_text):
                         )
                         raw_code = response.text.strip().replace("```python", "").replace("```", "")
                         
-                        # Песочница безопасности: блокировка несанкционированных системных вызовов
-                        forbidden_keywords = ['import ', 'os.', 'sys.', 'eval', 'open', 'subprocess', 'shutil', 'write']
+                        forbidden_keywords = ['import ', 'os.', 'sys.', 'open', 'subprocess', 'shutil', 'eval']
                         if any(kw in raw_code for kw in forbidden_keywords):
-                            st.error("🔒 Запрос отклонен: обнаружен небезопасный код.")
+                            st.error("🔒 Запрос отклонен политикой безопасности выполнения кода.")
                             return
                             
                         local_vars = {"current_dataframe": current_dataframe, "result_output": None}
@@ -399,7 +392,6 @@ def render_ai_sidebar_chat(current_dataframe, api_key, context_mode_text):
         except Exception as chat_err:
             st.sidebar.error(f"Ошибка чата: {chat_err}")
 
-# ИСПРАВЛЕНО: Устранено падение из-за извлечения list вместо str при определении имен таблиц
 def render_cross_file_mapping_ui(file_registry):
     st.markdown("---")
     st.markdown("### 🔀 Панель ручного сопоставления разнородных структур и категорий")
@@ -413,13 +405,13 @@ def render_cross_file_mapping_ui(file_registry):
         single_name = file_names[0]
         base_df = file_registry[single_name]
         
-        st.info(f"💡 Загружен 1 файл: `{single_name}`. Сопоставьте две категориальные колонки внутри этой таблицы.")
+        st.info(f"💡 Загружен 1 файл: `{single_name}`. Вы можете сопоставить две разные категориальные колонки.")
         c1, c2 = st.columns(2)
         with c1: f1_col = st.selectbox("Базовый столбец (Слой 1):", ["-- Выберите --"] + list(base_df.columns), key="cf_ui_1")
         with c2: f2_col = st.selectbox("Сравниваемый столбец (Слой 2):", ["-- Выберите --"] + list(base_df.columns), key="cf_ui_2")
         
         if f1_col == "-- Выберите --" or f2_col == "-- Выберите --":
-            st.warning("⚠️ Укажите оба столбца для сопоставления.")
+            st.warning("⚠️ Укажите оба столбца для сопоставления внутри файла.")
             return pd.DataFrame()
             
         unique_f1_vals = list(base_df[f1_col].dropna().astype(str).unique())
@@ -427,7 +419,7 @@ def render_cross_file_mapping_ui(file_registry):
         df1 = base_df.copy()
         df2 = base_df.copy()
     else:
-        st.info(f"💡 Загружено несколько файлов ({len(file_names)} шт.). Настройте кросс-связи.")
+        st.info(f"💡 Загружено несколько файлов ({len(file_names)} шт.). Настройте связи между первыми двумя таблицами.")
         f1_name = file_names[0]
         f2_name = file_names[1]
         df1, df2 = file_registry[f1_name], file_registry[f2_name]
@@ -473,7 +465,7 @@ def render_cross_file_mapping_ui(file_registry):
         clean_df2 = clean_df2.dropna(subset=['Унифицированная_Категория'])
         united_bi_warehouse = pd.concat([clean_df1, clean_df2], ignore_index=True, join='outer')
         st.session_state.main_df = united_bi_warehouse
-        st.success("✅ Сформировано поле связи: 'Унифицированная_Категория'.")
+        st.success("✅ Универсальная витрина кросс-анализа успешно сформирована! Создано поле связи: 'Унифицированная_Категория'.")
         st.rerun()
 st.sidebar.markdown("### 🤖 Настройки ИИ-Слой")
 gemini_api_key = st.sidebar.text_input("Введите Gemini API Key:", type="password")
