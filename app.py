@@ -33,7 +33,7 @@ def add_card_cb(): st.session_state.manual_cards += 1
 def remove_card_cb(): 
     if st.session_state.manual_cards > 1: st.session_state.manual_cards -= 1
 def inject_custom_css():
-    # ИСПРАВЛЕНО: Теги style полностью изолированы, код больше не вылезает наверх экрана
+    # Полная изоляция стилей и шрифтов без утечки кода на экран
     st.markdown("""
         <link rel="preconnect" href="https://googleapis.com">
         <link rel="preconnect" href="https://gstatic.com" crossorigin>
@@ -175,7 +175,7 @@ def render_custom_chart(active_df, x_ax, y_ax, style, color, lbl, f_format, f_ro
         def get_formatted_text(value_array):
             labels = []
             for v in value_array:
-                # ИСПРАВЛЕНО: Конвертация через f-строку форматирования (например, :.1f) принудительно сохраняет нули
+                # Фикс округления: Строгая конвертация через f-строку принудительно сохраняет заданные нули
                 if f_format == "Финансовый": 
                     labels.append(f"{v:,.{f_round}f}".replace(",", " ") + curr_suffix)
                 elif f_format == "Сжатый (млн/млрд)":
@@ -418,7 +418,7 @@ if st.session_state.files_processed and not main_df.empty:
                         cv = df_card[t_col_metric].sum() if "Сумма" in c_mode else df_card[t_col_metric].mean()
                         suffix = f" {str(c_curr_text).strip()}" if str(c_curr_text).strip() else ""
                         
-                        # ИСПРАВЛЕНО: Строгое удержание знаков после запятой с сохранением нулей во всех форматах
+                        # Фикс округления: Форматирование через f-строку принудительно сохраняет нули
                         if c_fmt == "Финансовый": 
                             lbl = f"{cv:,.{c_rnd}f}".replace(",", " ") + suffix
                         elif c_fmt == "Сжатый (млн/млрд)":
@@ -445,7 +445,7 @@ if st.session_state.files_processed and not main_df.empty:
             with st.expander("🎨 Настройки проводника"):
                 cu1, cu2 = st.columns(2)
                 with cu1:
-                    lbl_g, f_format = st.checkbox("Показывать значения", value=True, key=f"lbl_{i}"), st.selectbox("Форрат:", ["Числовой", "Финансовый", "Сжатый (млн/млрд)"], key=f"fmt_{i}")
+                    lbl_g, f_format = st.checkbox("Показывать значения", value=True, key=f"lbl_{i}"), st.selectbox("Формат:", ["Числовой", "Финансовый", "Сжатый (млн/млрд)"], key=f"fmt_{i}")
                     f_round, f_curr_text = st.slider("Округление:", 0, 4, 0, key=f"rnd_{i}"), st.text_input("Валюта графика:", value="$", key=f"fcur_tx_{i}")
                 with cu2:
                     f_size, f_color, f_pos = st.slider("Шрифт:", 8, 24, 14, key=f"sz_{i}"), st.color_picker("Цвет шрифта:", "#000000", key=f"fcol_{i}"), st.selectbox("Положение:", ["auto", "inside", "outside"], key=f"pos_{i}")
