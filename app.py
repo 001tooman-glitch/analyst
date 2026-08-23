@@ -50,6 +50,7 @@ def add_card_cb(): st.session_state.manual_cards += 1
 def remove_card_cb(): 
     if st.session_state.manual_cards > 1: st.session_state.manual_cards -= 1
 def inject_custom_css():
+    # Передача стилей через shadow-iframe родительского окна исключает появление сырого текста на экране
     components.html("""
         <script>
         const style = window.parent.document.createElement('style');
@@ -220,7 +221,6 @@ def render_custom_chart(active_df, x_ax, y_ax_list, style, base_color, lbl, f_fo
 
         if "Линейный" in style or (is_date_axis and "Столбчатая" not in style and "Кольцевая" not in style and "Водопад" not in style):
             for idx, y_col in enumerate(y_ax_list):
-                # ИСПРАВЛЕНО: Автоматический разнос подписей по разным сторонам (верх/низ), чтобы они не сливались
                 current_pos = "top center" if (f_pos == "auto" and idx % 2 == 0) else ("bottom center" if f_pos == "auto" else f_pos)
                 fig.add_trace(go.Scatter(x=df_g[x_ax].astype(str), y=df_g[y_col], mode="lines+markers+text" if lbl else "lines+markers", name=y_col, line=dict(color=palette[idx % len(palette)], width=4), text=get_formatted_text(df_g[y_col].values) if lbl else None, textposition=current_pos, textfont=dict(size=f_size, color=f_color)))
             fig.update_layout(xaxis=dict(type='category', tickangle=45), yaxis=dict(showgrid=True))
@@ -232,7 +232,6 @@ def render_custom_chart(active_df, x_ax, y_ax_list, style, base_color, lbl, f_fo
             if horiz: fig.update_layout(yaxis=dict(type='category'), xaxis=dict(showgrid=True), barmode="group")
             else: fig.update_layout(xaxis=dict(type='category', tickangle=45), yaxis=dict(showgrid=True), barmode="group")
         elif "Кольцевая" in style:
-            # Для кольцевых диаграмм берем первую доступную метрику из списка
             target_y = y_ax_list[0] if y_ax_list else None
             if target_y:
                 fig.add_trace(go.Pie(labels=df_g[x_ax], values=df_g[target_y], hole=0.4, rotation=rot, text=get_formatted_text(df_g[target_y].values), textinfo="text+percent" if lbl else "none", texttemplate="%{label}: %{text} (%{percent})" if lbl else "none", textposition="auto", textfont=dict(size=f_size, color=f_color)))
@@ -394,13 +393,14 @@ if st.session_state.files_processed and not main_df.empty:
         
         with filter_c1:
             st.markdown("##### 📅 Временной диапазон (ОТ и ДО)")
-            time_col_exists = st.session_state.mapped_time_col in main_df.columns
+            time_col_exists = st.session_state.mapped_time_col in main_df.columns and st.session_state.mapped_time_col != "-- Выберите --"
             if time_col_exists:
-                main_df['_datetime_filter_internal_'] = pd.to_datetime(main_df[st.session_state.mapped_time_col], errors='coerce')
-                min_date = main_df['_datetime_filter_internal_'].min()
-                max_date = main_df['_datetime_filter_internal_'].max()
+                # Безопасное создание внутренней колонки дат в копии датафрейма для исключения KeyError
+                active_filtered_df['_datetime_filter_internal_'] = pd.to_datetime(active_filtered_df[st.session_state.mapped_time_col], errors='coerce')
+                min_date = active_filtered_df['_datetime_filter_internal_'].min()
+                max_date = active_filtered_df['_datetime_filter_internal_'].max()
                 
-                if not pd.isna(min_date) and not pd.isna(max_date):
+                if not pd.isna(min_date) and not pd.isna(max_date) and '_datetime_filter_internal_' in active_filtered_df.columns:
                     chosen_dates = st.date_input(
                         "Интервал для Кольцевой диаграммы и Водопада:",
                         value=(min_date.date(), max_date.date()),
@@ -415,7 +415,7 @@ if st.session_state.files_processed and not main_df.empty:
                             (active_filtered_df['_datetime_filter_internal_'].dt.date <= end_date)
                         ]
             else:
-                st.info("ℹ️ Шкала времени не настроена.")
+                st.info("ℹ️ Настройте параметр '📅 ШКАЛА ВРЕМЕНИ' в левом меню для включения календаря.")
 
         with filter_c2:
             st.markdown("##### 🔍 Фильтр по аналитическим позициям")
@@ -431,7 +431,6 @@ if st.session_state.files_processed and not main_df.empty:
             else:
                 st.info("ℹ️ В файле не найдены текстовые колонки для фильтрации.")
 
-        # ДОБАВЛЕНО: Интуитивная кнопка быстрого сброса всех наложенных фильтров
         if st.button("🧹 Сбросить все глобальные фильтры (Показать исходные данные)"):
             st.rerun()
 
