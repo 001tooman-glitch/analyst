@@ -354,3 +354,110 @@ def render_cross_file_mapping_ui(file_registry):
         st.session_state.files_processed = True
         st.success("✅ Сформировано поле связи: 'Унифицированная_Категория'.")
         st.rerun()
+st.sidebar.markdown("### 🤖 Настройки ИИ-Слой")
+gemini_api_key = st.sidebar.text_input("Введите Gemini API Key:", type="password")
+ai_context_mode = st.sidebar.selectbox("Контекст для AI:", ["📊 Продажи / Сбыт / Ритейл", "📊 Сравнительный кросс-анализ структур и категорий", "📅 Закупки / Материальное обеспечение", "📦 Запасы / Складские остатки"])
+
+if not st.session_state.files_processed:
+    uploaded_files = st.file_uploader("Загрузите файлы Excel/CSV:", type=["csv", "xlsx"], accept_multiple_files=True)
+    if uploaded_files:
+        with st.spinner("⏳ Чтение..."): st.session_state.raw_file_frames = power_query_clean_engine(uploaded_files)
+        if "Сравнительный" in ai_context_mode: render_cross_file_mapping_ui(st.session_state.raw_file_frames)
+        else:
+            frames_list = list(st.session_state.raw_file_frames.values())
+            if frames_list: 
+                st.session_state.main_df = pd.concat(frames_list, ignore_index=True, join='outer')
+                st.session_state.files_processed = True
+                st.rerun()
+
+main_df = st.session_state.main_df
+if st.session_state.files_processed and not main_df.empty:
+    render_ai_sidebar_chat(main_df, gemini_api_key, ai_context_mode)
+    if st.sidebar.button("♻️ Сбросить базу данных"):
+        st.session_state.main_df, st.session_state.raw_file_frames, st.session_state.chat_history, st.session_state.category_mapping_dict = pd.DataFrame(), {}, [], {}
+        st.session_state.mapped_target_col, st.session_state.mapped_value_col, st.session_state.mapped_time_col = "-- Выберите --", "-- Выберите --", "-- Выберите --"
+        st.session_state.files_processed = False
+        st.rerun()
+        
+    st.sidebar.markdown("### 🎛️ Ручной маппинг аналитических шкал")
+    raw_headers = list(main_df.columns)
+    
+    st.session_state.mapped_target_col = st.sidebar.selectbox("🔑 КЛЮЧ АНАЛИЗА:", ["-- Выберите --"] + raw_headers, key="persistent_target_select_widget")
+    st.session_state.mapped_value_col = st.sidebar.selectbox("💰 КРИТЕРИЙ ОБЪЕМА:", ["-- Выберите --"] + raw_headers, key="persistent_value_select_widget")
+    st.session_state.mapped_time_col = st.sidebar.selectbox("📅 ШКАЛА ВРЕМЕНИ:", ["-- Выберите --"] + raw_headers, key="persistent_time_select_widget")
+    
+    if st.session_state.mapped_value_col != "-- Выберите --":
+        main_df[st.session_state.mapped_value_col] = pd.to_numeric(main_df[st.session_state.mapped_value_col].astype(str).str.replace(r'\s+', '', regex=True).str.replace(',', '.'), errors='coerce').fillna(0.0)
+
+    all_cols_list = ["-- Выберите заголовок --"] + raw_headers
+    page = st.sidebar.radio("Перейти к разделу:", ["🗂️ 1. Загрузка и очистка данных", "📊 2. Executive Диаграммы", "🗮️ 3. ABC/XYZ-аналитика элементов", "👥 4. RFM-сегментация"])
+    
+    if page == "🗂️ 1. Загрузка и очистка данных":
+        st.success(f"📊 База сформирована! Строк: {len(main_df):,}")
+        cp = st.number_input(f"Страница:", min_value=1, value=1, step=1)
+        st.dataframe(main_df.iloc[(cp - 1) * 50: cp * 50], height=350, use_container_width=True)
+    elif page == "📊 2. Executive Диаграммы":
+        st.title("📊 Интерактивная BI-Панель Показателей")
+        card_cols = st.columns(st.session_state.manual_cards)
+        for j in range(st.session_state.manual_cards):
+            with card_cols[j % len(card_cols)]:
+                st.markdown(f"**📌 Карточка № {j+1}**")
+                t_col_metric = st.selectbox(f"Поле метрики:", all_cols_list, key=f"c_t_{j}")
+                c_mode = st.selectbox(f"Агрегация:", ["Сумма", "Среднее"], key=f"c_m_{j}")
+                group_col = st.selectbox(f"Группировать по полю:", ["-- Без фильтра --"] + raw_headers, key=f"c_g_{j}")
+                filter_value = st.selectbox(f"Значение элемента:", list(main_df[group_col].astype(str).unique()), key=f"c_v_{j}") if group_col != "-- Без фильтра --" else None
+                with st.expander("🎨 Настройки"):
+                    c_fmt = st.selectbox("Формат:", ["Числовой", "Финансовый", "Сжатый (млн/млрд)"], key=f"c_f_{j}")
+                    c_curr_text, c_rnd = st.text_input("Валюта:", value="$", key=f"c_cur_{j}"), st.slider("Округление:", 0, 4, 2, key=f"c_r_{j}")
+                if t_col_metric != "-- Выберите заголовок --":
+                    try:
+                        df_card = main_df.copy()
+                        if group_col != "-- Без фильтра --" and filter_value is not None: df_card = df_card[df_card[group_col].astype(str) == str(filter_value)]
+                        df_card[t_col_metric] = pd.to_numeric(df_card[t_col_metric], errors='coerce').fillna(0)
+                        cv = df_card[t_col_metric].sum() if "Сумма" in c_mode else df_card[t_col_metric].mean()
+                        suffix = f" {str(c_curr_text).strip()}" if str(c_curr_text).strip() else ""
+                        
+                        if c_fmt == "Финансовый": 
+                            lbl = f"{cv:,.{c_rnd}f}".replace(",", " ") + suffix
+                        elif c_fmt == "Сжатый (млн/млрд)":
+                            if abs(cv) >= 1_000_000_000: 
+                                lbl = f"{cv / 1_000_000_000:,.{c_rnd}f}".replace(",", " ") + f" млрд{suffix}"
+                            else: 
+                                lbl = f"{cv / 1_000_000:,.{c_rnd}f}".replace(",", " ") + f" млн{suffix}"
+                        else: 
+                            lbl = f"{cv:,.{c_rnd}f}".replace(",", " ")
+                        
+                        card_bg, text_main, text_sub = "#ffffff", "#0f172a", "#64748b"
+                        st.markdown(f'<div style="background: {card_bg}; padding: 24px 20px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0, 0, 0, 0.04); border-left: 5px solid #4f46e5; text-align: left; margin-bottom: 15px;"><div style="color: {text_sub}; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px;">{t_col_metric}</div><div style="color: {text_main}; font-size: 28px; font-weight: 700; letter-spacing: -0.5px;">{lbl}</div></div>', unsafe_allow_html=True)
+                    except: pass
+        bc1, bc2 = st.columns(2)
+        with bc1: st.button("➕ Добавить карточку", on_click=add_card_cb)
+        with bc2: st.button("🗑️ Удалить карточку", on_click=remove_card_cb)
+        st.markdown("---")
+        st.subheader("🛠️ No-Code Конструктор Графиков")
+        for i in range(st.session_state.manual_charts):
+            c1, c2, c3, c4 = st.columns(4)
+            with c1: style = st.selectbox(f"Тип №{i+1}:", ["Столбчатая диаграмма (Bar)", "Линейный тренд (Line)", "Кольцевая долей (Donut)", "Диаграмма Водопад (Waterfall)"], key=f"s_{i}")
+            with c2: x_ax = st.selectbox(f"Ось X №{i+1}:", all_cols_list, key=f"x_{i}")
+            with c3: y_ax = st.selectbox(f"Ось Y №{i+1}:", all_cols_list, key=f"y_{i}")
+            with c4: color = st.color_picker(f"Цвет №{i+1}:", "#1f77b4", key=f"col_{i}")
+            with st.expander("🎨 Настройки проводника"):
+                cu1, cu2 = st.columns(2)
+                with cu1:
+                    lbl_g, f_format = st.checkbox("Показывать значения", value=True, key=f"lbl_{i}"), st.selectbox("Формат:", ["Числовой", "Финансовый", "Сжатый (млн/млрд)"], key=f"fmt_{i}")
+                    f_round, f_curr_text = st.slider("Округление:", 0, 4, 0, key=f"rnd_{i}"), st.text_input("Валюта графика:", value="$", key=f"fcur_tx_{i}")
+                with cu2:
+                    f_size, f_color, f_pos = st.slider("Шрифт:", 8, 24, 14, key=f"sz_{i}"), st.color_picker("Цвет шрифта:", "#000000", key=f"fcol_{i}"), st.selectbox("Положение:", ["auto", "inside", "outside"], key=f"pos_{i}")
+                    horiz = st.checkbox("Горизонтально", value=False, key=f"h_{i}") if "Bar" in style else False
+                    rot = st.slider("🔄 Поворот:", 0, 360, 0, step=15, key=f"rot_{i}") if "Donut" in style else 0
+                    top_limit, d_fmt = st.slider("🔝 ТОП позиций:", 5, 200, 15, key=f"top_{i}"), st.selectbox("Формат даты:", ["Исходный", "ММ.ГГГГ (01.2014)", "Месяц ГГГГ (Янв 2014)", "ДД.ММ.ГГГГ (15.01.2014)", "ГГГГ (2014)"], key=f"dfmt_{i}")
+                    f_cast = st.slider("🔮 Прогноз периодов:", 0, 5, 2, key=f"fcast_{i}")
+            if x_ax != "-- Выберите заголовок --" and y_ax != "-- Выберите заголовок --": render_custom_chart(main_df, x_ax, y_ax, style, color, lbl_g, f_format, f_round, f_size, f_color, f_pos, horiz, rot, top_limit, i, date_format_type=d_fmt, custom_currency=f_curr_text, forecast_periods=f_cast)
+        b1, b2 = st.columns(2)
+        with b1: st.button("➕ Добавить диаграмму", on_click=add_chart_cb)
+        with b2: st.button("🗑️ Удалить диаграмму", on_click=remove_chart_cb)
+    elif page == "🗮️ 3. ABC/XYZ-аналитика элементов": internal_show_abc_xyz_page(main_df, gemini_api_key, ai_context_mode)
+    elif page == "👥 4. RFM-сегментация": internal_show_rfm_page(main_df, gemini_api_key, ai_context_mode)
+else:
+    st.sidebar.info("📊 Ожидание загрузки файлов для кросс-анализа...")
+    st.info("📊 BI-платформа ожидает загрузки любых файлов Excel/CSV...")
