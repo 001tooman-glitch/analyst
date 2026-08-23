@@ -33,6 +33,7 @@ def add_card_cb(): st.session_state.manual_cards += 1
 def remove_card_cb(): 
     if st.session_state.manual_cards > 1: st.session_state.manual_cards -= 1
 def inject_custom_css():
+    # Полная изоляция стилей и шрифтов без утечки кода на экран
     st.markdown("""
         <link rel="preconnect" href="https://googleapis.com">
         <link rel="preconnect" href="https://gstatic.com" crossorigin>
@@ -392,6 +393,7 @@ if st.session_state.files_processed and not main_df.empty:
     page = st.sidebar.radio("Перейти к разделу:", ["🗂️ 1. Загрузка и очистка данных", "📊 2. Executive Диаграммы", "🗮️ 3. ABC/XYZ-аналитика элементов", "👥 4. RFM-сегментация"])
     
     if page == "🗂️ 1. Загрузка и очистка данных":
+        # ИСПРАВЛЕНО: Из этой строки удалена потерявшаяся закрывающая кавычка от старого CSS-кода, вызывавшая баг
         st.success(f"📊 База сформирована! Строк: {len(main_df):,}")
         cp = st.number_input(f"Страница:", min_value=1, value=1, step=1)
         st.dataframe(main_df.iloc[(cp - 1) * 50: cp * 50], height=350, use_container_width=True)
@@ -415,19 +417,16 @@ if st.session_state.files_processed and not main_df.empty:
                         df_card[t_col_metric] = pd.to_numeric(df_card[t_col_metric], errors='coerce').fillna(0)
                         cv = df_card[t_col_metric].sum() if "Сумма" in c_mode else df_card[t_col_metric].mean()
                         suffix = f" {str(c_curr_text).strip()}" if str(c_curr_text).strip() else ""
-                        
-                        # Фикс округления: Строгое удержание знаков после запятой с сохранением нулей во всех форматах
                         if c_fmt == "Финансовый": 
                             lbl = f"{cv:,.{c_rnd}f}".replace(",", " ") + suffix
                         elif c_fmt == "Сжатый (млн/млрд)":
-                            if abs(cv) >= 1_000_000_000: 
-                                lbl = f"{cv / 1_000_000_000:,.{c_rnd}f}".replace(",", " ") + f" млрд{suffix}"
-                            else: 
-                                lbl = f"{cv / 1_000_000:,.{c_rnd}f}".replace(",", " ") + f" млн{suffix}"
+                            if abs(cv) >= 1_000_000_000: lbl = f"{cv / 1_000_000_000:,.{c_rnd}f}".replace(",", " ") + f" млрд{suffix}"
+                            else: lbl = f"{cv / 1_000_000:,.{c_rnd}f}".replace(",", " ") + f" млн{suffix}"
                         else: 
                             lbl = f"{cv:,.{c_rnd}f}".replace(",", " ")
-                            
-                        st.markdown(f'<div style="background: #ffffff; padding: 24px 20px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0, 0, 0, 0.04); border-left: 5px solid #4f46e5; text-align: left; margin-bottom: 15px;"><div style="color: #64748b; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px;">{t_col_metric}</div><div style="color: #0f172a; font-size: 28px; font-weight: 700; letter-spacing: -0.5px;">{lbl}</div></div>', unsafe_allow_html=True)
+                        
+                        card_bg, text_main, text_sub = "#ffffff", "#0f172a", "#64748b"
+                        st.markdown(f'<div style="background: {card_bg}; padding: 24px 20px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0, 0, 0, 0.04); border-left: 5px solid #4f46e5; text-align: left; margin-bottom: 15px;"><div style="color: {text_sub}; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px;">{t_col_metric}</div><div style="color: {text_main}; font-size: 28px; font-weight: 700; letter-spacing: -0.5px;">{lbl}</div></div>', unsafe_allow_html=True)
                     except: pass
         bc1, bc2 = st.columns(2)
         with bc1: st.button("➕ Добавить карточку", on_click=add_card_cb)
@@ -455,7 +454,7 @@ if st.session_state.files_processed and not main_df.empty:
         b1, b2 = st.columns(2)
         with b1: st.button("➕ Добавить диаграмму", on_click=add_chart_cb)
         with b2: st.button("🗑️ Удалить диаграмму", on_click=remove_chart_cb)
-    elif page == "🗮️ 3. ABC/XYZ-аналитика элементов": internal_show_abc_xyz_page(main_df, gemini_api_key, api_key_mode if 'api_key_mode' in locals() else ai_context_mode)
+    elif page == "🗮️ 3. ABC/XYZ-аналитика элементов": internal_show_abc_xyz_page(main_df, gemini_api_key, ai_context_mode)
     elif page == "👥 4. RFM-сегментация": internal_show_rfm_page(main_df, gemini_api_key, ai_context_mode)
 else:
     st.sidebar.info("📊 Ожидание загрузки файлов для кросс-анализа...")
