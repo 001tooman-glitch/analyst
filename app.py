@@ -224,6 +224,7 @@ def render_custom_chart(active_df, x_ax, y_ax_list, style, base_color, lbl, f_fo
         }
         fmt_string = format_mapping.get(date_format_type, "%Y-%m-%d")
 
+        # ПРАВИЛО: Абсолютно для всех типов графиков производим предварительную очистку и группировку дат
         if is_date_axis:
             df_c['_datetime_clean_'] = converted_dates
             df_c = df_c.dropna(subset=['_datetime_clean_'])
@@ -241,43 +242,26 @@ def render_custom_chart(active_df, x_ax, y_ax_list, style, base_color, lbl, f_fo
             for idx, y_col in enumerate(y_ax_list):
                 current_pos = "top center" if (f_pos == "auto" and idx % 2 == 0) else ("bottom center" if f_pos == "auto" else f_pos)
                 y_vals = df_g[y_col].tolist()
+                fig.add_trace(go.Scatter(x=x_vals, y=y_vals, mode="lines+markers+text" if lbl else "lines+markers", name=f"{y_col} (Fact)", line=dict(color=palette[idx % len(palette)], width=4), text=get_formatted_text(y_vals) if lbl else None, textposition=current_pos, textfont=dict(size=f_size, color=f_color)))
                 
-                # Отрисовка факта
-                fig.add_trace(go.Scatter(x=x_vals, y=y_vals, mode="lines+markers+text" if lbl else "lines+markers", name=f"{y_col} (Факт)", line=dict(color=palette[idx % len(palette)], width=4), text=get_formatted_text(y_vals) if lbl else None, textposition=current_pos, textfont=dict(size=f_size, color=f_color)))
-                
-                # ИСПРАВЛЕНИЕ: Интеграция Holt-Winters + Бесшовное слияние с крайней точкой факта
                 if forecast_periods > 0 and len(y_vals) >= 2:
-                    # Алгоритм экспоненциального сглаживания Хольта (сглаживание уровня и тренда)
                     alpha, beta = 0.4, 0.3
-                    level = y_vals[0]
-                    trend = y_vals[1] - y_vals[0]
-                    
+                    level, trend = y_vals[-1], y_vals[-1] - y_vals[-2]
                     for v in y_vals[1:]:
                         last_level = level
                         level = alpha * v + (1 - alpha) * (level + trend)
                         trend = beta * (level - last_level) + (1 - beta) * trend
-                    
-                    # Генерируем прогнозные значения (начиная строго с последней реальной точки для бесшовности)
                     f_y_vals = [y_vals[-1]]
                     for step in range(1, forecast_periods + 1):
                         f_y_vals.append(level + step * trend)
-                    
-                    # Генерируем хронологические даты будущего
                     if is_date_axis and len(raw_dates_list) > 0:
                         last_date = raw_dates_list[-1]
                         f_x_vals = [x_vals[-1]]
                         for step in range(1, forecast_periods + 1):
-                            next_date = last_date + pd.Timedelta(days=step)
-                            f_x_vals.append(next_date.strftime(fmt_string))
+                            f_x_vals.append((last_date + pd.Timedelta(days=step)).strftime(fmt_string))
                     else:
                         f_x_vals = [x_vals[-1]] + [f"Прогноз +{step}" for step in range(1, forecast_periods + 1)]
-                    
-                    # Форматируем подписи прогнозных точек
-                    f_text_labels = get_formatted_text(f_y_vals)
-                    
-                    # ИСПРАВЛЕНИЕ: Отрисовка линии прогноза с использованием кастомного цвета forecast_custom_color
-                    fig.add_trace(go.Scatter(x=f_x_vals, y=f_y_vals, mode="lines+markers+text" if lbl else "lines+markers", name=f"{y_col} (Прогноз)", line=dict(color=forecast_custom_color, width=3, dash="dash"), text=f_text_labels if lbl else None, textposition="top center", textfont=dict(size=f_size, color=f_color)))
-                    
+                    fig.add_trace(go.Scatter(x=f_x_vals, y=f_y_vals, mode="lines+markers+text" if lbl else "lines+markers", name=f"{y_col} (Forecast)", line=dict(color=forecast_custom_color, width=3, dash="dash"), text=get_formatted_text(f_y_vals) if lbl else None, textposition="top center", textfont=dict(size=f_size, color=f_color)))
             fig.update_layout(xaxis=dict(type='category', tickangle=45), yaxis=dict(showgrid=True))
         elif "Столбчатая" in style:
             sp = f_pos if f_pos in ["inside", "outside", "auto"] else "auto"
@@ -286,12 +270,12 @@ def render_custom_chart(active_df, x_ax, y_ax_list, style, base_color, lbl, f_fo
                 else: fig.add_trace(go.Bar(x=x_vals, y=df_g[y_col], text=get_formatted_text(df_g[y_col].values) if lbl else None, textposition=sp, orientation="v", name=y_col, marker_color=palette[idx % len(palette)], textfont=dict(size=f_size, color=f_color)))
             fig.update_layout(xaxis=dict(type='category', tickangle=45) if not horiz else dict(showgrid=True), yaxis=dict(showgrid=True) if not horiz else dict(type='category'), barmode="group")
         elif "Кольцевая" in style:
-            target_y = y_ax_list if isinstance(y_ax_list, list) and len(y_ax_list) > 0 else y_ax_list
+            target_y = y_ax_list[0] if isinstance(y_ax_list, list) and len(y_ax_list) > 0 else y_ax_list
             if target_y and target_y != "-- Выберите заголовок --": 
                 fig.add_trace(go.Pie(labels=x_vals, values=df_g[target_y], hole=0.4, rotation=rot, text=get_formatted_text(df_g[target_y].values), textinfo="text+percent" if lbl else "none", texttemplate="%{label}: %{text} (%{percent})" if lbl else "none", textposition="auto", textfont=dict(size=f_size, color=f_color)))
             fig.update_layout(xaxis=dict(type='category', tickangle=45), yaxis=dict(showgrid=True))
         elif "Водопад" in style:
-            target_y = y_ax_list if isinstance(y_ax_list, list) and len(y_ax_list) > 0 else y_ax_list
+            target_y = y_ax_list[0] if isinstance(y_ax_list, list) and len(y_ax_list) > 0 else y_ax_list
             if target_y and target_y != "-- Выберите заголовок --":
                 ts = df_g[target_y].sum()
                 fig.add_trace(go.Waterfall(x=list(x_vals) + ["ИТОГО"], y=list(df_g[target_y]) + [ts], text=get_formatted_text(list(df_g[target_y]) + [ts]) if lbl else None, textposition="auto", measure=["relative"] * len(df_g[target_y]) + ["total"], increasing={"marker": {"color": base_color}}, textfont=dict(size=f_size, color=f_color)))
@@ -307,7 +291,6 @@ def power_query_clean_engine(uploaded_files_list):
             df = pd.read_csv(io.StringIO(f_item.getvalue().decode('utf-8'))) if f_item.name.endswith('.csv') else pd.read_excel(f_item, engine='openpyxl')
             df = df.loc[:, ~df.columns.str.contains('^Без названия|^Unnamed|^Unnamed:')].loc[:, ~df.columns.duplicated()]
             
-            # Умная сквозная нормализация дат во время импорта:
             for col in df.columns:
                 if any(x in str(col).lower() for x in ['date', 'дата', 'время', 'time', 'период']):
                     parsed_dates = pd.to_datetime(df[col], errors='coerce').dt.tz_localize(None).dt.normalize()
@@ -549,11 +532,10 @@ if st.session_state.files_processed and not main_df.empty:
             if "Bar" in preset["style"] or "Line" in preset["style"]:
                 preset["y_ax_list"] = st.multiselect("Оси Y (Метрики сравнения):", [c for c in raw_headers if c != preset["x_ax"]], default=[val for val in preset["y_ax_list"] if val in raw_headers], key=f"y_r_{selected_chart_idx}")
             else:
-                def_val = preset["y_ax_list"] if isinstance(preset["y_ax_list"], list) and len(preset["y_ax_list"]) > 0 else preset["y_ax_list"]
+                def_val = preset["y_ax_list"][0] if isinstance(preset["y_ax_list"], list) and len(preset["y_ax_list"]) > 0 else preset["y_ax_list"]
                 single_y = st.selectbox("Ось Y (Объем):", all_cols_list, index=all_cols_list.index(def_val) if def_val in all_cols_list else 0, key=f"y_single_r_{selected_chart_idx}")
                 preset["y_ax_list"] = [single_y] if single_y != "-- Выберите заголовок --" else []
             
-            # Раздельный выбор цвета: Факт и Прогноз
             cc_f1, cc_f2 = st.columns(2)
             with cc_f1: preset["color"] = st.color_picker("Цвет факта:", preset["color"], key=f"col_r_{selected_chart_idx}")
             with cc_f2: preset["forecast_color"] = st.color_picker("Цвет прогноза:", preset.get("forecast_color", "#ef4444"), key=f"col_forecast_r_{selected_chart_idx}")
