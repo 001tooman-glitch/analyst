@@ -37,7 +37,7 @@ if "cards_presets" not in st.session_state:
 if "charts_presets" not in st.session_state:
     st.session_state.charts_presets = [{
         "style": "Столбчатая диаграмма (Bar)", "x_ax": "-- Выберите заголовок --", "y_ax_list": [], 
-        "color": "#1f77b4", "lbl_g": True, "f_format": "Числовой", "f_round": 0, "f_curr_text": "$",
+        "color": "#1f77b4", "forecast_color": "#ef4444", "lbl_g": True, "f_format": "Числовой", "f_round": 0, "f_curr_text": "$",
         "f_size": 14, "f_color": "#000000", "f_pos": "auto", "horiz": False, "rot": 0, "top_limit": 15,
         "d_fmt": "ГГГГ-ММ-ДД (Исходный ISO)", "f_cast": 0
     }]
@@ -55,7 +55,7 @@ def remove_card_preset_cb():
 def add_chart_preset_cb():
     st.session_state.charts_presets.append({
         "style": "Столбчатая диаграмма (Bar)", "x_ax": "-- Выберите заголовок --", "y_ax_list": [], 
-        "color": "#1f77b4", "lbl_g": True, "f_format": "Числовой", "f_round": 0, "f_curr_text": "$",
+        "color": "#1f77b4", "forecast_color": "#ef4444", "lbl_g": True, "f_format": "Числовой", "f_round": 0, "f_curr_text": "$",
         "f_size": 14, "f_color": "#000000", "f_pos": "auto", "horiz": False, "rot": 0, "top_limit": 15,
         "d_fmt": "ГГГГ-ММ-ДД (Исходный ISO)", "f_cast": 0
     })
@@ -194,7 +194,7 @@ def internal_show_rfm_page(filtered_df, api_key, data_context):
     if st.button("👥 Сгенерировать ИИ-отчет по сегментам", key="ai_report_rfm_btn"):
         ai_generate_text_report(seg_counts, report_type=f"RFM ({t_col})", data_context=data_context, api_key=api_key)
     st.dataframe(rfm.sort_values(by='M', ascending=False), use_container_width=True)
-def render_custom_chart(active_df, x_ax, y_ax_list, style, base_color, lbl, f_format, f_round, f_size, f_color, f_pos, horiz, rot, top_limit, i, date_format_type="ГГГГ-ММ-ДД (Исходный ISO)", custom_currency="", forecast_periods=0):
+def render_custom_chart(active_df, x_ax, y_ax_list, style, base_color, lbl, f_format, f_round, f_size, f_color, f_pos, horiz, rot, top_limit, i, date_format_type="ГГГГ-ММ-ДД (Исходный ISO)", custom_currency="", forecast_periods=0, forecast_custom_color="#ef4444"):
     try:
         if not y_ax_list: return
         df_c = active_df.copy()
@@ -242,18 +242,27 @@ def render_custom_chart(active_df, x_ax, y_ax_list, style, base_color, lbl, f_fo
                 current_pos = "top center" if (f_pos == "auto" and idx % 2 == 0) else ("bottom center" if f_pos == "auto" else f_pos)
                 y_vals = df_g[y_col].tolist()
                 
-                # Рендеринг факта
+                # Отрисовка факта
                 fig.add_trace(go.Scatter(x=x_vals, y=y_vals, mode="lines+markers+text" if lbl else "lines+markers", name=f"{y_col} (Факт)", line=dict(color=palette[idx % len(palette)], width=4), text=get_formatted_text(y_vals) if lbl else None, textposition=current_pos, textfont=dict(size=f_size, color=f_color)))
                 
-                # ИСПРАВЛЕНИЕ: Календарный прогноз + принудительное отображение подписей значений
-                if forecast_periods > 0 and len(y_vals) >= 1:
-                    t_idx = np.arange(len(y_vals))
-                    slope, intercept = np.polyfit(t_idx, y_vals, 1) if len(y_vals) > 1 else (0, y_vals[0])
+                # ИСПРАВЛЕНИЕ: Интеграция Holt-Winters + Бесшовное слияние с крайней точкой факта
+                if forecast_periods > 0 and len(y_vals) >= 2:
+                    # Алгоритм экспоненциального сглаживания Хольта (сглаживание уровня и тренда)
+                    alpha, beta = 0.4, 0.3
+                    level = y_vals[0]
+                    trend = y_vals[1] - y_vals[0]
                     
-                    f_t_idx = np.arange(len(y_vals) - 1, len(y_vals) + forecast_periods)
-                    f_y_vals = slope * f_t_idx + intercept
+                    for v in y_vals[1:]:
+                        last_level = level
+                        level = alpha * v + (1 - alpha) * (level + trend)
+                        trend = beta * (level - last_level) + (1 - beta) * trend
                     
-                    # Генерируем реальные будущие даты по оси X
+                    # Генерируем прогнозные значения (начиная строго с последней реальной точки для бесшовности)
+                    f_y_vals = [y_vals[-1]]
+                    for step in range(1, forecast_periods + 1):
+                        f_y_vals.append(level + step * trend)
+                    
+                    # Генерируем хронологические даты будущего
                     if is_date_axis and len(raw_dates_list) > 0:
                         last_date = raw_dates_list[-1]
                         f_x_vals = [x_vals[-1]]
@@ -263,11 +272,11 @@ def render_custom_chart(active_df, x_ax, y_ax_list, style, base_color, lbl, f_fo
                     else:
                         f_x_vals = [x_vals[-1]] + [f"Прогноз +{step}" for step in range(1, forecast_periods + 1)]
                     
-                    # Форматируем подписи значений для линии прогноза
+                    # Форматируем подписи прогнозных точек
                     f_text_labels = get_formatted_text(f_y_vals)
                     
-                    # Добавляем прогнозный тренд на холст с подписями значений (text=f_text_labels)
-                    fig.add_trace(go.Scatter(x=f_x_vals, y=f_y_vals, mode="lines+markers+text" if lbl else "lines+markers", name=f"{y_col} (Прогноз)", line=dict(color=palette[idx % len(palette)], width=3, dash="dash"), text=f_text_labels if lbl else None, textposition="top center", textfont=dict(size=f_size, color=f_color)))
+                    # ИСПРАВЛЕНИЕ: Отрисовка линии прогноза с использованием кастомного цвета forecast_custom_color
+                    fig.add_trace(go.Scatter(x=f_x_vals, y=f_y_vals, mode="lines+markers+text" if lbl else "lines+markers", name=f"{y_col} (Прогноз)", line=dict(color=forecast_custom_color, width=3, dash="dash"), text=f_text_labels if lbl else None, textposition="top center", textfont=dict(size=f_size, color=f_color)))
                     
             fig.update_layout(xaxis=dict(type='category', tickangle=45), yaxis=dict(showgrid=True))
         elif "Столбчатая" in style:
@@ -277,12 +286,12 @@ def render_custom_chart(active_df, x_ax, y_ax_list, style, base_color, lbl, f_fo
                 else: fig.add_trace(go.Bar(x=x_vals, y=df_g[y_col], text=get_formatted_text(df_g[y_col].values) if lbl else None, textposition=sp, orientation="v", name=y_col, marker_color=palette[idx % len(palette)], textfont=dict(size=f_size, color=f_color)))
             fig.update_layout(xaxis=dict(type='category', tickangle=45) if not horiz else dict(showgrid=True), yaxis=dict(showgrid=True) if not horiz else dict(type='category'), barmode="group")
         elif "Кольцевая" in style:
-            target_y = y_ax_list[0] if isinstance(y_ax_list, list) and len(y_ax_list) > 0 else y_ax_list
+            target_y = y_ax_list if isinstance(y_ax_list, list) and len(y_ax_list) > 0 else y_ax_list
             if target_y and target_y != "-- Выберите заголовок --": 
                 fig.add_trace(go.Pie(labels=x_vals, values=df_g[target_y], hole=0.4, rotation=rot, text=get_formatted_text(df_g[target_y].values), textinfo="text+percent" if lbl else "none", texttemplate="%{label}: %{text} (%{percent})" if lbl else "none", textposition="auto", textfont=dict(size=f_size, color=f_color)))
             fig.update_layout(xaxis=dict(type='category', tickangle=45), yaxis=dict(showgrid=True))
         elif "Водопад" in style:
-            target_y = y_ax_list[0] if isinstance(y_ax_list, list) and len(y_ax_list) > 0 else y_ax_list
+            target_y = y_ax_list if isinstance(y_ax_list, list) and len(y_ax_list) > 0 else y_ax_list
             if target_y and target_y != "-- Выберите заголовок --":
                 ts = df_g[target_y].sum()
                 fig.add_trace(go.Waterfall(x=list(x_vals) + ["ИТОГО"], y=list(df_g[target_y]) + [ts], text=get_formatted_text(list(df_g[target_y]) + [ts]) if lbl else None, textposition="auto", measure=["relative"] * len(df_g[target_y]) + ["total"], increasing={"marker": {"color": base_color}}, textfont=dict(size=f_size, color=f_color)))
@@ -543,7 +552,11 @@ if st.session_state.files_processed and not main_df.empty:
                 def_val = preset["y_ax_list"] if isinstance(preset["y_ax_list"], list) and len(preset["y_ax_list"]) > 0 else preset["y_ax_list"]
                 single_y = st.selectbox("Ось Y (Объем):", all_cols_list, index=all_cols_list.index(def_val) if def_val in all_cols_list else 0, key=f"y_single_r_{selected_chart_idx}")
                 preset["y_ax_list"] = [single_y] if single_y != "-- Выберите заголовок --" else []
-            preset["color"] = st.color_picker("Базовый цвет:", preset["color"], key=f"col_r_{selected_chart_idx}")
+            
+            # Раздельный выбор цвета: Факт и Прогноз
+            cc_f1, cc_f2 = st.columns(2)
+            with cc_f1: preset["color"] = st.color_picker("Цвет факта:", preset["color"], key=f"col_r_{selected_chart_idx}")
+            with cc_f2: preset["forecast_color"] = st.color_picker("Цвет прогноза:", preset.get("forecast_color", "#ef4444"), key=f"col_forecast_r_{selected_chart_idx}")
             
             with st.expander("🎨 Тонкие настройки проводника"):
                 preset["lbl_g"] = st.checkbox("Показывать значения", value=preset["lbl_g"], key=f"lbl_g_r_{selected_chart_idx}")
@@ -594,7 +607,7 @@ if st.session_state.files_processed and not main_df.empty:
             for i, preset in enumerate(st.session_state.charts_presets):
                 if preset["x_ax"] != "-- Выберите заголовок --" and preset["y_ax_list"]:
                     st.markdown(f"##### 📉 {preset['style']} ({', '.join(preset['y_ax_list'])})")
-                    render_custom_chart(active_filtered_df, preset["x_ax"], preset["y_ax_list"], preset["style"], preset["color"], preset["lbl_g"], preset["f_format"], preset["f_round"], preset["f_size"], preset["f_color"], preset["f_pos"], preset["horiz"], preset["rot"], preset["top_limit"], i, date_format_type=preset["d_fmt"], custom_currency=preset["f_curr_text"], forecast_periods=preset["f_cast"])
+                    render_custom_chart(active_filtered_df, preset["x_ax"], preset["y_ax_list"], preset["style"], preset["color"], preset["lbl_g"], preset["f_format"], preset["f_round"], preset["f_size"], preset["f_color"], preset["f_pos"], preset["horiz"], preset["rot"], preset["top_limit"], i, date_format_type=preset["d_fmt"], custom_currency=preset["f_curr_text"], forecast_periods=preset["f_cast"], forecast_custom_color=preset.get("forecast_color", "#ef4444"))
                     st.markdown("<br>", unsafe_allow_html=True)
                     
     elif 'page' in locals() and page == "🗮️ 3. ABC/XYZ-аналитика элементов": internal_show_abc_xyz_page(main_df, gemini_api_key, ai_context_mode)
