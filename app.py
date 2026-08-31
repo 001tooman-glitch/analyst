@@ -39,7 +39,7 @@ if "charts_presets" not in st.session_state:
         "style": "Столбчатая диаграмма (Bar)", "x_ax": "-- Выберите заголовок --", "y_ax_list": [], 
         "color": "#1f77b4", "lbl_g": True, "f_format": "Числовой", "f_round": 0, "f_curr_text": "$",
         "f_size": 14, "f_color": "#000000", "f_pos": "auto", "horiz": False, "rot": 0, "top_limit": 15,
-        "d_fmt": "Исходный", "f_cast": 0
+        "d_fmt": "ГГГГ-ММ-ДД (Исходный ISO)", "f_cast": 0
     }]
 def add_card_preset_cb():
     st.session_state.cards_presets.append({
@@ -57,7 +57,7 @@ def add_chart_preset_cb():
         "style": "Столбчатая диаграмма (Bar)", "x_ax": "-- Выберите заголовок --", "y_ax_list": [], 
         "color": "#1f77b4", "lbl_g": True, "f_format": "Числовой", "f_round": 0, "f_curr_text": "$",
         "f_size": 14, "f_color": "#000000", "f_pos": "auto", "horiz": False, "rot": 0, "top_limit": 15,
-        "d_fmt": "Исходный", "f_cast": 0
+        "d_fmt": "ГГГГ-ММ-ДД (Исходный ISO)", "f_cast": 0
     })
 
 def remove_chart_preset_cb():
@@ -194,7 +194,7 @@ def internal_show_rfm_page(filtered_df, api_key, data_context):
     if st.button("👥 Сгенерировать ИИ-отчет по сегментам", key="ai_report_rfm_btn"):
         ai_generate_text_report(seg_counts, report_type=f"RFM ({t_col})", data_context=data_context, api_key=api_key)
     st.dataframe(rfm.sort_values(by='M', ascending=False), use_container_width=True)
-def render_custom_chart(active_df, x_ax, y_ax_list, style, base_color, lbl, f_format, f_round, f_size, f_color, f_pos, horiz, rot, top_limit, i, date_format_type="Исходный", custom_currency="", forecast_periods=0):
+def render_custom_chart(active_df, x_ax, y_ax_list, style, base_color, lbl, f_format, f_round, f_size, f_color, f_pos, horiz, rot, top_limit, i, date_format_type="ГГГГ-ММ-ДД (Исходный ISO)", custom_currency="", forecast_periods=0):
     try:
         if not y_ax_list: return
         df_c = active_df.copy()
@@ -215,34 +215,24 @@ def render_custom_chart(active_df, x_ax, y_ax_list, style, base_color, lbl, f_fo
         converted_dates = pd.to_datetime(df_c[x_ax], errors='coerce').dt.tz_localize(None).dt.normalize()
         is_date_axis = converted_dates.notna().sum() > (0.5 * len(df_c)) and not is_year_col
 
+        format_mapping = {
+            "ГГГГ-ММ-ДД (Исходный ISO)": "%Y-%m-%d",
+            "ММ.ГГГГ (01.2014)": "%m.%Y", 
+            "Месяц ГГГГ (Янв 2014)": "%b %Y", 
+            "ДД.ММ.ГГГГ (15.01.2014)": "%d.%m.%Y", 
+            "ГГГГ (2014)": "%Y"
+        }
+        fmt_string = format_mapping.get(date_format_type, "%Y-%m-%d")
+
         if is_date_axis:
             df_c['_datetime_clean_'] = converted_dates
             df_c = df_c.dropna(subset=['_datetime_clean_'])
-            
-            # ИСПРАВЛЕНИЕ: Маппинг форматов теперь явно учитывает "Исходный" шаблон (как YYYY-MM-DD)
-            # Если выбран "Исходный", данные НЕ схлопываются до месяцев, а выводятся подневно
-            format_mapping = {
-                "Исходный": "%Y-%m-%d",
-                "ММ.ГГГГ (01.2014)": "%m.%Y", 
-                "Месяц ГГГГ (Янв 2014)": "%b %Y", 
-                "ДД.ММ.ГГГГ (15.01.2014)": "%d.%m.%Y", 
-                "ГГГГ (2014)": "%Y"
-            }
-            target_format = format_mapping.get(date_format_type, "%Y-%m-%d")
-            
-            # Динамически перестраиваем группировку: если выбран формат месяца/года, группируем по периодам, иначе — по дням
-            if date_format_type in ["ММ.ГГГГ (01.2014)", "Месяц ГГГГ (Янв 2014)"]:
-                df_c['_time_group_'] = df_c['_datetime_clean_'].dt.to_period('M').dt.to_timestamp()
-            elif date_format_type == "ГГГГ (2014)":
-                df_c['_time_group_'] = df_c['_datetime_clean_'].dt.to_period('Y').dt.to_timestamp()
-            else:
-                df_c['_time_group_'] = df_c['_datetime_clean_']
-                
-            df_g = df_c.groupby('_time_group_', as_index=False)[y_ax_list].sum().sort_values(by='_time_group_').reset_index(drop=True)
-            df_g[x_ax] = df_g['_time_group_'].dt.strftime(target_format).astype(str)
+            df_g = df_c.groupby('_datetime_clean_', as_index=False)[y_ax_list].sum().sort_values(by='_datetime_clean_').reset_index(drop=True)
+            raw_dates_list = df_g['_datetime_clean_'].tolist()
+            x_vals = df_g['_datetime_clean_'].dt.strftime(fmt_string).astype(str).tolist()
         else:
-            sort_asc = is_year_col or pd.api.types.is_numeric_dtype(df_c[x_ax])
-            df_g = df_c.groupby(x_ax, as_index=False)[y_ax_list].sum().sort_values(by=x_ax if sort_asc else y_ax_list, ascending=sort_asc).head(top_limit).reset_index(drop=True)
+            df_g = df_c.groupby(x_ax, as_index=False)[y_ax_list].sum().sort_values(by=x_ax if is_year_col or pd.api.types.is_numeric_dtype(df_c[x_ax]) else y_ax_list, ascending=True).head(top_limit).reset_index(drop=True)
+            x_vals = df_g[x_ax].astype(str).tolist()
 
         fig = go.Figure()
         palette = [base_color, "#4f46e5", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6"]
@@ -250,42 +240,52 @@ def render_custom_chart(active_df, x_ax, y_ax_list, style, base_color, lbl, f_fo
         if "Линейный" in style or (is_date_axis and "Столбчатая" not in style and "Кольцевая" not in style and "Водопад" not in style):
             for idx, y_col in enumerate(y_ax_list):
                 current_pos = "top center" if (f_pos == "auto" and idx % 2 == 0) else ("bottom center" if f_pos == "auto" else f_pos)
-                x_vals = df_g[x_ax].astype(str).tolist()
                 y_vals = df_g[y_col].tolist()
                 
+                # Рендеринг факта
                 fig.add_trace(go.Scatter(x=x_vals, y=y_vals, mode="lines+markers+text" if lbl else "lines+markers", name=f"{y_col} (Факт)", line=dict(color=palette[idx % len(palette)], width=4), text=get_formatted_text(y_vals) if lbl else None, textposition=current_pos, textfont=dict(size=f_size, color=f_color)))
                 
+                # ИСПРАВЛЕНИЕ: Календарный прогноз + принудительное отображение подписей значений
                 if forecast_periods > 0 and len(y_vals) >= 1:
                     t_idx = np.arange(len(y_vals))
-                    if len(y_vals) > 1:
-                        slope, intercept = np.polyfit(t_idx, y_vals, 1)
-                    else:
-                        slope, intercept = 0, y_vals
+                    slope, intercept = np.polyfit(t_idx, y_vals, 1) if len(y_vals) > 1 else (0, y_vals[0])
                     
                     f_t_idx = np.arange(len(y_vals) - 1, len(y_vals) + forecast_periods)
                     f_y_vals = slope * f_t_idx + intercept
-                    f_x_vals = [x_vals[-1]] + [f"Прогноз +{step}" for step in range(1, forecast_periods + 1)]
                     
-                    fig.add_trace(go.Scatter(x=f_x_vals, y=f_y_vals, mode="lines+markers", name=f"{y_col} (Прогноз)", line=dict(color=palette[idx % len(palette)], width=3, dash="dash")))
+                    # Генерируем реальные будущие даты по оси X
+                    if is_date_axis and len(raw_dates_list) > 0:
+                        last_date = raw_dates_list[-1]
+                        f_x_vals = [x_vals[-1]]
+                        for step in range(1, forecast_periods + 1):
+                            next_date = last_date + pd.Timedelta(days=step)
+                            f_x_vals.append(next_date.strftime(fmt_string))
+                    else:
+                        f_x_vals = [x_vals[-1]] + [f"Прогноз +{step}" for step in range(1, forecast_periods + 1)]
+                    
+                    # Форматируем подписи значений для линии прогноза
+                    f_text_labels = get_formatted_text(f_y_vals)
+                    
+                    # Добавляем прогнозный тренд на холст с подписями значений (text=f_text_labels)
+                    fig.add_trace(go.Scatter(x=f_x_vals, y=f_y_vals, mode="lines+markers+text" if lbl else "lines+markers", name=f"{y_col} (Прогноз)", line=dict(color=palette[idx % len(palette)], width=3, dash="dash"), text=f_text_labels if lbl else None, textposition="top center", textfont=dict(size=f_size, color=f_color)))
                     
             fig.update_layout(xaxis=dict(type='category', tickangle=45), yaxis=dict(showgrid=True))
         elif "Столбчатая" in style:
             sp = f_pos if f_pos in ["inside", "outside", "auto"] else "auto"
             for idx, y_col in enumerate(y_ax_list):
-                if horiz: fig.add_trace(go.Bar(y=df_g[x_ax].astype(str), x=df_g[y_col], text=get_formatted_text(df_g[y_col].values) if lbl else None, textposition=sp, orientation="h", name=y_col, marker_color=palette[idx % len(palette)], textfont=dict(size=f_size, color=f_color)))
-                else: fig.add_trace(go.Bar(x=df_g[x_ax].astype(str), y=df_g[y_col], text=get_formatted_text(df_g[y_col].values) if lbl else None, textposition=sp, orientation="v", name=y_col, marker_color=palette[idx % len(palette)], textfont=dict(size=f_size, color=f_color)))
-            if horiz: fig.update_layout(yaxis=dict(type='category'), xaxis=dict(showgrid=True), barmode="group")
-            else: fig.update_layout(xaxis=dict(type='category', tickangle=45), yaxis=dict(showgrid=True), barmode="group")
+                if horiz: fig.add_trace(go.Bar(y=x_vals, x=df_g[y_col], text=get_formatted_text(df_g[y_col].values) if lbl else None, textposition=sp, orientation="h", name=y_col, marker_color=palette[idx % len(palette)], textfont=dict(size=f_size, color=f_color)))
+                else: fig.add_trace(go.Bar(x=x_vals, y=df_g[y_col], text=get_formatted_text(df_g[y_col].values) if lbl else None, textposition=sp, orientation="v", name=y_col, marker_color=palette[idx % len(palette)], textfont=dict(size=f_size, color=f_color)))
+            fig.update_layout(xaxis=dict(type='category', tickangle=45) if not horiz else dict(showgrid=True), yaxis=dict(showgrid=True) if not horiz else dict(type='category'), barmode="group")
         elif "Кольцевая" in style:
-            target_y = y_ax_list if isinstance(y_ax_list, list) and len(y_ax_list) > 0 else y_ax_list
+            target_y = y_ax_list[0] if isinstance(y_ax_list, list) and len(y_ax_list) > 0 else y_ax_list
             if target_y and target_y != "-- Выберите заголовок --": 
-                fig.add_trace(go.Pie(labels=df_g[x_ax], values=df_g[target_y], hole=0.4, rotation=rot, text=get_formatted_text(df_g[target_y].values), textinfo="text+percent" if lbl else "none", texttemplate="%{label}: %{text} (%{percent})" if lbl else "none", textposition="auto", textfont=dict(size=f_size, color=f_color)))
+                fig.add_trace(go.Pie(labels=x_vals, values=df_g[target_y], hole=0.4, rotation=rot, text=get_formatted_text(df_g[target_y].values), textinfo="text+percent" if lbl else "none", texttemplate="%{label}: %{text} (%{percent})" if lbl else "none", textposition="auto", textfont=dict(size=f_size, color=f_color)))
             fig.update_layout(xaxis=dict(type='category', tickangle=45), yaxis=dict(showgrid=True))
         elif "Водопад" in style:
-            target_y = y_ax_list if isinstance(y_ax_list, list) and len(y_ax_list) > 0 else y_ax_list
+            target_y = y_ax_list[0] if isinstance(y_ax_list, list) and len(y_ax_list) > 0 else y_ax_list
             if target_y and target_y != "-- Выберите заголовок --":
                 ts = df_g[target_y].sum()
-                fig.add_trace(go.Waterfall(x=list(df_g[x_ax].astype(str)) + ["ИТОГО"], y=list(df_g[target_y]) + [ts], text=get_formatted_text(list(df_g[target_y]) + [ts]) if lbl else None, textposition="auto", measure=["relative"] * len(df_g[target_y]) + ["total"], increasing={"marker": {"color": base_color}}, textfont=dict(size=f_size, color=f_color)))
+                fig.add_trace(go.Waterfall(x=list(x_vals) + ["ИТОГО"], y=list(df_g[target_y]) + [ts], text=get_formatted_text(list(df_g[target_y]) + [ts]) if lbl else None, textposition="auto", measure=["relative"] * len(df_g[target_y]) + ["total"], increasing={"marker": {"color": base_color}}, textfont=dict(size=f_size, color=f_color)))
             fig.update_layout(xaxis=dict(type='category', tickangle=45), yaxis=dict(showgrid=True))
 
         fig.update_layout(template="plotly_white", paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font=dict(family="Inter, sans-serif", size=12, color="#334155"), showlegend=True, margin=dict(l=40, r=40, t=50, b=50))
@@ -298,6 +298,7 @@ def power_query_clean_engine(uploaded_files_list):
             df = pd.read_csv(io.StringIO(f_item.getvalue().decode('utf-8'))) if f_item.name.endswith('.csv') else pd.read_excel(f_item, engine='openpyxl')
             df = df.loc[:, ~df.columns.str.contains('^Без названия|^Unnamed|^Unnamed:')].loc[:, ~df.columns.duplicated()]
             
+            # Умная сквозная нормализация дат во время импорта:
             for col in df.columns:
                 if any(x in str(col).lower() for x in ['date', 'дата', 'время', 'time', 'период']):
                     parsed_dates = pd.to_datetime(df[col], errors='coerce').dt.tz_localize(None).dt.normalize()
@@ -556,7 +557,6 @@ if st.session_state.files_processed and not main_df.empty:
                 preset["rot"] = st.slider("Поворот долей:", 0, 360, preset["rot"], step=15, key=f"rot_r_{selected_chart_idx}") if "Donut" in preset["style"] else 0
                 preset["top_limit"] = st.slider("ТОП элементов:", 5, 200, preset["top_limit"], key=f"top_r_{selected_chart_idx}")
                 
-                # ИСПРАВЛЕНИЕ: В селектор добавлен нативный вариант отображения ISO дат
                 preset["d_fmt"] = st.selectbox("Шаблон даты:", ["ГГГГ-ММ-ДД (Исходный ISO)", "ММ.ГГГГ (01.2014)", "Месяц ГГГГ (Янв 2014)", "ДД.ММ.ГГГГ (15.01.2014)", "ГГГГ (2014)"], index=["ГГГГ-ММ-ДД (Исходный ISO)", "ММ.ГГГГ (01.2014)", "Месяц ГГГГ (Янв 2014)", "ДД.ММ.ГГГГ (15.01.2014)", "ГГГГ (2014)"].index(preset["d_fmt"]), key=f"dfmt_r_{selected_chart_idx}")
                 preset["f_cast"] = st.slider("Прогноз периодов:", 0, 5, preset["f_cast"], key=f"f_cst_r_{selected_chart_idx}")
             st.markdown('</div>', unsafe_allow_html=True)
