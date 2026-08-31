@@ -168,7 +168,7 @@ def internal_show_abc_xyz_page(filtered_df, api_key, data_context):
 def calculate_rfm(df, t_col, v_col, p_col):
     df_clean = df.copy()
     df_clean[v_col] = pd.to_numeric(df_clean[v_col], errors='coerce').fillna(0.0)
-    df_clean[p_col] = pd.to_datetime(df_clean[p_col], errors='coerce')
+    df_clean[p_col] = pd.to_datetime(df_clean[p_col], errors='coerce').dt.tz_localize(None)
     max_date = df_clean[p_col].max() if df_clean[p_col].notna().any() else pd.Timestamp.now()
     rfm = df_clean.groupby(str(t_col)).agg(R_days=(p_col, lambda x: (max_date - x.max()).days if x.notna().any() else 999), F=(v_col, 'count'), M=(v_col, 'sum')).reset_index()
     rfm.columns = ['Объект Анализа', 'R', 'F', 'M']
@@ -212,7 +212,8 @@ def render_custom_chart(active_df, x_ax, y_ax_list, style, base_color, lbl, f_fo
             return labels
 
         is_year_col = "год" in str(x_ax).lower() or "year" in str(x_ax).lower()
-        converted_dates = pd.to_datetime(df_c[x_ax], errors='coerce')
+        # ИСПРАВЛЕНИЕ: Жёсткое округление дат до дня (отбрасываем часы/секунды), чтобы исключить дублирование точек на осях X
+        converted_dates = pd.to_datetime(df_c[x_ax], errors='coerce').dt.tz_localize(None).dt.normalize()
         is_date_axis = converted_dates.notna().sum() > (0.5 * len(df_c)) and not is_year_col
 
         if is_date_axis:
@@ -242,12 +243,12 @@ def render_custom_chart(active_df, x_ax, y_ax_list, style, base_color, lbl, f_fo
             if horiz: fig.update_layout(yaxis=dict(type='category'), xaxis=dict(showgrid=True), barmode="group")
             else: fig.update_layout(xaxis=dict(type='category', tickangle=45), yaxis=dict(showgrid=True), barmode="group")
         elif "Кольцевая" in style:
-            target_y = y_ax_list[0] if isinstance(y_ax_list, list) and len(y_ax_list) > 0 else y_ax_list
+            target_y = y_ax_list if isinstance(y_ax_list, list) and len(y_ax_list) > 0 else y_ax_list
             if target_y and target_y != "-- Выберите заголовок --": 
                 fig.add_trace(go.Pie(labels=df_g[x_ax], values=df_g[target_y], hole=0.4, rotation=rot, text=get_formatted_text(df_g[target_y].values), textinfo="text+percent" if lbl else "none", texttemplate="%{label}: %{text} (%{percent})" if lbl else "none", textposition="auto", textfont=dict(size=f_size, color=f_color)))
             fig.update_layout(xaxis=dict(type='category', tickangle=45), yaxis=dict(showgrid=True))
         elif "Водопад" in style:
-            target_y = y_ax_list[0] if isinstance(y_ax_list, list) and len(y_ax_list) > 0 else y_ax_list
+            target_y = y_ax_list if isinstance(y_ax_list, list) and len(y_ax_list) > 0 else y_ax_list
             if target_y and target_y != "-- Выберите заголовок --":
                 ts = df_g[target_y].sum()
                 fig.add_trace(go.Waterfall(x=list(df_g[x_ax].astype(str)) + ["ИТОГО"], y=list(df_g[target_y]) + [ts], text=get_formatted_text(list(df_g[target_y]) + [ts]) if lbl else None, textposition="auto", measure=["relative"] * len(df_g[target_y]) + ["total"], increasing={"marker": {"color": base_color}}, textfont=dict(size=f_size, color=f_color)))
@@ -262,6 +263,15 @@ def power_query_clean_engine(uploaded_files_list):
         try:
             df = pd.read_csv(io.StringIO(f_item.getvalue().decode('utf-8'))) if f_item.name.endswith('.csv') else pd.read_excel(f_item, engine='openpyxl')
             df = df.loc[:, ~df.columns.str.contains('^Без названия|^Unnamed|^Unnamed:')].loc[:, ~df.columns.duplicated()]
+            
+            # Умная сквозная нормализация дат во время импорта:
+            for col in df.columns:
+                if any(x in str(col).lower() for x in ['date', 'дата', 'время', 'time', 'период']):
+                    # ИСПРАВЛЕНИЕ: приводим к формату datetime, нормализуем (отсекаем время) и пишем в чистом строковом виде YYYY-MM-DD
+                    parsed_dates = pd.to_datetime(df[col], errors='coerce').dt.tz_localize(None).dt.normalize()
+                    if parsed_dates.notna().sum() > 0:
+                        df[col] = parsed_dates.dt.strftime('%Y-%m-%d')
+            
             file_registry[f_item.name] = df.dropna(how='all')
         except Exception as file_err: st.sidebar.error(f"Ошибка файла {f_item.name}: {file_err}")
     return file_registry
@@ -293,7 +303,7 @@ def render_ai_sidebar_chat(current_dataframe, api_key, context_mode_text):
                 local_vars = {"current_dataframe": current_dataframe, "result_output": None}
                 exec(raw_code, {"__builtins__": {}}, local_vars)
                 res = local_vars.get("result_output")
-                final_res = client.models.generate_content(model='gemini-3.5-flash', contents=f"Результат:\n{str(res)}", config=types.GenerateContentConfig(system_instruction=f"Ты — BI-аналитик. Переведи результат {str(res)} на понятный язык. Контекст: {context_mode_text}. Вопрос: '{user_prompt}'", temperature=0.2))
+                final_res = client.models.generate_content(model='gemini-3.5-flash', contents=f"Результат:\n{str(res)}", config=types.GenerateContentConfig(system_instruction=f"Ты — BI-аналитик. Переведи результат {str(res)} на понятный язык.整合 Ктекст: {context_mode_text}. Вопрос: '{user_prompt}'", temperature=0.2))
                 st.write(final_res.text)
             st.session_state.chat_history.append({"role": "assistant", "content": final_res.text})
         except Exception as chat_err: st.sidebar.error(f"Ошибка чата: {chat_err}")
@@ -303,7 +313,6 @@ def render_cross_file_mapping_ui(file_registry):
     file_names = list(file_registry.keys())
     if not file_names: return st.info("ℹ️ Для настройки кросс-анализа загрузите файлы.")
     
-    # Исправление логики: выбор файлов для Слоя 1 и Слоя 2, если загружено несколько файлов
     if len(file_names) == 1:
         f1_name = file_names[0]
         f2_name = file_names[0]
@@ -329,7 +338,6 @@ def render_cross_file_mapping_ui(file_registry):
     
     st.markdown("#### 🔗 Установите соответствия элементов в интерактивной таблице:")
     
-    # Формируем DataFrame для st.data_editor
     mapping_rows = []
     for val_f1 in unique_f1_vals:
         prev_sel = st.session_state.category_mapping_dict.get(val_f1, "-- Не сопоставлено / Игнорировать --")
@@ -339,7 +347,6 @@ def render_cross_file_mapping_ui(file_registry):
         })
     mapping_df = pd.DataFrame(mapping_rows)
     
-    # Рендеринг современной таблицы настроек
     edited_df = st.data_editor(
         mapping_df,
         column_config={
@@ -355,7 +362,6 @@ def render_cross_file_mapping_ui(file_registry):
         key="cross_mapping_data_editor"
     )
     
-    # Сохраняем измененные данные обратно в session_state
     temp_mapping = {}
     for _, row in edited_df.iterrows():
         k = row["Элемент Слоя 1"]
@@ -368,17 +374,21 @@ def render_cross_file_mapping_ui(file_registry):
         clean_df1, clean_df2 = df1.copy(), df2.copy()
         clean_df1['Унифицированная_Категория'], clean_df1['Тип_Слоя'] = clean_df1[f1_col].astype(str), "Слой_1 (Базовый)"
         
-        # Обратный маппинг для Слоя 2
         rev_map = {v: k for k, v in temp_mapping.items()}
         clean_df2['Унифицированная_Категория'] = clean_df2[f2_col].astype(str).map(rev_map)
         clean_df2['Тип_Слоя'] = "Слой_2 (Сравниваемый)"
         
+        for df_item in [clean_df1, clean_df2]:
+            for col in df_item.columns:
+                if any(x in str(col).lower() for x in ['date', 'дата', 'время', 'time', 'период']):
+                    df_item[col] = df_item[col].astype(str)
+                    
         st.session_state.main_df = pd.concat([clean_df1, clean_df2.dropna(subset=['Унифицированная_Категория'])], ignore_index=True, join='outer')
         st.session_state.files_processed = True
         st.rerun()
 st.sidebar.markdown("### 🤖 Настройки ИИ-Слой")
 gemini_api_key = st.sidebar.text_input("Введите Gemini API Key:", type="password")
-ai_context_mode = st.sidebar.selectbox("Контекст для AI:", ["📊 Продажи / Сбыт / Ритейл", "📊 Сравнительный кросс-анализ структур и категорий", "📅 Закупки / Материальное обеспечение", "📦 Запасы / Складские остатки"])
+ai_context_mode = st.sidebar.selectbox("Контекл для AI:", ["📊 Продажи / Сбыт / Ритейл", "📊 Сравнительный кросс-анализ структур и категорий", "📅 Закупки / Материальное обеспечение", "📦 Запасы / Складские остатки"])
 
 # БЕССМЕННЫЙ ЗАГРУЗЧИК: Всегда доступен в сайдбаре
 uploaded_files = st.sidebar.file_uploader("Загрузите файлы Excel/CSV:", type=["csv", "xlsx"], accept_multiple_files=True)
@@ -436,7 +446,7 @@ if st.session_state.files_processed and not main_df.empty:
             st.markdown("##### 📅 Временной диапазон")
             time_col_exists = st.session_state.mapped_time_col in main_df.columns and st.session_state.mapped_time_col != "-- Выберите --"
             if time_col_exists:
-                active_filtered_df['_datetime_filter_internal_'] = pd.to_datetime(active_filtered_df[st.session_state.mapped_time_col], errors='coerce')
+                active_filtered_df['_datetime_filter_internal_'] = pd.to_datetime(active_filtered_df[st.session_state.mapped_time_col], errors='coerce').dt.tz_localize(None).dt.normalize()
                 min_date = active_filtered_df['_datetime_filter_internal_'].min()
                 max_date = active_filtered_df['_datetime_filter_internal_'].max()
                 if not pd.isna(min_date) and not pd.isna(max_date):
@@ -476,7 +486,7 @@ if st.session_state.files_processed and not main_df.empty:
                 cp["c_rnd"] = st.slider("Округление:", 0, 4, cp["c_rnd"], key=f"c_r_r_{selected_card_idx}")
                 cp["c_size"] = st.slider("Размер шрифта:", 12, 48, cp["c_size"], key=f"c_sz_r_{selected_card_idx}")
                 cp["c_align"] = st.selectbox("Выравнивание:", ["left", "center", "right"], index=["left", "center", "right"].index(cp["c_align"]), key=f"c_al_r_{selected_card_idx}")
-                cp["c_color_main"] = st.color_picker("Цвет числа:", cp["c_color_main"], key=f"c_cm_r_{selected_nav_idx if 'selected_nav_idx' in locals() else selected_card_idx}")
+                cp["c_color_main"] = st.color_picker("Цвет числа:", cp["c_color_main"], key=f"c_cm_r_{selected_card_idx}")
                 cp["c_color_sub"] = st.color_picker("Цвет подписи:", cp["c_color_sub"], key=f"c_cs_r_{selected_card_idx}")
             st.markdown('</div>', unsafe_allow_html=True)
         # ------------------ ПРОДОЛЖЕНИЕ ПРАВОГО БЛОКА (КОНСТРУКТОР ГРАФИКОВ) ------------------
