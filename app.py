@@ -41,7 +41,6 @@ if "charts_presets" not in st.session_state:
         "f_size": 14, "f_color": "#000000", "f_pos": "auto", "horiz": False, "rot": 0, "top_limit": 15,
         "d_fmt": "Исходный", "f_cast": 0
     }]
-
 def add_card_preset_cb():
     st.session_state.cards_presets.append({
         "t_col_metric": "-- Выберите заголовок --", "c_mode": "Сумма", 
@@ -63,6 +62,7 @@ def add_chart_preset_cb():
 
 def remove_chart_preset_cb():
     if len(st.session_state.charts_presets) > 1: st.session_state.charts_presets.pop()
+
 def inject_custom_css():
     components.html("""
         <script>
@@ -242,13 +242,11 @@ def render_custom_chart(active_df, x_ax, y_ax_list, style, base_color, lbl, f_fo
             if horiz: fig.update_layout(yaxis=dict(type='category'), xaxis=dict(showgrid=True), barmode="group")
             else: fig.update_layout(xaxis=dict(type='category', tickangle=45), yaxis=dict(showgrid=True), barmode="group")
         elif "Кольцевая" in style:
-            # ИСПРАВЛЕНО: Безопасное извлечение строго первой метрики из списка
             target_y = y_ax_list[0] if isinstance(y_ax_list, list) and len(y_ax_list) > 0 else y_ax_list
             if target_y and target_y != "-- Выберите заголовок --": 
                 fig.add_trace(go.Pie(labels=df_g[x_ax], values=df_g[target_y], hole=0.4, rotation=rot, text=get_formatted_text(df_g[target_y].values), textinfo="text+percent" if lbl else "none", texttemplate="%{label}: %{text} (%{percent})" if lbl else "none", textposition="auto", textfont=dict(size=f_size, color=f_color)))
             fig.update_layout(xaxis=dict(type='category', tickangle=45), yaxis=dict(showgrid=True))
         elif "Водопад" in style:
-            # ИСПРАВЛЕНО: Безопасное извлечение строго первой метрики из списка
             target_y = y_ax_list[0] if isinstance(y_ax_list, list) and len(y_ax_list) > 0 else y_ax_list
             if target_y and target_y != "-- Выберите заголовок --":
                 ts = df_g[target_y].sum()
@@ -304,41 +302,77 @@ def render_cross_file_mapping_ui(file_registry):
     st.markdown("### 🔀 Панель ручного сопоставления разнородных структур и категорий")
     file_names = list(file_registry.keys())
     if not file_names: return st.info("ℹ️ Для настройки кросс-анализа загрузите файлы.")
+    
+    # Исправление логики: выбор файлов для Слоя 1 и Слоя 2, если загружено несколько файлов
     if len(file_names) == 1:
-        single_name = file_names
-        base_df = file_registry[single_name]
-        st.info(f"💡 Загружен 1 файл: `{single_name}`. Сопоставьте два столбца категорий.")
-        c1, c2 = st.columns(2)
-        with c1: f1_col = st.selectbox("Базовый столбец (Слой 1):", ["-- Выберите --"] + list(base_df.columns), key="cf_ui_1")
-        with c2: f2_col = st.selectbox("Сравниваемый столбец (Слой 2):", ["-- Выберите --"] + list(base_df.columns), key="cf_ui_2")
-        if f1_col == "-- Выберите --" or f2_col == "-- Выберите --": return st.warning("⚠️ Укажите оба столбца.")
-        unique_f1_vals = list(base_df[f1_col].dropna().astype(str).unique())
-        unique_f2_vals = ["-- Не сопоставлено / Игнорировать --"] + list(base_df[f2_col].dropna().astype(str).unique())
-        df1, df2 = base_df.copy(), base_df.copy()
+        f1_name = file_names[0]
+        f2_name = file_names[0]
+        st.info(f"💡 Загружен 1 файл: `{f1_name}`. Настройте сопоставление двух столбцов категорий.")
     else:
-        st.info(f"💡 Загружено несколько файлов ({len(file_names)} шт.). Настройте кросс-связи.")
-        df1, df2 = file_registry[file_names], file_registry[file_names]
-        c1, c2 = st.columns(2)
-        with c1: f1_col = st.selectbox(f"Категория в Слое 1 ({file_names}):", ["-- Выберите --"] + list(df1.columns), key="cf_ui_1")
-        with c2: f2_col = st.selectbox(f"Категория в Слое 2 ({file_names}):", ["-- Выберите --"] + list(df2.columns), key="cf_ui_2")
-        if f1_col == "-- Выберите --" or f2_col == "-- Выберите --": return st.warning("⚠️ Укажите столбцы связи.")
-        unique_f1_vals = list(df1[f1_col].dropna().astype(str).unique())
-        unique_f2_vals = ["-- Не сопоставлено / Игнорировать --"] + list(df2[f2_col].dropna().astype(str).unique())
+        st.info(f"💡 Загружено несколько файлов ({len(file_names)} шт.). Выберите файлы для связывания структур.")
+        cf1, cf2 = st.columns(2)
+        with cf1: f1_name = st.selectbox("Файл для Слоя 1 (Базовый):", file_names, index=0, key="cross_file_select_1")
+        with cf2: f2_name = st.selectbox("Файл для Слоя 2 (Сравниваемый):", file_names, index=min(1, len(file_names)-1), key="cross_file_select_2")
 
-    st.markdown("#### 🔗 Установите соответствия элементов вручную:")
-    grid_cols, temp_mapping = st.columns(2), {}
-    for idx, val_f1 in enumerate(unique_f1_vals[:40]):
-        with grid_cols[idx % 2]:
-            prev_sel = st.session_state.category_mapping_dict.get(val_f1, "-- Не сопоставлено / Игнорировать --")
-            chosen_f2_val = st.selectbox(f"'{val_f1}' эквивалентен:", unique_f2_vals, index=unique_f2_vals.index(prev_sel) if prev_sel in unique_f2_vals else 0, key=f"map_item_{idx}")
-            if chosen_f2_val != "-- Не сопоставлено / Игнорировать --": temp_mapping[val_f1] = chosen_f2_val
+    df1 = file_registry[f1_name]
+    df2 = file_registry[f2_name]
+    
+    c1, c2 = st.columns(2)
+    with c1: f1_col = st.selectbox(f"Категория в Слое 1 (`{f1_name}`):", ["-- Выберите --"] + list(df1.columns), key="cf_ui_1")
+    with c2: f2_col = st.selectbox(f"Категория в Слое 2 (`{f2_name}`):", ["-- Выберите --"] + list(df2.columns), key="cf_ui_2")
+    
+    if f1_col == "-- Выберите --" or f2_col == "-- Выберите --": 
+        return st.warning("⚠️ Укажите оба столбца связи для построения таблицы маппинга.")
+        
+    unique_f1_vals = sorted(list(df1[f1_col].dropna().astype(str).unique()))
+    unique_f2_vals = ["-- Не сопоставлено / Игнорировать --"] + sorted(list(df2[f2_col].dropna().astype(str).unique()))
+    
+    st.markdown("#### 🔗 Установите соответствия элементов в интерактивной таблице:")
+    
+    # Формируем DataFrame для st.data_editor
+    mapping_rows = []
+    for val_f1 in unique_f1_vals:
+        prev_sel = st.session_state.category_mapping_dict.get(val_f1, "-- Не сопоставлено / Игнорировать --")
+        mapping_rows.append({
+            "Элемент Слоя 1": val_f1,
+            "Эквивалент в Слое 2": prev_sel if prev_sel in unique_f2_vals else "-- Не сопоставлено / Игнорировать --"
+        })
+    mapping_df = pd.DataFrame(mapping_rows)
+    
+    # Рендеринг современной таблицы настроек
+    edited_df = st.data_editor(
+        mapping_df,
+        column_config={
+            "Элемент Слоя 1": st.column_config.TextColumn("Категория (Слой 1)", disabled=True),
+            "Эквивалент в Слое 2": st.column_config.SelectboxColumn(
+                "Сопоставленное значение (Слой 2)",
+                options=unique_f2_vals,
+                required=True
+            )
+        },
+        hide_index=True,
+        use_container_width=True,
+        key="cross_mapping_data_editor"
+    )
+    
+    # Сохраняем измененные данные обратно в session_state
+    temp_mapping = {}
+    for _, row in edited_df.iterrows():
+        k = row["Элемент Слоя 1"]
+        v = row["Эквивалент в Слое 2"]
+        if v != "-- Не сопоставлено / Игнорировать --":
+            temp_mapping[k] = v
     st.session_state.category_mapping_dict = temp_mapping
     
     if st.button("🚀 Применить кросс-маппинг и собрать объединенную витрину", key="apply_cross_map_btn"):
         clean_df1, clean_df2 = df1.copy(), df2.copy()
         clean_df1['Унифицированная_Категория'], clean_df1['Тип_Слоя'] = clean_df1[f1_col].astype(str), "Слой_1 (Базовый)"
-        clean_df2['Унифицированная_Категория'] = clean_df2[f2_col].astype(str).map({v: k for k, v in temp_mapping.items()})
+        
+        # Обратный маппинг для Слоя 2
+        rev_map = {v: k for k, v in temp_mapping.items()}
+        clean_df2['Унифицированная_Категория'] = clean_df2[f2_col].astype(str).map(rev_map)
         clean_df2['Тип_Слоя'] = "Слой_2 (Сравниваемый)"
+        
         st.session_state.main_df = pd.concat([clean_df1, clean_df2.dropna(subset=['Унифицированная_Категория'])], ignore_index=True, join='outer')
         st.session_state.files_processed = True
         st.rerun()
@@ -377,7 +411,6 @@ if st.session_state.files_processed and not main_df.empty:
     st.sidebar.markdown("### 🎛️ Ручной маппинг аналитических шкал")
     raw_headers = list(main_df.columns)
     
-    # ФИКС: Все три селектора сайдбара накрепко привязаны к session_state через index
     st.session_state.mapped_target_col = st.sidebar.selectbox("🔑 КЛЮЧ АНАЛИЗА:", ["-- Выберите --"] + raw_headers, index=(["-- Выберите --"] + raw_headers).index(st.session_state.mapped_target_col) if st.session_state.mapped_target_col in (["-- Выберите --"] + raw_headers) else 0, key="persistent_target_select_widget")
     st.session_state.mapped_value_col = st.sidebar.selectbox("💰 КРИТЕРИЙ ОБЪЕМА:", ["-- Выберите --"] + raw_headers, index=(["-- Выберите --"] + raw_headers).index(st.session_state.mapped_value_col) if st.session_state.mapped_value_col in (["-- Выберите --"] + raw_headers) else 0, key="persistent_value_select_widget")
     st.session_state.mapped_time_col = st.sidebar.selectbox("📅 ШКАЛА ВРЕМЕНИ:", ["-- Выберите --"] + raw_headers, index=(["-- Выберите --"] + raw_headers).index(st.session_state.mapped_time_col) if st.session_state.mapped_time_col in (["-- Выберите --"] + raw_headers) else 0, key="persistent_time_select_widget")
@@ -392,7 +425,6 @@ if st.session_state.files_processed and not main_df.empty:
         cp = st.number_input(f"Страница:", min_value=1, value=1, step=1)
         st.dataframe(main_df.iloc[(cp - 1) * 50: cp * 50], height=350, use_container_width=True)
     elif 'page' in locals() and page == "📊 2. Executive Диаграммы":
-        # Холст поделен на Центральную (Отображение, 70%) и Правую (Конструктор, 30%) зоны
         canvas_col, control_col = st.columns([0.7, 0.3])
         active_filtered_df = main_df.copy()
         
@@ -444,7 +476,7 @@ if st.session_state.files_processed and not main_df.empty:
                 cp["c_rnd"] = st.slider("Округление:", 0, 4, cp["c_rnd"], key=f"c_r_r_{selected_card_idx}")
                 cp["c_size"] = st.slider("Размер шрифта:", 12, 48, cp["c_size"], key=f"c_sz_r_{selected_card_idx}")
                 cp["c_align"] = st.selectbox("Выравнивание:", ["left", "center", "right"], index=["left", "center", "right"].index(cp["c_align"]), key=f"c_al_r_{selected_card_idx}")
-                cp["c_color_main"] = st.color_picker("Цвет числа:", cp["c_color_main"], key=f"c_cm_r_{selected_card_idx}")
+                cp["c_color_main"] = st.color_picker("Цвет числа:", cp["c_color_main"], key=f"c_cm_r_{selected_nav_idx if 'selected_nav_idx' in locals() else selected_card_idx}")
                 cp["c_color_sub"] = st.color_picker("Цвет подписи:", cp["c_color_sub"], key=f"c_cs_r_{selected_card_idx}")
             st.markdown('</div>', unsafe_allow_html=True)
         # ------------------ ПРОДОЛЖЕНИЕ ПРАВОГО БЛОКА (КОНСТРУКТОР ГРАФИКОВ) ------------------
@@ -465,7 +497,6 @@ if st.session_state.files_processed and not main_df.empty:
             if "Bar" in preset["style"] or "Line" in preset["style"]:
                 preset["y_ax_list"] = st.multiselect("Оси Y (Метрики сравнения):", [c for c in raw_headers if c != preset["x_ax"]], default=[val for val in preset["y_ax_list"] if val in raw_headers], key=f"y_r_{selected_chart_idx}")
             else:
-                # ФИКС: Для Pie и Waterfall принудительно переключаем на selectbox, беря только первую сохраненную строку
                 def_val = preset["y_ax_list"][0] if isinstance(preset["y_ax_list"], list) and len(preset["y_ax_list"]) > 0 else preset["y_ax_list"]
                 single_y = st.selectbox("Ось Y (Объем):", all_cols_list, index=all_cols_list.index(def_val) if def_val in all_cols_list else 0, key=f"y_single_r_{selected_chart_idx}")
                 preset["y_ax_list"] = [single_y] if single_y != "-- Выберите заголовок --" else []
