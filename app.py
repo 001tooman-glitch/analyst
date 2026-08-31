@@ -212,17 +212,34 @@ def render_custom_chart(active_df, x_ax, y_ax_list, style, base_color, lbl, f_fo
             return labels
 
         is_year_col = "год" in str(x_ax).lower() or "year" in str(x_ax).lower()
-        # ИСПРАВЛЕНИЕ: Жёсткое округление дат до дня (отбрасываем часы/секунды), чтобы исключить дублирование точек на осях X
         converted_dates = pd.to_datetime(df_c[x_ax], errors='coerce').dt.tz_localize(None).dt.normalize()
         is_date_axis = converted_dates.notna().sum() > (0.5 * len(df_c)) and not is_year_col
 
         if is_date_axis:
             df_c['_datetime_clean_'] = converted_dates
             df_c = df_c.dropna(subset=['_datetime_clean_'])
-            df_c['_month_period_'] = df_c['_datetime_clean_'].dt.to_period('M').dt.to_timestamp()
-            df_g = df_c.groupby('_month_period_', as_index=False)[y_ax_list].sum()
-            format_mapping = {"ММ.ГГГГ (01.2014)": "%m.%Y", "Месяц ГГГГ (Янв 2014)": "%b %Y", "ДД.ММ.ГГГГ (15.01.2014)": "%d.%m.%Y", "ГГГГ (2014)": "%Y"}
-            df_g[x_ax] = df_g['_month_period_'].dt.strftime(format_mapping.get(date_format_type, "%b %Y")).astype(str)
+            
+            # ИСПРАВЛЕНИЕ: Маппинг форматов теперь явно учитывает "Исходный" шаблон (как YYYY-MM-DD)
+            # Если выбран "Исходный", данные НЕ схлопываются до месяцев, а выводятся подневно
+            format_mapping = {
+                "Исходный": "%Y-%m-%d",
+                "ММ.ГГГГ (01.2014)": "%m.%Y", 
+                "Месяц ГГГГ (Янв 2014)": "%b %Y", 
+                "ДД.ММ.ГГГГ (15.01.2014)": "%d.%m.%Y", 
+                "ГГГГ (2014)": "%Y"
+            }
+            target_format = format_mapping.get(date_format_type, "%Y-%m-%d")
+            
+            # Динамически перестраиваем группировку: если выбран формат месяца/года, группируем по периодам, иначе — по дням
+            if date_format_type in ["ММ.ГГГГ (01.2014)", "Месяц ГГГГ (Янв 2014)"]:
+                df_c['_time_group_'] = df_c['_datetime_clean_'].dt.to_period('M').dt.to_timestamp()
+            elif date_format_type == "ГГГГ (2014)":
+                df_c['_time_group_'] = df_c['_datetime_clean_'].dt.to_period('Y').dt.to_timestamp()
+            else:
+                df_c['_time_group_'] = df_c['_datetime_clean_']
+                
+            df_g = df_c.groupby('_time_group_', as_index=False)[y_ax_list].sum().sort_values(by='_time_group_').reset_index(drop=True)
+            df_g[x_ax] = df_g['_time_group_'].dt.strftime(target_format).astype(str)
         else:
             sort_asc = is_year_col or pd.api.types.is_numeric_dtype(df_c[x_ax])
             df_g = df_c.groupby(x_ax, as_index=False)[y_ax_list].sum().sort_values(by=x_ax if sort_asc else y_ax_list, ascending=sort_asc).head(top_limit).reset_index(drop=True)
@@ -233,7 +250,24 @@ def render_custom_chart(active_df, x_ax, y_ax_list, style, base_color, lbl, f_fo
         if "Линейный" in style or (is_date_axis and "Столбчатая" not in style and "Кольцевая" not in style and "Водопад" not in style):
             for idx, y_col in enumerate(y_ax_list):
                 current_pos = "top center" if (f_pos == "auto" and idx % 2 == 0) else ("bottom center" if f_pos == "auto" else f_pos)
-                fig.add_trace(go.Scatter(x=df_g[x_ax].astype(str), y=df_g[y_col], mode="lines+markers+text" if lbl else "lines+markers", name=y_col, line=dict(color=palette[idx % len(palette)], width=4), text=get_formatted_text(df_g[y_col].values) if lbl else None, textposition=current_pos, textfont=dict(size=f_size, color=f_color)))
+                x_vals = df_g[x_ax].astype(str).tolist()
+                y_vals = df_g[y_col].tolist()
+                
+                fig.add_trace(go.Scatter(x=x_vals, y=y_vals, mode="lines+markers+text" if lbl else "lines+markers", name=f"{y_col} (Факт)", line=dict(color=palette[idx % len(palette)], width=4), text=get_formatted_text(y_vals) if lbl else None, textposition=current_pos, textfont=dict(size=f_size, color=f_color)))
+                
+                if forecast_periods > 0 and len(y_vals) >= 1:
+                    t_idx = np.arange(len(y_vals))
+                    if len(y_vals) > 1:
+                        slope, intercept = np.polyfit(t_idx, y_vals, 1)
+                    else:
+                        slope, intercept = 0, y_vals
+                    
+                    f_t_idx = np.arange(len(y_vals) - 1, len(y_vals) + forecast_periods)
+                    f_y_vals = slope * f_t_idx + intercept
+                    f_x_vals = [x_vals[-1]] + [f"Прогноз +{step}" for step in range(1, forecast_periods + 1)]
+                    
+                    fig.add_trace(go.Scatter(x=f_x_vals, y=f_y_vals, mode="lines+markers", name=f"{y_col} (Прогноз)", line=dict(color=palette[idx % len(palette)], width=3, dash="dash")))
+                    
             fig.update_layout(xaxis=dict(type='category', tickangle=45), yaxis=dict(showgrid=True))
         elif "Столбчатая" in style:
             sp = f_pos if f_pos in ["inside", "outside", "auto"] else "auto"
@@ -264,10 +298,8 @@ def power_query_clean_engine(uploaded_files_list):
             df = pd.read_csv(io.StringIO(f_item.getvalue().decode('utf-8'))) if f_item.name.endswith('.csv') else pd.read_excel(f_item, engine='openpyxl')
             df = df.loc[:, ~df.columns.str.contains('^Без названия|^Unnamed|^Unnamed:')].loc[:, ~df.columns.duplicated()]
             
-            # Умная сквозная нормализация дат во время импорта:
             for col in df.columns:
                 if any(x in str(col).lower() for x in ['date', 'дата', 'время', 'time', 'период']):
-                    # ИСПРАВЛЕНИЕ: приводим к формату datetime, нормализуем (отсекаем время) и пишем в чистом строковом виде YYYY-MM-DD
                     parsed_dates = pd.to_datetime(df[col], errors='coerce').dt.tz_localize(None).dt.normalize()
                     if parsed_dates.notna().sum() > 0:
                         df[col] = parsed_dates.dt.strftime('%Y-%m-%d')
@@ -303,7 +335,7 @@ def render_ai_sidebar_chat(current_dataframe, api_key, context_mode_text):
                 local_vars = {"current_dataframe": current_dataframe, "result_output": None}
                 exec(raw_code, {"__builtins__": {}}, local_vars)
                 res = local_vars.get("result_output")
-                final_res = client.models.generate_content(model='gemini-3.5-flash', contents=f"Результат:\n{str(res)}", config=types.GenerateContentConfig(system_instruction=f"Ты — BI-аналитик. Переведи результат {str(res)} на понятный язык.整合 Ктекст: {context_mode_text}. Вопрос: '{user_prompt}'", temperature=0.2))
+                final_res = client.models.generate_content(model='gemini-3.5-flash', contents=f"Результат:\n{str(res)}", config=types.GenerateContentConfig(system_instruction=f"Ты — BI-аналитик. Переведи результат {str(res)} на понятный язык. Контекст: {context_mode_text}. Вопрос: '{user_prompt}'", temperature=0.2))
                 st.write(final_res.text)
             st.session_state.chat_history.append({"role": "assistant", "content": final_res.text})
         except Exception as chat_err: st.sidebar.error(f"Ошибка чата: {chat_err}")
@@ -314,8 +346,8 @@ def render_cross_file_mapping_ui(file_registry):
     if not file_names: return st.info("ℹ️ Для настройки кросс-анализа загрузите файлы.")
     
     if len(file_names) == 1:
-        f1_name = file_names[0]
-        f2_name = file_names[0]
+        f1_name = file_names
+        f2_name = file_names
         st.info(f"💡 Загружен 1 файл: `{f1_name}`. Настройте сопоставление двух столбцов категорий.")
     else:
         st.info(f"💡 Загружено несколько файлов ({len(file_names)} шт.). Выберите файлы для связывания структур.")
@@ -388,7 +420,7 @@ def render_cross_file_mapping_ui(file_registry):
         st.rerun()
 st.sidebar.markdown("### 🤖 Настройки ИИ-Слой")
 gemini_api_key = st.sidebar.text_input("Введите Gemini API Key:", type="password")
-ai_context_mode = st.sidebar.selectbox("Контекл для AI:", ["📊 Продажи / Сбыт / Ритейл", "📊 Сравнительный кросс-анализ структур и категорий", "📅 Закупки / Материальное обеспечение", "📦 Запасы / Складские остатки"])
+ai_context_mode = st.sidebar.selectbox("Контекст для AI:", ["📊 Продажи / Сбыт / Ритейл", "📊 Сравнительный кросс-анализ структур и категорий", "📅 Закупки / Материальное обеспечение", "📦 Запасы / Складские остатки"])
 
 # БЕССМЕННЫЙ ЗАГРУЗЧИК: Всегда доступен в сайдбаре
 uploaded_files = st.sidebar.file_uploader("Загрузите файлы Excel/CSV:", type=["csv", "xlsx"], accept_multiple_files=True)
@@ -507,7 +539,7 @@ if st.session_state.files_processed and not main_df.empty:
             if "Bar" in preset["style"] or "Line" in preset["style"]:
                 preset["y_ax_list"] = st.multiselect("Оси Y (Метрики сравнения):", [c for c in raw_headers if c != preset["x_ax"]], default=[val for val in preset["y_ax_list"] if val in raw_headers], key=f"y_r_{selected_chart_idx}")
             else:
-                def_val = preset["y_ax_list"][0] if isinstance(preset["y_ax_list"], list) and len(preset["y_ax_list"]) > 0 else preset["y_ax_list"]
+                def_val = preset["y_ax_list"] if isinstance(preset["y_ax_list"], list) and len(preset["y_ax_list"]) > 0 else preset["y_ax_list"]
                 single_y = st.selectbox("Ось Y (Объем):", all_cols_list, index=all_cols_list.index(def_val) if def_val in all_cols_list else 0, key=f"y_single_r_{selected_chart_idx}")
                 preset["y_ax_list"] = [single_y] if single_y != "-- Выберите заголовок --" else []
             preset["color"] = st.color_picker("Базовый цвет:", preset["color"], key=f"col_r_{selected_chart_idx}")
@@ -523,7 +555,9 @@ if st.session_state.files_processed and not main_df.empty:
                 preset["horiz"] = st.checkbox("Горизонтально", value=preset["horiz"], key=f"hor_r_{selected_chart_idx}") if "Bar" in preset["style"] else False
                 preset["rot"] = st.slider("Поворот долей:", 0, 360, preset["rot"], step=15, key=f"rot_r_{selected_chart_idx}") if "Donut" in preset["style"] else 0
                 preset["top_limit"] = st.slider("ТОП элементов:", 5, 200, preset["top_limit"], key=f"top_r_{selected_chart_idx}")
-                preset["d_fmt"] = st.selectbox("Шаблон даты:", ["Исходный", "ММ.ГГГГ (01.2014)", "Месяц ГГГГ (Янв 2014)", "ДД.ММ.ГГГГ (15.01.2014)", "ГГГГ (2014)"], index=["Исходный", "ММ.ГГГГ (01.2014)", "Месяц ГГГГ (Янв 2014)", "ДД.ММ.ГГГГ (15.01.2014)", "ГГГГ (2014)"].index(preset["d_fmt"]), key=f"dfmt_r_{selected_chart_idx}")
+                
+                # ИСПРАВЛЕНИЕ: В селектор добавлен нативный вариант отображения ISO дат
+                preset["d_fmt"] = st.selectbox("Шаблон даты:", ["ГГГГ-ММ-ДД (Исходный ISO)", "ММ.ГГГГ (01.2014)", "Месяц ГГГГ (Янв 2014)", "ДД.ММ.ГГГГ (15.01.2014)", "ГГГГ (2014)"], index=["ГГГГ-ММ-ДД (Исходный ISO)", "ММ.ГГГГ (01.2014)", "Месяц ГГГГ (Янв 2014)", "ДД.ММ.ГГГГ (15.01.2014)", "ГГГГ (2014)"].index(preset["d_fmt"]), key=f"dfmt_r_{selected_chart_idx}")
                 preset["f_cast"] = st.slider("Прогноз периодов:", 0, 5, preset["f_cast"], key=f"f_cst_r_{selected_chart_idx}")
             st.markdown('</div>', unsafe_allow_html=True)
 
